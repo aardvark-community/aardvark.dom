@@ -1,0 +1,11 @@
+source https://api.nuget.org/v3/index.json
+redirects: off
+storage: none
+framework: auto-detect
+
+nuget FSharp.Core                           >= 6.0 lowest_matching: true
+nuget Aardvark.Build                        ~> 1.0.11
+nuget Aardvark.Base                         ~> 5.2.0
+nuget FSharp.Data.Adaptive                  ~> 1.2.10
+nuget Giraffe                               ~> 5.0.0
+nuget Microsoft.AspNetCore.App              ~> 2.2.8

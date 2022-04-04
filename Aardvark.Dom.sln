@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30114.105
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{03720CF8-7F88-42B2-AA38-25A03FB2F9A4}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Aardvark.Dom", "src\Aardvark.Dom\Aardvark.Dom.fsproj", "{1528B1AA-2587-441F-B3F8-49FF2A6ED273}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Demo", "src\Demo\Demo.fsproj", "{A15E72EF-A0F2-490C-900F-3E0039F02AE4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1528B1AA-2587-441F-B3F8-49FF2A6ED273}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1528B1AA-2587-441F-B3F8-49FF2A6ED273}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1528B1AA-2587-441F-B3F8-49FF2A6ED273}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1528B1AA-2587-441F-B3F8-49FF2A6ED273}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A15E72EF-A0F2-490C-900F-3E0039F02AE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A15E72EF-A0F2-490C-900F-3E0039F02AE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A15E72EF-A0F2-490C-900F-3E0039F02AE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A15E72EF-A0F2-490C-900F-3E0039F02AE4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1528B1AA-2587-441F-B3F8-49FF2A6ED273} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
+		{A15E72EF-A0F2-490C-900F-3E0039F02AE4} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
+	EndGlobalSection
+EndGlobal

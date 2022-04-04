@@ -1,0 +1,22 @@
+{
+    "dotnet-test-explorer.testProjectPath": "Aardvark.Dom.sln",
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true,
+        "**/.vs": true,
+        "**/obj/": true,
+        ".paket/": true,
+        ".ionide/": true,
+        ".fake/": true,
+        ".fable/": true,
+        "node_modules/": true,
+        "paket-files/": true,
+        "packages/": true,
+        "**/BenchmarkDotNet.Artifacts/": true,
+        ".fsdocs": true,
+        "tmp": true
+    }
+}
