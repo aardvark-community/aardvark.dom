@@ -7,9 +7,11 @@ open System.Text.Json
 open System.Collections.Generic
 open FSharp.Data.Adaptive
 open Aardvark.Base
+open Aardvark.Rendering
 open System.Reflection
 open System.Threading.Tasks
 open Aardvark.Dom
+open System.Threading
 
 type CodeBuilder(variables : System.Collections.Generic.Dictionary<int64, string>) =
     let builder = System.Text.StringBuilder()
@@ -69,6 +71,8 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
         | _ -> ()
         parentIds.Remove node |> ignore
 
+    let subscribedListeners = Dict<int64 * string, ref<int>>()
+
     new(server : IServer) = RemoteHtmlBackend(server, Dict(), ref 0, Dict(), Dict(), CodeBuilder())
 
     interface IHtmlBackend<int64> with
@@ -85,50 +89,151 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
 
         member x.SetupRenderer(element : int64, scene : SceneHandler) =
             let x = x :> IHtmlBackend<int64>
-            let var = code.GetOrCreateVar element
 
-            let required = Set.ofList [ "https" ]
+            let disp =
+                x.Execute(Some element, 
+                    [|     
+                        fun (c : IChannel) ->
+                            task {     
+                                let tryReadInfo (msg : ChannelMessage) =
+                                    match msg with
+                                    | ChannelMessage.Text a ->
+                                        try 
+                                            let json = System.Text.Json.JsonDocument.Parse a
+                                            let e = json.RootElement
+                                            match e.TryGetProperty "cmd" with
+                                            | (true, prop) ->
+                                                match prop.GetString() with
+                                                | "requestimage" ->
+                                                    let mutable s = V2i.II
+                                                    let mutable samples = 1
+                                                    let mutable quality = 80
 
-            let url =
-                server.RegisterResource(
-                    "application/javascript",
-                    String.concat "\n" [
-                        "aardvark.setupRenderer = function(node, url) {"
-                        "   var ws = new WebSocket(url);"
-                        "   ws.onopen = function() {"
-                        "       let r = node.getBoundingClientRect();"
-                        "       ws.send(JSON.stringify({ X: r.width, Y: r.height }));"
-                        "   };"
-                        "   ws.onerror = function() {"
-                        "       console.error(\"connection error\");"
-                        "   };"
-                        "   ws.onmessage = function(e) {"
-                        "       console.warn(e.data);"
-                        "   }"
-                        "};"
-                            
-                    ]
+                                                    match e.TryGetProperty "width" with
+                                                    | (true, p) -> s.X <- max 1 (p.GetInt32())
+                                                    | _ -> ()
+                                            
+                                                    match e.TryGetProperty "height" with
+                                                    | (true, p) -> s.Y <- max 1 (p.GetInt32())
+                                                    | _ -> ()
+
+                                                    match e.TryGetProperty "samples" with
+                                                    | (true, p) -> samples <- p.GetInt32()
+                                                    | _ -> ()
+
+                                                    match e.TryGetProperty "quality" with
+                                                    | (true, p) -> quality <- p.GetInt32()
+                                                    | _ -> ()
+
+                                                    Some (s, samples, quality)
+
+                                                | _ ->
+                                                    None
+                                            | _ ->
+                                                None
+                                        with _ ->
+                                            None
+                                    | _ ->
+                                        None
+
+                                let mutable info = None
+                                while Option.isNone info do
+                                    let! msg = c.Receive()
+                                    info <- tryReadInfo msg
+                                let (size, samples, quality) = info.Value
+                        
+                                let t0 = System.DateTime.Now
+                                let dt = System.Diagnostics.Stopwatch.StartNew()
+                                let size = cval size
+
+                                let render = new JpegRenderTarget(scene.Runtime, scene.FramebufferSignature, scene.RenderTask, size.Value, quality)
+
+                                let mutable running = true
+
+                                let renderDirty = MVar.create ()
+                                let sub = render.AddMarkingCallback (MVar.put renderDirty)
+                                let renderThread =
+                                    startThread <| fun () ->
+                                        let sw = System.Diagnostics.Stopwatch.StartNew()
+                                        let mm = new MultimediaTimer.Trigger(1)
+                                        while running do
+                                            MVar.take renderDirty
+                                            if running then
+                                                let data = render.Run(AdaptiveToken.Top)
+                                                c.Send(ChannelMessage.Binary data).Result
+                                                while sw.Elapsed.TotalMilliseconds < 16.66666666666 do
+                                                    mm.Wait()
+                                    
+                                                transact (fun () -> scene.Time.Value <- t0 + dt.Elapsed)
+                                                sw.Restart()
+
+                                while running do
+                                    let! msg = c.Receive()
+                                    match msg with
+                                    | ChannelMessage.Close -> 
+                                        running <- false
+                                        MVar.put renderDirty ()
+                                    | msg -> 
+                                        match tryReadInfo msg with
+                                        | Some (newSize, samples, quality) ->
+                                            transact (fun () ->
+                                                size.Value <- newSize
+                                                render.Size <- newSize
+                                                render.Quality <- quality
+                                                //render.MarkOutdated()
+                                            )
+                                        | None ->
+                                            ()
+                                    
+                                sub.Dispose()
+                                renderThread.Join()
+                                render.Dispose()
+
+                            }
+                                
+                    |], 
+                    fun n ->
+                        let n = n.[0]
+                        [
+                            $"{n}.binaryType = \"blob\";"
+                            $"const img = document.createElement(\"img\");"
+                            $"img.setAttribute(\"draggable\", \"false\");"
+                            $"img.style.userSelect = \"none\";"
+                            $"img.style.pointerEvents = \"none\";"
+                            $"var requestImage = function() {{"
+                            $"    const r = __THIS__.getBoundingClientRect();"
+                            $"    const sam = parseInt(__THIS__.getAttribute(\"data-samples\") || 4);"
+                            $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
+                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, samples: sam, quality: q }}));"
+                            $"}};" 
+                            $"let unsub = (() => {{}});"
+                            $"var start = function() {{"
+                            $"      requestImage();"
+                            $"      unsub = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
+                            $"}};"
+                            $"if({n}.readyState == 1) {{ start(); }}"
+                            $"else {{ {n}.onopen = () => {{ start() }}; }}"
+                            $"{n}.onmessage = function(e) {{"
+                            $"    if(e.data instanceof Blob) {{"
+                            $"        let url = URL.createObjectURL(e.data)"
+                            $"        let o = img.src;"
+                            $"        img.src = url;"
+                            $"        if(o) {{ URL.revokeObjectURL(o); }}"
+                            $"        requestImage();"
+                            $"    }}"
+                            $"}};"
+                            $"{n}.onerror = function(e) {{"
+                            $"  unsub();"
+                            $"}}"
+                            $"{n}.onclose = function(e) {{"
+                            $"  unsub();"
+                            $"}}"
+                            $"__THIS__.appendChild(img);"
+                    
+                        ]
                 )
 
-            let path, dispose = 
-                server.RegisterWebSocket (fun socket ->
-                    task {
-                        let! (typ, content) = socket.ReceiveMessage()
-                        match typ with
-                        | WebSocketMessageType.Text ->
-                            let json = Encoding.UTF8.GetString content
-                            printfn "%A" json
-                        | _ ->
-                            ()
-                        do! socket.Send "nice, thanks!"
-
-                        return ()
-                    }
-                )
-
-            x.Require(Set.add url required, fun _ ->
-                code.AppendLine $"aardvark.setupRenderer({var}, aardvark.relativePath(\"ws\", \"{path}\"));"
-            )
+            ()
             
         member x.DestroyRenderer(element : int64, scene : SceneHandler) =
             ()
@@ -223,8 +328,12 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
             code.AppendLine $"{var}.{name} = null; {var}.removeAttribute(\"{attName}\");"
             
         member x.SetAttribute(node : int64, name : string, value : string) =
-            let var = code.GetOrCreateVar node
-            code.AppendLine $"{var}.{name} = \"{HttpUtility.JavaScriptStringEncode(value)}\";"
+            if name.Contains "-" then
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.setAttribute(\"{name}\", \"{HttpUtility.JavaScriptStringEncode(value)}\");"
+            else
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.{name} = \"{HttpUtility.JavaScriptStringEncode(value)}\";"
             
         member x.SetAttribute(node : int64, name : string, value : Set<string>) =
             let value = String.concat " " value
@@ -268,22 +377,25 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
             eventListeners.Remove node |> ignore
 
         member x.SetListener(element, name, capture, pointerCapture, evtType, callback) =
-            let var = code.GetOrCreateVar element
+            let refCount = subscribedListeners.GetOrCreate((element, name), fun _ -> ref 0)
+            if refCount.Value = 0 then
+                let var = code.GetOrCreateVar element
           
-            let body =
-                String.concat "" [
-                    "if(e.bubbles) e.stopImmediatePropagation();"
-                    "e.preventDefault();"
-                    if pointerCapture then
-                        match name.ToLower() with
-                        | "pointerdown" -> $"{var}.setPointerCapture(e.pointerId);"
-                        | "pointerup" -> $"{var}.releasePointerCapture(e.pointerId);"
-                        | _ -> ()
-                    $"aardvark.trigger((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
-                ]
-            // aardvark.setListener = function (node, type, action, capture) {
-            code.AppendLine $"aardvark.setListener({var}, \"{name}\", ((e) => {{ {body} }}), false);"
+                let body =
+                    String.concat "" [
+                        "if(e.bubbles) e.stopImmediatePropagation();"
+                        "e.preventDefault();"
+                        if pointerCapture then
+                            match name.ToLower() with
+                            | "pointerdown" -> $"{var}.setPointerCapture(e.pointerId);"
+                            | "pointerup" -> $"{var}.releasePointerCapture(e.pointerId);"
+                            | _ -> ()
+                        $"aardvark.trigger((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
+                    ]
+                // aardvark.setListener = function (node, type, action, capture) {
+                code.AppendLine $"aardvark.setListener({var}, \"{name}\", ((e) => {{ {body} }}), false);"
 
+            refCount.Value <- refCount.Value + 1
             // TODO: perfromance concerns here
             let m = evtType.GetMethod("TryParse", BindingFlags.Static ||| BindingFlags.NonPublic ||| BindingFlags.Public)
             if isNull m then failwithf "non-parsable event type: %A" evtType
@@ -304,23 +416,25 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                     let e = pValue.GetValue e :?> Event
                     callback e
 
+        member x.RemoveListener(element, name, capture) =   
+            match subscribedListeners.TryGetValue((element, name)) with
+            | (true, refCount) ->
+                let triggerName =
+                    if capture then name + "_capture"
+                    else name + "_bubble"
 
-        member x.RemoveListener(element, name, capture) =
-            let triggerName =
-                if capture then name + "_capture"
-                else name + "_bubble"
+                match eventListeners.TryGetValue element with
+                | (true, l) -> 
+                    if l.Remove(triggerName) then
+                        let var = code.GetOrCreateVar element
+                        if refCount.Value = 1 then 
+                            code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
+                            subscribedListeners.Remove((element,name)) |> ignore
+                        if l.Count = 0 then eventListeners.Remove element |> ignore
+                | _ ->
+                    ()
 
-            let otherListener =
-                if capture then name + "_bubble"
-                else name + "_capture"
-
-            match eventListeners.TryGetValue element with
-            | (true, l) -> 
-                if l.Remove(triggerName) then
-                    let var = code.GetOrCreateVar element
-                    if not (l.Contains otherListener) then 
-                        code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
-                    if l.Count = 0 then eventListeners.Remove element |> ignore
+                refCount.Value <- refCount.Value - 1
             | _ ->
                 ()
 

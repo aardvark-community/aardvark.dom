@@ -10,23 +10,27 @@ open FSharp.Data.Adaptive
 
 #nowarn "1337"
 
+
 type RenderControlInfo =
     {
-        ViewportSize : aval<V2i>
+        Runtime                 : IRuntime
+        FramebufferSignature    : aval<IFramebufferSignature>
+        ViewportSize            : aval<V2i>
+        Time                    : aval<System.DateTime>
     }
     
 type DomScene =
     {
-        View : aval<Trafo3d>
-        Proj : aval<Trafo3d>
-        Scene : ISceneNode
+        View    : aval<Trafo3d>
+        Proj    : aval<Trafo3d>
+        Scene   : ISceneNode
     }
 
 type DomNode =
     | VoidElement of tag : string * attributes : AttributeMap
     | Text of content : aval<string>
     | Element of tag : string * attributes : AttributeMap * children : alist<DomNode>
-    | RenderControl of attributes : AttributeMap * getScene : (RenderControlInfo -> DomScene)
+    | RenderControl of (RenderControlInfo -> AttributeMap * aset<SceneHandlerEvent -> unit> * DomScene)
 
 [<CompilerMessage("internal", 1337, IsHidden = true)>]
 module NodeBuilderHelpers = 
@@ -290,6 +294,7 @@ module NodeBuilderHelpers =
         | AMap of amap<string, AttributeValue>
         // | AValCustom of mapping : obj * value : IAdaptiveValue
 
+    
     type AttributeTable private(store : IndexList<AttributeTableElement>) =
         static let empty = AttributeTable IndexList.empty<AttributeTableElement>
 
@@ -413,7 +418,171 @@ module NodeBuilderHelpers =
             attributes : AttributeTable
         }
 
+
+    type RenderControlBuilderState(info : RenderControlInfo) =
+        let mutable attributes = AttributeTable.Empty
+        let mutable actions = ASet.empty
+        let scene = SceneNodeBuilderState()
+
+        member x.Info = info
+
+        member x.Append(atts : AttributeMap) =
+            attributes <- AttributeTable.Combine(attributes, AttributeTable atts)
+            
+        member x.Append(atts : list<SceneAttribute>) =
+            scene.Append atts
+
+        member x.Append(atts : aset<ISceneNode>) =
+            scene.Append atts
+            
+        member x.Append(rcAction : SceneHandlerEvent -> unit) =
+            actions <- ASet.union actions (ASet.single rcAction)
+
+        member x.Build() =
+            let scene = 
+                match scene.Build() with
+                | :? Applicator as app ->   
+                    let view =
+                        match app.Attributes |> List.tryPick (function SceneAttribute.View v -> Some v | _ -> None) with
+                        | Some v -> v
+                        | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
+
+                    let proj =
+                        match app.Attributes |> List.tryPick (function SceneAttribute.Proj v -> Some v | _ -> None) with
+                        | Some v -> v
+                        | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
+
+                    { Scene = app; View = view; Proj = proj }
+                | node ->
+                    { Scene = node; View = AVal.constant Trafo3d.Identity; Proj = AVal.constant Trafo3d.Identity }
+                    
+            AttributeMap (attributes.ToAMap()), actions, scene
+
+
+    type RenderControlBuilder<'a> = RenderControlBuilderState -> 'a
+
+module RenderControl = 
+    type ViewportSize = ViewportSize
+    type Time = Time
+    type Info = Info
+
+    let OnResize (action : V2i -> unit) =   
+        fun (e : SceneHandlerEvent) ->
+            match e with
+            | SceneHandlerEvent.Resize s -> action s
+            | _ -> ()
+            
+    let OnRendered (action : unit -> unit) =   
+        fun (e : SceneHandlerEvent) ->
+            match e with
+            | SceneHandlerEvent.PostRender -> action ()
+            | _ -> ()
+
+
+
+
 open NodeBuilderHelpers
+
+type RenderControlBuilder() =
+    static member wrap (sg : Aardvark.SceneGraph.ISg) =
+        SgAdapter.Node(sg) :> ISceneNode
+
+
+    member inline x.For(elements : seq<'a>, [<InlineIfLambda>] action : 'a -> RenderControlBuilder<unit>) =
+        fun (state : RenderControlBuilderState) -> 
+            for e in elements do action e state
+
+    member inline x.While([<InlineIfLambda>] guard : unit -> bool, [<InlineIfLambda>] action : unit -> RenderControlBuilder<unit>) =
+        fun (state : RenderControlBuilderState) -> 
+            while guard() do action () state
+
+    member x.TryFinally(action : unit -> RenderControlBuilder<'a>, comp : unit -> unit) =
+        fun (state : RenderControlBuilderState) -> 
+            try action () state 
+            finally comp()
+                
+    member inline x.Zero() =
+        fun (state : RenderControlBuilderState) ->  ()
+
+    member inline x.Combine(l : RenderControlBuilder<unit>, r : RenderControlBuilder<'a>) : RenderControlBuilder<'a> =   
+        fun (state : RenderControlBuilderState) ->
+            l state
+            r state
+
+    member inline x.Delay([<InlineIfLambda>] action : unit -> RenderControlBuilder<'a>) = 
+        fun (state : RenderControlBuilderState) ->
+            action () state
+
+
+    member inline x.Bind(size : RenderControl.ViewportSize, [<InlineIfLambda>] action : aval<V2i> -> RenderControlBuilder<'a>) =
+        fun (state : RenderControlBuilderState) ->
+            action state.Info.ViewportSize state
+
+            
+    member inline x.Bind(size : RenderControl.Time, [<InlineIfLambda>] action : aval<System.DateTime> -> RenderControlBuilder<'a>) =
+        fun (state : RenderControlBuilderState) ->
+            action state.Info.Time state
+            
+    member inline x.Bind(size : RenderControl.Info, [<InlineIfLambda>] action : RenderControlInfo -> RenderControlBuilder<'a>) =
+        fun (state : RenderControlBuilderState) ->
+            action state.Info state
+
+
+
+    member inline x.Yield(att : SceneAttribute) : RenderControlBuilder<unit> =
+        fun (s : RenderControlBuilderState) -> s.Append [att]
+
+    member inline x.Yield(node : aset<ISceneNode>) : RenderControlBuilder<unit> =
+        fun (s : RenderControlBuilderState) -> s.Append node
+        
+    member inline x.Yield(node : ISceneNode) : RenderControlBuilder<unit> =
+        x.Yield(ASet.single node)
+        
+    member inline x.Bind((info : 'a, node : ISceneNode), action : 'a -> RenderControlBuilder<'b>) : RenderControlBuilder<'b> =
+        x.Combine(x.Yield(node), action info)
+
+    member inline x.Yield(node : Aardvark.SceneGraph.ISg) : RenderControlBuilder<unit> =
+        x.Yield(ASet.single (RenderControlBuilder.wrap node))
+
+    member inline x.Yield(node : aval<seq<ISceneNode>>) : RenderControlBuilder<unit> =
+        x.Yield(ASet.ofAVal node)
+        
+    member inline x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : RenderControlBuilder<unit> =
+        x.Yield(ASet.ofAVal node |> ASet.map RenderControlBuilder.wrap)
+
+    member inline x.Yield(node : aval<ISceneNode>) : RenderControlBuilder<unit> =
+        x.Yield(node |> ASet.bind ASet.single)
+        
+    member inline x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : RenderControlBuilder<unit>=
+        x.Yield(node |> ASet.bind (RenderControlBuilder.wrap >> ASet.single))
+        
+    member inline x.Yield(node : aval<option<ISceneNode>>) : RenderControlBuilder<unit> =
+        x.Yield(node |> ASet.bind (function Some v -> ASet.single v | None -> ASet.empty))
+        
+    member inline x.Yield(node : aval<option<Aardvark.SceneGraph.ISg>>) : RenderControlBuilder<unit> =
+        x.Yield(node |> ASet.bind (function Some v -> ASet.single (RenderControlBuilder.wrap v) | None -> ASet.empty))
+        
+    member inline x.Yield(att : Attribute) =
+        fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.single att)
+
+    member inline x.Yield(att : AttributeMap) =
+        fun (state : RenderControlBuilderState) -> state.Append att
+
+    member inline x.Yield(att : aval<#seq<Attribute>>) =
+        fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofSeqA att)
+
+    member inline x.Yield(att : aval<option<Attribute>>) =
+        fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofOptionA att) 
+            
+    member inline x.Yield(att : SceneHandlerEvent -> unit) : RenderControlBuilder<unit> =
+        fun (s : RenderControlBuilderState) -> s.Append att
+
+    member inline x.Run(run : RenderControlBuilder<unit>) =
+        let getContent (info : RenderControlInfo) =
+            let state = RenderControlBuilderState(info)
+            run state
+            state.Build()
+        DomNode.RenderControl(getContent)
 
 type NodeBuilder =
     val mutable public Tag : string
@@ -528,9 +697,63 @@ type VoidNodeBuilder =
 
     new(tag : string) = { Tag = tag }
 
+type AttributeMapBuilder =
+
+    member inline x.Yield(att : Attribute) =
+        AttributeTable [att]
+
+    member inline x.Yield(att : AttributeMap) =
+        AttributeTable att
+
+    member inline x.Yield(att : aval<#seq<Attribute>>) =
+        AttributeTable (AttributeMap.ofSeqA att)
+
+    member inline x.Yield(att : aval<option<Attribute>>) =
+        AttributeTable (AttributeMap.ofOptionA att) 
+
+    member inline x.For(elements : seq<'a>, [<InlineIfLambda>] action : 'a -> AttributeTable) =
+        let mutable res = AttributeTable.Empty
+        for e in elements do
+            let r = action e
+            res <- AttributeTable.Combine(res, r)
+
+        res
+
+    member inline x.While([<InlineIfLambda>] guard : unit -> bool, [<InlineIfLambda>] action : unit -> AttributeTable) =
+        let mutable res = AttributeTable.Empty
+        while guard() do
+            let r = action()
+            res <- AttributeTable.Combine(res, r)
+        res
+
+
+    member x.TryFinally(action : unit -> AttributeTable, comp : unit -> unit) =
+        try action() 
+        finally comp()
+
+    member inline x.Zero() = AttributeTable.Empty
+
+    member inline x.Combine(l : AttributeTable, r : unit -> AttributeTable) =   
+        let r = r()
+        AttributeTable.Combine(l, r)
+
+    member inline x.Delay([<InlineIfLambda>] action : unit -> AttributeTable) = 
+        action
+
+    member inline x.Run(run : unit -> AttributeTable) =
+        let state = run()
+        AttributeMap (state.ToAMap())
+
+    new() = { }
+    
 
 [<AutoOpen>]
 module NodeBuilders =
+
+    let att = AttributeMapBuilder()
+
+    let renderControl = RenderControlBuilder()
+
     let h1 = NodeBuilder "h1"
     let code = NodeBuilder "code"
     let pre = NodeBuilder "pre"

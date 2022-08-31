@@ -24,7 +24,7 @@ type SceneEventKind =
     | KeyUp
     | KeyInput
     
-type SceneEventLocation(modelTrafo : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, depth : float, viewNormal : V3d) =
+type SceneEventLocation(modelTrafo : Trafo3d, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, depth : float, viewNormal : V3d) =
     let ndc = V3d(2.0 * pixel.X / float viewportSize.X - 1.0, 1.0 - 2.0 * pixel.Y / float viewportSize.Y, depth)
     let viewProj = viewTrafo * projTrafo
     let worldPosition = viewProj.Backward.TransformPosProj ndc
@@ -32,6 +32,9 @@ type SceneEventLocation(modelTrafo : Trafo3d, viewTrafo : Trafo3d, projTrafo : T
     
     let modelPosition = modelTrafo.Backward.TransformPosProj worldPosition
     let modelNormal = modelTrafo.Forward.Transposed.TransformDir worldNormal |> Vec.normalize
+    
+    let localPosition = local2World.Backward.TransformPosProj worldPosition
+    let localNormal = local2World.Forward.Transposed.TransformDir worldNormal |> Vec.normalize
 
     member x.ModelTrafo = modelTrafo
     member x.ViewTrafo = viewTrafo
@@ -45,8 +48,24 @@ type SceneEventLocation(modelTrafo : Trafo3d, viewTrafo : Trafo3d, projTrafo : T
     member x.WorldNormal = worldNormal
     member x.ModelPosition = modelPosition
     member x.ModelNormal = modelNormal
+    member x.Position = localPosition
+    member x.Normal = localNormal
     
-    
+    member x.Transformed(trafo : Trafo3d) =
+        SceneEventLocation(
+            modelTrafo, 
+            trafo * local2World, 
+            viewTrafo, 
+            projTrafo, 
+            pixel, 
+            viewportSize, 
+            depth, 
+            viewNormal
+        )
+
+    new(modelTrafo : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, depth : float, viewNormal : V3d) =
+        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, depth, viewNormal)
+
 type IEventHandler =
     abstract HasPointerCapture : state : obj * pointerId : int -> bool
     abstract SetPointerCapture : state : obj * pointerId : int -> unit
@@ -77,8 +96,14 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     member x.WorldNormal = location.WorldNormal
     member x.ModelPosition = location.ModelPosition
     member x.ModelNormal = location.ModelNormal
+    member x.Position = location.Position
+    member x.Normal = location.Normal
     
+    member x.Transformed(trafo : Trafo3d) =
+        x.WithLocation(location.Transformed(trafo))
+
     abstract WithKind : SceneEventKind -> SceneEvent
+    abstract WithLocation : SceneEventLocation -> SceneEvent
     
 type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : int) =
     inherit SceneEvent(context, self, target, kind, location)
@@ -92,6 +117,9 @@ type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind :
     member x.ScrollDelta = scrollDelta
     
     override x.WithKind(kind : SceneEventKind) =
+        ScenePointerEvent(context, self, target, kind, location, ctrl, shift, alt, meta, scrollDelta, pointerId, button) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
         ScenePointerEvent(context, self, target, kind, location, ctrl, shift, alt, meta, scrollDelta, pointerId, button) :> SceneEvent
 
 type SceneKeyboardEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, key : Keys, text : string, isRepeat : bool) =
@@ -109,6 +137,10 @@ type SceneKeyboardEvent(context : IEventHandler, self : obj, target : obj, kind 
     override x.WithKind(kind : SceneEventKind) =
         SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, key, text, isRepeat) :> SceneEvent
         
+    override x.WithLocation(location : SceneEventLocation) =
+        SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, key, text, isRepeat) :> SceneEvent
+        
+
 
 
 type SceneEventHandler =
@@ -120,6 +152,16 @@ type SceneEventHandler =
 module SceneEventHandler =
     let bubble action = { Capture = []; Bubble = [action] }
     let capture action = { Capture = [action]; Bubble = [] }
+
+
+    let transform (t : aval<Trafo3d>) (h : SceneEventHandler) =
+        if t.IsConstant && AVal.force(t).Forward.IsIdentity() then 
+            h
+        else
+            {
+                Capture = h.Capture |> List.map (fun cb e -> cb (e.Transformed(AVal.force t)))
+                Bubble = h.Bubble |> List.map (fun cb e -> cb (e.Transformed (AVal.force t)))
+            }
 
     let merge (l : SceneEventHandler) (r : SceneEventHandler) =
         {

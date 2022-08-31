@@ -37,6 +37,19 @@ type TraversalState =
 module TraversalState =
     let private trafoCache = BinaryCache<aval<Trafo3d>, aval<Trafo3d>, aval<Trafo3d>>(AVal.map2 (*))
     
+    let internal trafoOfStack (model : list<aval<Trafo3d>>) =
+        match model with
+        | [] ->
+            AVal.constant Trafo3d.Identity
+        | m :: ms ->
+            let mutable res = m
+            for m in ms do
+                res <- trafoCache.Invoke(res, m)
+            res
+
+    let modelTrafo (state : TraversalState) =
+        trafoOfStack state.Model
+
     let push (state : TraversalState) =
         {
             state with
@@ -118,6 +131,8 @@ module TraversalState =
                     if runCapture e parent then
                         match HashMap.tryFind e.Kind (AMap.force state.EventHandlers) with
                         | Some h ->
+                            let model = modelTrafo parent |> AVal.force
+                            let e = e.Transformed model
                             h.Capture |> List.forall (fun h -> h e)
                         | None ->
                             true
@@ -137,6 +152,8 @@ module TraversalState =
                     let cont =
                         match HashMap.tryFind e.Kind (AMap.force state.EventHandlers) with
                         | Some h ->
+                            let model = modelTrafo parent |> AVal.force
+                            let e = e.Transformed model
                             h.Bubble |> List.forall (fun h -> h e)
                         | None ->
                             true
@@ -218,15 +235,6 @@ module TraversalState =
     let handleMove (lastOver : cval<option<TraversalState>>) (e : SceneEvent) (state : option<TraversalState>) =
         handleDifferential lastOver SceneEventKind.PointerEnter SceneEventKind.PointerLeave e state
 
-    let modelTrafo (state : TraversalState) =
-        match state.Model with
-        | [] ->
-            AVal.constant Trafo3d.Identity
-        | m :: ms ->
-            let mutable res = m
-            for m in ms do
-                res <- trafoCache.Invoke(res, m)
-            res
 
 [<RequireQualifiedAccess>]
 type SceneAttribute =

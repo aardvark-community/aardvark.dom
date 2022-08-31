@@ -278,7 +278,77 @@
         };
     }
 
+    aardvark.callbackWithMinDelay = function (minDt, action, add) {
+        let sum = null;
+        let lastRun = -minDt;
+        let running = true;
+
+        function run() {
+            if (!running) return;
+
+            if (sum) {
+                const now = performance.now();
+                const dt = now - lastRun;
+                if (dt >= minDt) {
+                    action(sum);
+                    lastRun = now;
+                    sum = null;
+                }
+            }
+
+            window.requestAnimationFrame(run);
+        }
+
+        run()
+
+        function trigger(arg) {
+
+            const now = performance.now();
+            const dt = now - lastRun;
+            if (dt >= minDt) {
+                if (sum && add) {
+                    arg = add(sum, arg);
+                    sum = null;
+                }
+                action(arg);
+                lastRun = now;
+            }
+            else {
+                if (add) {
+                    if (sum) { sum = add(sum, arg); }
+                    else { sum = arg; }
+                }
+                else { sum = arg; }
+
+
+            }
+        }
+
+        function destroy() {
+            sum = null;
+            running = false;
+        }
+
+        return { invoke: trigger, destroy: destroy };
+    }
+
+    
+
     aardvark.setListener = function (node, type, action, capture) {
+        let realAction = action;
+        let destroyCallback = () => { };
+        if (type == "pointermove" || type == "mousemove") {
+            let o = aardvark.callbackWithMinDelay(16.6666, action, (a, b) => { a.movementX += b.movementX; a.movementY += b.movementY; return a });
+            realAction = function (e) {
+                const p = e.composedPath();
+                e.stopImmediatePropagation();
+                e.composedPath = () => p;
+                o.invoke(e);
+            };
+            destroyCallback = o.destroy;
+        }
+
+
         const suffix = capture ? "_capture" : "_bubble";
         const fieldName = "evt_" + type + suffix;
 
@@ -287,11 +357,12 @@
             delete node[fieldName];
         }
 
-        const listener = { handleEvent: action };
+        const listener = { handleEvent: realAction };
         node.addEventListener(type, listener, capture);
         const thing =
         {
             destroy: function () {
+                destroyCallback();
                 node.removeEventListener(type, listener, capture);
             }
         };

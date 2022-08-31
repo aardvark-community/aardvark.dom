@@ -3,3 +3,5 @@ Aardvark.Build
 FSharp.Data.Adaptive
 Giraffe
 Aardvark.Base 
+Aardvark.Application.Slim.GL 
+Aardvark.Application.Slim.Vulkan

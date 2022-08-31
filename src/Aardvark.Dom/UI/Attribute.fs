@@ -152,8 +152,14 @@ type Att private() =
             callback, 
             ?useCapture = useCapture
         )
+        
+    static member OnContextMenu(callback : MouseEvent -> bool, ?useCapture : bool) = 
+        Att.On(
+            "contextmenu", 
+            callback, 
+            ?useCapture = useCapture
+        )
 
-    
     static member OnMouseEnter(callback : MouseEvent -> unit) = 
         Att.On(
             "mouseenter", 
@@ -180,35 +186,86 @@ type Att private() =
             ?useCapture = useCapture
         )
 
-    static member OnDoubleClick(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnDoubleClick(callback : MouseEvent -> unit, ?useCapture : bool) = 
         Att.On(
             "dblclick", 
             callback, 
             ?useCapture = useCapture
         )
     
-    static member OnMouseDown(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnDoubleClick(callback : MouseEvent -> bool, ?useCapture : bool) = 
+        Att.On(
+            "dblclick", 
+            callback, 
+            ?useCapture = useCapture
+        )
+    
+    static member OnMouseDown(callback : MouseEvent -> unit, ?useCapture : bool) = 
+        Att.On(
+            "mousedown", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member OnMouseDown(callback : MouseEvent -> bool, ?useCapture : bool) = 
         Att.On(
             "mousedown", 
             callback, 
             ?useCapture = useCapture
         )
 
-    static member OnMouseUp(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnMouseUp(callback : MouseEvent -> unit, ?useCapture : bool) = 
+        Att.On(
+            "mousedown", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member OnMouseUp(callback : MouseEvent -> bool, ?useCapture : bool) = 
         Att.On(
             "mousedown", 
             callback, 
             ?useCapture = useCapture
         )
 
-    static member OnMouseMove(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnMouseMove(callback : MouseEvent -> unit, ?useCapture : bool) = 
         Att.On(
             "mousemove", 
             callback, 
             ?useCapture = useCapture
         )
     
-    static member OnPointerDown(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnMouseMove(callback : MouseEvent -> bool, ?useCapture : bool) = 
+        Att.On(
+            "mousemove", 
+            callback, 
+            ?useCapture = useCapture
+        )
+    
+    static member OnMouseWheel(callback : WheelEvent -> unit, ?useCapture : bool) =
+        Att.On(
+            "wheel", 
+            callback, 
+            ?useCapture = useCapture
+        )
+
+    static member OnMouseWheel(callback : WheelEvent -> bool, ?useCapture : bool) =
+        Att.On(
+            "wheel", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+
+    static member OnPointerDown(callback : PointerEvent -> unit, ?useCapture : bool) = 
+        Att.On(
+            "pointerdown", 
+            callback, 
+            pointerCapture = true,
+            ?useCapture = useCapture
+        )
+        
+    static member OnPointerDown(callback : PointerEvent -> bool, ?useCapture : bool) = 
         Att.On(
             "pointerdown", 
             callback, 
@@ -216,7 +273,15 @@ type Att private() =
             ?useCapture = useCapture
         )
 
-    static member OnPointerUp(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnPointerUp(callback : PointerEvent -> unit, ?useCapture : bool) = 
+        Att.On(
+            "pointerup", 
+            callback,
+            pointerCapture = true,
+            ?useCapture = useCapture
+        )
+        
+    static member OnPointerUp(callback : PointerEvent -> bool, ?useCapture : bool) = 
         Att.On(
             "pointerup", 
             callback,
@@ -224,7 +289,14 @@ type Att private() =
             ?useCapture = useCapture
         )
 
-    static member OnPointerMove(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnPointerMove(callback : PointerEvent -> unit, ?useCapture : bool) = 
+        Att.On(
+            "pointermove", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member OnPointerMove(callback : PointerEvent -> bool, ?useCapture : bool) = 
         Att.On(
             "pointermove", 
             callback, 

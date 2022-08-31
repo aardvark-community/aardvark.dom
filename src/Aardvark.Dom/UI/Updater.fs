@@ -47,7 +47,7 @@ type IHtmlBackend<'a> =
 
 
 [<AbstractClass>]
-type Updater<'a>(id : 'a) =
+type Updater<'a>(runtime : IRuntime, id : 'a) =
     inherit AdaptiveObject()
 
     member x.Id = id
@@ -57,6 +57,8 @@ type Updater<'a>(id : 'a) =
     abstract Boot : option<array<IChannel -> Task<unit>> * (array<string> -> list<string>)>
     abstract Shutdown : option<array<IChannel -> Task<unit>> * (array<string> -> list<string>)>
     abstract Requires : Set<string>
+
+    member x.Runtime = runtime
 
     member x.Update(state : UpdateState<'a>, code : IHtmlBackend<'a>) =
         x.EvaluateIfNeeded state.token () (fun token ->
@@ -74,8 +76,8 @@ type Updater<'a>(id : 'a) =
         x.PerformDelete(state, code)
         if not (Unchecked.equals id code.Root) then code.Remove id
 
-    static member Body(node : DomNode, code : IHtmlBackend<'a>) =
-        ElementUpdater<'a>(code.Root, "", AttributeMap.empty, AList.single node) :> Updater<'a>
+    static member Body(runtime : IRuntime, node : DomNode, code : IHtmlBackend<'a>) =
+        ElementUpdater<'a>(runtime, code.Root, "", AttributeMap.empty, AList.single node) :> Updater<'a>
         //DomNode.Element("", AttributeMap.empty, AList.single node)
         //let id = code.Root
         //match node with
@@ -88,22 +90,22 @@ type Updater<'a>(id : 'a) =
         //| DomNode.RenderControl(attributes, getScene) ->
         //    RenderControlUpdater<'a>(id, attributes, getScene) :> Updater<'a>
 
-    static member internal New(node : DomNode, code : IHtmlBackend<'a>) : Updater<'a> =
+    static member internal New(runtime : IRuntime, node : DomNode, code : IHtmlBackend<'a>) : Updater<'a> =
         match node with
         | DomNode.Text value -> 
             let id = code.CreateTextElement()
-            TextUpdater(id, value) :> Updater<'a>
+            TextUpdater(runtime, id, value) :> Updater<'a>
         | DomNode.VoidElement(tag, attributes) ->
             let id = code.CreateElement(tag)
-            VoidUpdater(id, tag, attributes) :> Updater<'a>
+            VoidUpdater(runtime, id, tag, attributes) :> Updater<'a>
         | DomNode.Element(tag, attributes, children) ->
             let id = 
                 if tag = "body" then code.Root
                 else code.CreateElement(tag)
-            ElementUpdater(id, tag, attributes, children) :> Updater<'a>
-        | DomNode.RenderControl(attributes, getScene) ->
+            ElementUpdater(runtime, id, tag, attributes, children) :> Updater<'a>
+        | DomNode.RenderControl(getContent) ->
             let id = code.CreateElement("div")
-            RenderControlUpdater<'a>(id, attributes, getScene) :> Updater<'a>
+            RenderControlUpdater<'a>(runtime, id, getContent) :> Updater<'a>
 
 and internal AttributeUpdater<'a>(targetId : 'a, attributes : AttributeMap) =
     static let getRequire(attributes : AttributeMap) =
@@ -228,8 +230,8 @@ and internal AttributeUpdater<'a>(targetId : 'a, attributes : AttributeMap) =
     member x.Delete(state : UpdateState<'a>, code : IHtmlBackend<'a>) =
         reader.Outputs.Consume(ref (Array.zeroCreate 4)) |> ignore
         
-and internal VoidUpdater<'a>(id : 'a, tag : string, attributes : AttributeMap) =
-    inherit Updater<'a>(id)
+and internal VoidUpdater<'a>(runtime : IRuntime, id : 'a, tag : string, attributes : AttributeMap) =
+    inherit Updater<'a>(runtime, id)
     let att = AttributeUpdater(id, attributes)
 
     override x.Boot = att.Boot
@@ -251,8 +253,8 @@ and internal VoidUpdater<'a>(id : 'a, tag : string, attributes : AttributeMap) =
     override x.PerformDelete(state : UpdateState<'a>, code : IHtmlBackend<'a>) =
         att.Delete(state, code)
 
-and internal TextUpdater<'a>(id : 'a, value : aval<string>) =
-    inherit Updater<'a>(id)
+and internal TextUpdater<'a>(runtime : IRuntime, id : 'a, value : aval<string>) =
+    inherit Updater<'a>(runtime, id)
     let mutable oldValue = None
     let mutable value = value
 
@@ -293,8 +295,8 @@ and internal TextUpdater<'a>(id : 'a, value : aval<string>) =
     override x.PerformDelete(state : UpdateState<'a>, code : IHtmlBackend<'a>) =
         value.Outputs.Remove x |> ignore
 
-and internal ElementUpdater<'a>(id : 'a, tag : string, attributes : AttributeMap, children : alist<DomNode>) =
-    inherit Updater<'a>(id)
+and internal ElementUpdater<'a>(runtime : IRuntime, id : 'a, tag : string, attributes : AttributeMap, children : alist<DomNode>) =
+    inherit Updater<'a>(runtime, id)
 
     let att = AttributeUpdater(id, attributes)
     let mutable children = children
@@ -364,7 +366,7 @@ and internal ElementUpdater<'a>(id : 'a, tag : string, attributes : AttributeMap
                                 ()
                             o.Delete(state, code)
                         | None -> ()
-                        let updater = Updater.New(node, code)
+                        let updater = Updater.New(state.runtime, node, code)
                         updaters <- IndexList.set index updater updaters
                         dirty.Add updater |> ignore
 
@@ -423,8 +425,8 @@ and internal ElementUpdater<'a>(id : 'a, tag : string, attributes : AttributeMap
         att.Delete(state, code)
         for u in updaters do u.Delete(state, code)
 
-and internal RenderControlUpdater<'a>(id : 'a, attributes : AttributeMap, getScene : RenderControlInfo -> DomScene) =
-    inherit Updater<'a>(id)
+and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : RenderControlInfo -> AttributeMap * aset<SceneHandlerEvent -> unit> * DomScene) =
+    inherit Updater<'a>(runtime, id)
 
     static let signatureCache = System.Collections.Concurrent.ConcurrentDictionary<IRuntime * int, IFramebufferSignature>()
 
@@ -436,10 +438,22 @@ and internal RenderControlUpdater<'a>(id : 'a, attributes : AttributeMap, getSce
             ], samples)
         )
 
+    let mutable handler : option<SceneHandler> = None
+
+    let currentSignature = cval Unchecked.defaultof<IFramebufferSignature>
+    let size = cval V2i.II
+    let time = cval System.DateTime.Now
+
+    let attributes, sceneHandlers, scene = 
+        getContent {
+            Runtime = runtime
+            FramebufferSignature = currentSignature
+            ViewportSize = size
+            Time = time
+        }
 
     let cursor : cval<option<Aardvark.Application.Cursor>> = cval None
-    let size = cval V2i.II
-
+    
     let samples = 
         let att = AMap.force attributes.Content 
         match HashMap.tryFind "data-samples" att with
@@ -449,24 +463,61 @@ and internal RenderControlUpdater<'a>(id : 'a, attributes : AttributeMap, getSce
             | _ -> 1
         | _ ->
             1
+
+    let handlePointerEvent (kind : SceneEventKind) (e : PointerEvent) =
+        match handler with
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, e.PointerId, V2d.Zero, int e.Button)
+        | None -> true
+        
+    let handleMouseEvent (kind : SceneEventKind) (e : MouseEvent) =
+        match handler with
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, 1, V2d.Zero, int e.Button)
+        | None -> true
+        
+    let handleWheelEvent (kind : SceneEventKind) (e : WheelEvent) =
+        match handler with
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, 1, V2d(e.DeltaX, e.DeltaY), int e.Button)
+        | None -> true
+
+    let additionalAttributesBefore =
+        att {
+            OnMouseLeave(handleMouseEvent SceneEventKind.PointerMove >> ignore)
+        }
+
     let additionalAttributes =
-        cursor |> AVal.map (function
-            | Some Cursor.None -> Some (Style [Css.Cursor "none"])
-            | Some Cursor.Arrow -> Some (Style [Css.Cursor "arrow"])
-            | Some Cursor.Default ->None
-            | Some Cursor.Text -> Some (Style [Css.Cursor "text"])
-            | Some c -> Log.warn "unhandled cursor: %A" c; None
-            | _ -> None
-        )
-        |> AttributeMap.ofOptionA
+        att {
+            cursor |> AVal.map (function
+                | Some Cursor.None -> Some (Style [Css.Cursor "none"])
+                | Some Cursor.Default ->None
+                | Some Cursor.Arrow -> Some (Style [Css.Cursor "default"])
+                | Some Cursor.Hand -> Some (Style [Css.Cursor "grab"])
+                | Some Cursor.HorizontalResize -> Some (Style [Css.Cursor "ew-resize"])
+                | Some Cursor.VerticalResize -> Some (Style [Css.Cursor "ns-resize"])
+                | Some Cursor.Text -> Some (Style [Css.Cursor "text"])
+                | Some Cursor.Crosshair -> Some (Style [Css.Cursor "crosshair"])
+                | Some c -> Log.warn "unhandled cursor: %A" c; None
+                | _ -> None
+            )
+
+            OnPointerDown(handlePointerEvent SceneEventKind.PointerDown, true)
+            OnPointerUp(handlePointerEvent SceneEventKind.PointerUp, true)
+            OnPointerMove(handlePointerEvent SceneEventKind.PointerMove, true)
+            OnClick(handleMouseEvent SceneEventKind.Click, true)
+            OnDoubleClick(handleMouseEvent SceneEventKind.DoubleClick, true)
+            OnMouseWheel(handleWheelEvent SceneEventKind.Scroll, true)
+            OnMouseEnter(handleMouseEvent SceneEventKind.PointerMove >> ignore)
+
+        }
 
     let att = 
-        new AttributeUpdater<'a>(id, AttributeMap.union attributes additionalAttributes)
+        new AttributeUpdater<'a>(id, AttributeMap.union additionalAttributesBefore (AttributeMap.union attributes additionalAttributes))
     
     let setCursor (c : option<Cursor>) =
         transact (fun () -> cursor.Value <- c)
 
-    let mutable handler : option<SceneHandler> = None
+    let handleSceneEvent (e : SceneHandlerEvent) =
+        for h in ASet.force sceneHandlers do    
+            h e
 
     override x.Boot = att.Boot
     override x.Shutdown = att.Shutdown
@@ -481,8 +532,8 @@ and internal RenderControlUpdater<'a>(id : 'a, attributes : AttributeMap, getSce
         match handler with
         | None -> 
             let signature = getFramebufferSignature state.runtime samples
-            let scene = getScene { ViewportSize = size }
-            let h = SceneHandler(signature, setCursor, scene.Scene, scene.View, scene.Proj, size) 
+            transact (fun () -> currentSignature.Value <- signature)
+            let h = new SceneHandler(signature, handleSceneEvent, setCursor, scene.Scene, scene.View, scene.Proj, size, time) 
             handler <- Some h
             code.SetupRenderer(id, h)
         | Some _ ->
@@ -493,6 +544,7 @@ and internal RenderControlUpdater<'a>(id : 'a, attributes : AttributeMap, getSce
         match handler with
         | Some h -> 
             code.DestroyRenderer(id, h)
+            h.Dispose()
             handler <- None
         | None ->
             ()

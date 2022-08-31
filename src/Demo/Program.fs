@@ -15,6 +15,7 @@ open System.Net.WebSockets
 open Microsoft.AspNetCore.Http
 open FSharp.Data.Adaptive
 open Aardvark.Base
+open Aardvark.Application
 open Aardvark.Dom
 open Aardvark.Dom.Remote
 
@@ -101,7 +102,7 @@ let js (str : string) : HttpHandler =
 
 let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit>) =
     
-    let app = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication()
+    let app = new Aardvark.Application.Slim.OpenGlApplication()
     let sockets = Dict<string, WebSocket -> Task<unit>>()
     let resources = Dict<string, string * byte[]>()
     let resourceIds = Dict<string * string, string>()
@@ -155,7 +156,6 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
 
     choose [
         routeStartsWithf "/registered/%s" (fun id next ctx -> 
-            printfn "%A" id
             match ctx.WebSockets.IsWebSocketRequest with
             | true ->
                 task {
@@ -602,6 +602,7 @@ let renderJpeg (runtime : IRuntime) (getRenderTask : IFramebufferSignature -> av
 
 open Aardvark.SceneGraph
 
+
 let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
     let content = cval 0
     let text = cval ""
@@ -627,7 +628,7 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
             h1 {
                 Id "foo"
                 Class "bar"
-                OnClick(click, true)
+                Att.OnClick(click, true)
                 content |> AVal.map string
 
             }
@@ -635,28 +636,32 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
             ul {
                 OnMouseEnter(fun e -> printfn "enter 0")
                 OnMouseLeave(fun e -> printfn "leave 0")
-                OnClick((fun e -> printfn "capture 0"; true), true)
-                OnClick((fun e -> printfn "bubble 0"; true), false)
+                Att.OnClick((fun e -> printfn "capture 0"; true), true)
+                Att.OnClick((fun e -> printfn "bubble 0"; true), false)
                 li { "Hans" }
                 li {
                     
                     OnMouseEnter(fun e -> printfn "enter 1")
                     OnMouseLeave(fun e -> printfn "leave 1")
-                    OnClick((fun e -> printfn "capture 1"; true), true)
-                    OnClick((fun e -> printfn "bubble 1"; false), false)
+                    Att.OnClick((fun e -> printfn "capture 1"; true), true)
+                    Att.OnClick((fun e -> printfn "bubble 1"; false), false)
                     ul {
                         li { 
                             "Sepp" 
                             OnMouseEnter(fun e -> printfn "enter 2")
                             OnMouseLeave(fun e -> printfn "leave 2")
-                            OnClick((fun e -> printfn "capture 2"; true), true)
-                            OnClick((fun e -> printfn "bubble 2"; true), false)
+                            Att.OnClick((fun e -> printfn "capture 2"; true), true)
+                            Att.OnClick((fun e -> printfn "bubble 2"; true), false)
                         }
                         li { "Franz" }
                     }
                 }
             }
 
+            
+            let rand = RandomSystem()
+            let markerColor = cval (rand.UniformC3f().ToC4b())
+            let marker = cval (Ray3d(V3d.NaN, V3d.Zero))
 
             pre {
                 
@@ -679,14 +684,14 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
                 
 
                 OnContextMenu(click, useCapture = true)
-                OnClick(click, true)
+                Att.OnClick(click, true)
 
-                OnPointerDown (fun e ->
+                Att.OnPointerDown (fun e ->
                     transact (fun () -> down.Add e.PointerId |> ignore)
                     //printfn "down\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
                 )
                 
-                OnPointerUp (fun e ->
+                Att.OnPointerUp (fun e ->
                     transact (fun () -> down.Remove e.PointerId |> ignore)
                     //printfn "up\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
                 )
@@ -695,7 +700,7 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
                     | true -> []
                     | false -> 
                         [
-                            OnPointerMove (fun e ->
+                            Att.OnPointerMove (fun e ->
                                 printfn "move %d: %f,%f" e.PointerId e.ClientX e.ClientY
                                 transact (fun () -> pos.Value <- V2d(e.ClientX, e.ClientY))
                             )
@@ -778,40 +783,224 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
                 }
             )
 
-
-            div {
-                Style [Width "100%"; Height "600px"; Background "red"]
-
-                renderJpeg runtime (fun signature size time ->
+            h5 { marker |> AVal.map (fun r -> if Vec.AnyNaN r.Origin then "no marker" else sprintf "%.2f %.2f %.2f" r.Origin.X r.Origin.Y r.Origin.Z) }
+            
+            let rotationTrafo (active : aval<bool>) (time : aval<System.DateTime>) =
+                let seconds = 
                     let sw = System.Diagnostics.Stopwatch.StartNew()
-                    let r = AVal.constant Trafo3d.Identity //time |> AVal.map (fun t -> Trafo3d.RotationZ(sw.Elapsed.TotalSeconds))
+                    time |> AVal.map (fun t ->
+                        sw.Elapsed.TotalSeconds
+                    )
 
-                    let view = CameraView.lookAt (V3d(4,5,6)) V3d.Zero V3d.OOI |> CameraView.viewTrafo
-                    let proj = size |> AVal.map (fun s -> Frustum.perspective 60.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
+                AVal.integrate Trafo3d.Identity time [
+                    active |> AVal.map (function
+                        | true ->
+                            seconds |> AVal.step (fun t dt v ->
+                                if dt > 0.1 then
+                                    printfn "%.3f" dt
+                                v * Trafo3d.RotationZ(dt)
+                            )
+                        | false ->
+                            AdaptiveFunc.Identity
+                    )
+                ]
 
-                    Sg.box' C4b.Red Box3d.Unit
-                    |> Sg.trafo r
-                    |> Sg.shader {
-                        do! DefaultSurfaces.trafo
-                        do! DefaultSurfaces.simpleLighting
-                    }
-                    |> Sg.viewTrafo' view
-                    |> Sg.projTrafo proj
-                    |> Sg.compile runtime signature
+            renderControl  {
+                // HTML attributes
+                Style [Width "100%"; Height "600px"; Background "black"] 
+                Att.OnMouseEnter(fun e ->
+                    printfn "enter rc"
                 )
+                Att.OnMouseLeave(fun e ->
+                    printfn "leave rc"
+                    transact (fun _ -> marker.Value <- Ray3d(V3d.NaN, V3d.Zero))
+                )
+                Attribute("data-samples", AttributeValue.String "4")
+
+                // react to resize of the RenderControl
+                RenderControl.OnResize(fun s ->
+                    Log.warn "resize: %A" s
+                )
+                RenderControl.OnRendered(fun s ->
+                    () // some code here
+                )
+
+                // get the changeable size/time for the control
+                let! size = RenderControl.ViewportSize
+                let! time = RenderControl.Time
+
+                // apply a camera
+                let view = CameraView.lookAt (V3d(3,4,5)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant
+                let proj = size |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
+                Sg.View view
+                Sg.Proj proj
+                    
+                // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
+                Att.Style [Css.Cursor "crosshair"]
+                Sg.Cursor Aardvark.Application.Cursor.None
+                
+                // setup transformation and shaders
+                let rotActive = cval true
+                Sg.Scale 3.0
+                Sg.Trafo (rotationTrafo rotActive time)
+                Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }  
+                
+             
+
+                // scene      
+                sg {
+                    // whenever something is hovered udpate the marker-arrow
+                    Sg.OnPointerEnter(fun e ->
+                        printfn "enter group"
+                        transact (fun () -> 
+                            markerColor.Value <- C4b.Red
+                            rotActive.Value <- false
+                        )
+                    )
+                    Sg.OnPointerLeave(fun e ->
+                        printfn "leave group"
+                        transact (fun () -> 
+                            markerColor.Value <- C4b.Gray
+                            rotActive.Value <- true
+                        )
+                    )
+                    Sg.OnPointerMove(fun e ->
+                        transact (fun () -> 
+                            marker.Value <- Ray3d(e.Position, e.Normal)
+                        )
+                    )
+
+                    // render a teapot and a sphere
+                    sg {
+                        Translate(0.5, 0.0, 0.0)
+                        Primitives.Teapot(C4b.Green)
+                    }
+
+                    sg {
+                        Primitives.WireSphere(V3d(-0.5, 0.0, 0.25), 0.25)
+                    }
+                    
+                    sg {
+                        Scale 0.5
+                        Translate(0.0, 0.5, 0.0)
+                        Primitives.Tetrahedron()
+                    }
+                }
+
+                // render the arrow
+                sg {
+                    Sg.NoEvents
+                    let len = 0.1
+                    let h = 0.03
+                    let radius = 0.005
+                    Primitives.Cone(marker |> AVal.map (fun r -> Cone3d(r.GetPointOnRay len, -r.Direction * h, Constant.PiQuarter / 2.0)), markerColor)
+                    Primitives.Cylinder(marker |> AVal.map (fun r -> Cylinder3d(r.Origin, r.GetPointOnRay (len - h), radius)), markerColor)
+                }
+
             }
 
-            //DomNode.RenderControl(
-            //    AttributeMap.ofList [Style [Width "200px"; Height "200px"; Background "red"]], 
-            //    fun _ -> { View = AVal.constant Trafo3d.Identity; Proj = AVal.constant Trafo3d.Identity; Scene = Applicator([], ASet.empty) }
+            //DomNode.RenderControl(fun info ->
+            //    att { 
+            //        Style [Width "100%"; Height "600px"; Background "red"] 
+            //        //Att.OnPointerMove(fun e -> printfn "move: %A %A" e.OffsetX e.OffsetY)
+            //        Att.OnMouseEnter(fun e ->
+            //            printfn "enter rc"
+            //        )
+            //        Att.OnMouseLeave(fun e ->
+            //            printfn "leave rc"
+            //            transact (fun _ -> marker.Value <- Ray3d(V3d.NaN, V3d.Zero))
+            //        )
+            //        Attribute("data-samples", AttributeValue.String "4")
+            //    },
+            //    ASet.empty, (
+            //        let view = CameraView.lookAt (V3d(3,4,5)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant
+            //        let proj = info.ViewportSize |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
+
+            //        let rotActive = cval true
+
+            //        let seconds = 
+            //            let sw = System.Diagnostics.Stopwatch.StartNew()
+            //            info.Time |> AVal.map (fun t ->
+            //                sw.Elapsed.TotalSeconds
+            //            )
+
+            //        let rot = 
+            //            AVal.integrate Trafo3d.Identity info.Time [
+            //                rotActive |> AVal.map (function
+            //                    | true ->
+            //                        seconds |> AVal.step (fun t dt v ->
+            //                            if dt > 0.1 then
+            //                                printfn "%.3f" dt
+            //                            v * Trafo3d.RotationZ(dt)
+            //                        )
+            //                    | false ->
+            //                        AdaptiveFunc.Identity
+            //                )
+            //            ]
+
+            //        //let rot =
+            //        //    rotActive |> AVal.bind (function
+            //        //    let t0 = System.DateTime.Now
+            //        //    info.Time |> AVal.map (fun t ->
+            //        //        let dt = (t - t0).TotalSeconds
+            //        //        Trafo3d.RotationZ(dt)
+            //        //    )
+
+            //        let scene = 
+            //            sg {
+            //                Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
+                            
+            //                Sg.View view
+            //                Sg.Proj proj
+            //                Sg.Scale 5.0
+            //                Sg.Translate(-1.0, 0.0, 0.0)
+            //                Sg.Trafo rot
+
+            //                Sg.Cursor Aardvark.Application.Cursor.Hand
+
+            //                Sg.OnPointerEnter(fun e ->
+            //                    printfn "enter tea"
+            //                    transact (fun () -> rotActive.Value <- false)
+            //                )
+            //                Sg.OnPointerLeave(fun e ->
+            //                    printfn "leave tea"
+            //                    transact (fun () -> 
+            //                        rotActive.Value <- true
+            //                    )
+            //                )
+            //                Sg.OnPointerMove(fun e ->
+            //                    transact (fun () -> 
+            //                        marker.Value <- Ray3d(e.Position, e.Normal)
+            //                    )
+            //                )
+            //                sg {
+            //                    Sg.NoEvents
+
+            //                    let len = 0.1
+            //                    let h = 0.03
+            //                    let radius = 0.005
+            //                    Primitives.Cone(marker |> AVal.map (fun r -> Cone3d(r.GetPointOnRay len, -r.Direction * h, Constant.PiQuarter / 2.0)))
+            //                    Primitives.Cylinder(marker |> AVal.map (fun r -> Cylinder3d(r.Origin, r.GetPointOnRay (len - h), radius)))
+            //                }
+                            
+            //                sg {
+            //                    Primitives.Teapot(C4b.Green)
+
+            //                    Translate(2.0, 0.0, 0.0)
+            //                    Primitives.WireSphere(0.5)
+            //                }
+
+
+            //            }
+
+            //        {
+            //            Scene = scene
+            //            View = view
+            //            Proj = proj
+            //        }
+            //    )
             //)
 
-            // DomNode.Element(
-            //     "h1", AttributeMap.ofList [ OnClick click ],
-            //     AList.ofList [
-            //         DomNode.Text(content |> AVal.map string)
-            //     ]
-            // )
         }
         
     let backend = RemoteHtmlBackend(server)
@@ -834,7 +1023,7 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
                     ()
         }
 
-    let u = Updater.Body(view, backend :> IHtmlBackend<_>)
+    let u = Updater.Body(runtime, view, backend :> IHtmlBackend<_>)
     u |> Updater.run state backend (fun code ->
         ctx.Execute code
     )

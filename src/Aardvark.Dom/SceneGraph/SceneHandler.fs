@@ -567,8 +567,15 @@ type private SceneHandlerFramebuffers =
         Textures                    : list<IBackendTexture>
 
     }
-                
-type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, size : aval<V2i>) =
+         
+
+type SceneHandlerEvent =
+    | Resize of V2i
+    | PreRender
+    | PostRender
+
+
+type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent -> unit, setCursor : option<Cursor> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
     static let pickBuffer = Symbol.Create "PickId"
     
     let runtime = signature.Runtime :?> IRuntime
@@ -626,7 +633,8 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
         | _ ->
             None
              
-    let renderTask, pickObjects =
+
+    let mutable renderTask, pickObjects, dispose =
         let runtime = signature.Runtime :?> IRuntime
         
         let pickId = signature.ColorAttachmentSlots
@@ -760,13 +768,14 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
           
         let clear = runtime.CompileClear (newSignature, clear { colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit C4f.Black; pickBuffer, ClearColor.op_Implicit V4i.NNNN]); depth 1.0; stencil 0})
         
-        let fboSize = cval V2i.Zero
         let realTask =
             AVal.custom (fun t ->
                 let s = fboSize.GetValue t
+
                 let rt = RenderToken.Empty
                 let outputInfo = getFramebuffers s
-              
+                trigger SceneHandlerEvent.PreRender
+
                 clear.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
@@ -778,34 +787,46 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
                 
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
                 viewportSize <- outputInfo.PickTextureResolved.Size.XY
-           
-
-
-                //outputInfo.CreateSelection()
-                //let dst = PixImage<float32>(Col.Format.Gray, V2i.II)
-                //runtime.Download(outputInfo.SelectionTexture, dst, outputInfo.SelectionTexture.MipMapLevels - 1, 0)
-                //let s = outputInfo.SelectionTexture.Size
-                //Log.line "%A" (dst.Volume.Data.[0] * float32 s.X * float32 s.Y)
-
+                    
+                
+                trigger SceneHandlerEvent.PostRender
                 
             )
         
         let task = 
             RenderTask.custom (fun (t, rt, o) ->
                 let outputInfo = getFramebuffers o.framebuffer.Size
-                if outputInfo.PickableFramebuffer.Size <> fboSize.Value then
-                    transact (fun () -> fboSize.Value <- outputInfo.PickableFramebuffer.Size)
+                if o.framebuffer.Size <> fboSize.Value then
+                    transact (fun () -> fboSize.Value <- o.framebuffer.Size)
+                    trigger (SceneHandlerEvent.Resize o.framebuffer.Size)
                 
                 realTask.GetValue t
 
                 runtime.BlitFramebuffer(outputInfo.NonPickableFramebuffer, o.framebuffer)
                 //outputInfo.RenderOutline.Run(t, rt, o)
             )
-        task, pick
+
+        let dispose() =
+            clear.Dispose()
+            renderPickable.Dispose()
+            renderNonPickable.Dispose()
+            task.Dispose()
+            newSignature.Dispose()
+            match fbos with
+            | Some o ->
+                runtime.DeleteFramebuffer o.PickableFramebuffer
+                runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                //for f in o.PickLevelFramebuffers do runtime.DeleteFramebuffer f
+                for t in o.Textures do runtime.DeleteTexture t
+                fbos <- None
+            | None ->
+                ()
+
+        task, pick, dispose
     
     
     
-    let bvh =
+    let mutable bvh =
         let transformedPickObject =
             pickObjects |> ASet.mapA (fun o ->
                 o.Trafo |> AVal.map (fun t -> o.Intersectable, o.State, t)    
@@ -835,11 +856,36 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
     let capturedScopes = Dict<int, TraversalState>()
     let mutable lastMouseInfo = None
     let mutable lastRealMouseInfo = None
+    
+    member private x.Dispose(disposing : bool) =
+        printfn "SceneHandler died: %A" disposing
+        if disposing then System.GC.SuppressFinalize x
+        pickTexture <- None
+        lastMouseInfo <- None
+        lastRealMouseInfo <- None
+        capturedScopes.Clear()
+        dispose()
+        renderTask <- RenderTask.empty
+        pickObjects <- ASet.empty
+        bvh <- AVal.constant BvhTree3d.empty
+        cursorSub.Dispose()
+
+    member x.Dispose() = x.Dispose true
+    override x.Finalize() = x.Dispose false
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+
+
+    member x.Time = time
+
+    member x.Runtime = runtime
+    member x.FramebufferSignature = signature
 
     member x.Cursor = cursor
 
     member x.RenderTask = renderTask
-   
+  
+
     member x.Read(pixel : V2i, pointerId : int) =
 
         let capturedScope =
@@ -852,7 +898,11 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
                 lastMousePosition <- Some pixel
                 let pixelResult = read pixel
 
-                let s = AVal.force size
+                let s =
+                    match pickTexture with
+                    | Some(t,_) -> t.Size.XY
+                    | None -> V2i.II
+
                 let v = AVal.force view
                 let p = AVal.force proj
                 let vp = v * p
@@ -922,22 +972,7 @@ type SceneHandler(signature : IFramebufferSignature, setCursor : option<Cursor> 
             let view = AVal.force view 
             let proj = AVal.force proj
             let scrollDelta = defaultArg scrollDelta V2d.Zero
-            //match kind with
-            //| SceneEventKind.PointerMove ->
-            //    match x.Read(pixel, pointerId) with
-            //    | Some (best, depth, viewNormal) ->
-            //        let model = TraversalState.modelTrafo best |> AVal.force
-            //        let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
-            //        let evt = PointerEvent(x, best, SceneEventKind.PointerMove, loc, ctrl, shift, alt, meta, scrollDelta, -1, -1)
-            //        TraversalState.handleMove lastOver evt (Some best)
-            //        TraversalState.handleEvent true evt best
-            //    | None -> 
-            //        let loc = SceneEventLocation(Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
-            //        let evt = PointerEvent(x, null, SceneEventKind.PointerMove, loc, ctrl, shift, alt, meta, scrollDelta, -1, -1)
-            //        TraversalState.handleMove lastOver evt None
-            //        true
-                    
-            //| _ -> 
+
             match x.Read(pixel, pointerId) with
             | Some (best, target, depth, viewNormal) ->
                 let model = TraversalState.modelTrafo best |> AVal.force
