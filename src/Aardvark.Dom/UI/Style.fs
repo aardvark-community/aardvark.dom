@@ -12,6 +12,7 @@ type StyleProperty(name : string, value : string) =
 [<AbstractClass; Sealed; AutoOpen>]
 type Css private() =
     static member Color(value : string) = StyleProperty("color", value)
+    static member Cursor(value : string) = StyleProperty("cursor", value)
     static member FontFamily(value : string) = StyleProperty("font-family", value)
     static member FontSize(value : string) = StyleProperty("font-size", value)
     static member FontStyle(value : string) = StyleProperty("font-style", value)

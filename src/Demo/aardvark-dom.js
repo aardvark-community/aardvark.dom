@@ -16,21 +16,99 @@
     // =========================================================================
     let table = [];
 
+    aardvark.nodeId = Symbol("aardvarkId");
+
     aardvark.register = (id, element) => {
-        if(id === 0) return;
+        if (id === 0) return;
+        element[aardvark.nodeId] = id;
         table[id] = element;
     };
     
     aardvark.delete = (id, n) => {
         if(id === 0) return;
         delete table[id];
-        if(n) n.remove();
+        if (n) {
+            n.remove();
+            delete n[aardvark.nodeId];
+        }
     };
     
     aardvark.get = (id) => {
         if(id === 0) return document.body;
         else return table[id];
     };
+
+    aardvark.getId = (node) => {
+        if (node) {
+            if (node.tag === "body") return 0
+            else return node[aardvark.nodeId];
+        }
+        else return undefined;
+    };
+
+    aardvark.getEventTargetId = (e) => {
+        const p = e.composedPath();
+        let i = 0;
+        while (i < p.length) {
+            let id = aardvark.getId(p[i]);
+            if (id !== undefined) return id;
+            i++;
+        }
+        return -1;
+    };
+
+    aardvark.onResize =
+        (function () {
+
+        let subscriptions = new WeakMap();
+
+        const o = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                const element = entry.target;
+                const rect = element.getBoundingClientRect();
+                const size = { width: rect.width, height: rect.height };
+                const states = subscriptions.get(element);
+                if (states) {
+                    for (let state of states) {
+                        if (state.size.width !== size.width || state.size.height !== size.height) {
+                            state.action(size);
+                            state.size = size;
+                        }
+                    }
+                }
+            }
+        })
+            
+        return function (element, action) {
+            const rect = element.getBoundingClientRect();
+            const size = { width: rect.width, height: rect.height };
+            const sub = { size: size, action: action };
+
+            let l = subscriptions.get(element);
+            if (l) { l.push(sub); }
+            else {
+                subscriptions.set(element, [sub]);
+                o.observe(element);
+            }
+
+            return function () {
+                let l = subscriptions.get(element); 
+                if (l) {
+                    const idx = l.indexOf(sub);
+                    if (idx >= 0) {
+                        l.splice(idx, 1);
+                        if (l.length == 0) {
+                            subscriptions.delete(element);
+                            o.unobserve(element);
+                        }
+                    }
+                }
+            };
+
+        };
+
+        })();
+        
 
     aardvark.createTextNode = function(id) {
         const res = document.createTextNode("");
@@ -58,12 +136,79 @@
         if(parent.firstChild) parent.insertBefore(newNode, parent.firstChild);
         else parent.appendChild(newNode);
     };
-    aardvark.appendChild = function(parentId, newNode) {
+
+    aardvark.appendChild = function (parentId, newNode) {
         let parent = aardvark.get(parentId);
         if(!parent) return;
         parent.appendChild(newNode);
     };
-    
+
+    aardvark.loadResults = {};
+
+    aardvark.parseURL = function (str) {
+        try { return new URL(str); }
+        catch (e) { return new URL(aardvark.relativePath("http", str)); }
+    };
+
+    aardvark.require = function (urls, cont) {
+        const run = function (urls, i, cont) {
+            if (i >= urls.length) {
+                cont();
+            }
+            else {
+                let u = urls[i];
+                
+                console.log("loading " + u);
+                if (u in aardvark.loadResults) {
+                    const res = aardvark.loadResults[u];
+                    res(() => run(urls, i+1, cont));
+                }
+                else {
+                    let s = null;
+                    let conts = [() => run(urls, i + 1, cont)];
+
+                    let path = aardvark.parseURL(u).pathname.toLowerCase();
+
+                    if (path.endsWith(".js")) {
+                        s = document.createElement("script");
+                        s.type = "application/javascript";
+                        s.src = u;
+                    }
+                    else if (path.endsWith(".css")) {
+                        s = document.createElement("link");
+                        s.type = "text/css";
+                        s.rel = "stylesheet";
+                        s.href = u;
+                    }
+                    else {
+                        console.warn("unknown require-type " + u)
+                        run(urls, i + 1, cont);
+                        return;
+                    }
+
+                    s.addEventListener("load", (e) => {
+                        aardvark.loadResults[u] = function (c) { c(true); };
+                        console.log("loaded " + u);
+                        for (var c of conts) {
+                            c(true);
+                        }
+                    });
+                    s.addEventListener("error", (e) => {
+                        aardvark.loadResults[u] = function (c) { c(false); };
+                        console.warn("could not load " + u);
+                        for (var c of conts) {
+                            c(false);
+                        }
+                    });
+                    aardvark.loadResults[u] = function (c) { conts.push(c); };
+                    document.head.appendChild(s);
+                }
+            }
+        };
+
+        run(urls, 0, cont)
+    };
+
     aardvark.stringify = (e) => {
         const obj = {};
         for (let k in e) {
@@ -132,6 +277,35 @@
             } 
         };
     }
+
+    aardvark.setListener = function (node, type, action, capture) {
+        const suffix = capture ? "_capture" : "_bubble";
+        const fieldName = "evt_" + type + suffix;
+
+        if (node[fieldName]) {
+            node[fieldName].destroy();
+            delete node[fieldName];
+        }
+
+        const listener = { handleEvent: action };
+        node.addEventListener(type, listener, capture);
+        const thing =
+        {
+            destroy: function () {
+                node.removeEventListener(type, listener, capture);
+            }
+        };
+        node[fieldName] = thing;
+    };
+
+    aardvark.removeListener = function (node, type, capture) {
+        const suffix = capture ? "_capture" : "_bubble";
+        const fieldName = "evt_" + type + suffix;
+        if (node[fieldName]) {
+            node[fieldName].destroy();
+            delete node[fieldName];
+        }
+    };
 
     function onReady(action) {
         if(document.readyState === "complete") {

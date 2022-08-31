@@ -1,20 +1,33 @@
 namespace Aardvark.Dom
 
 open System
+open System.Threading.Tasks
+
+type ChannelMessage =
+    | Text of string
+    | Binary of byte[]
+    | Close
+
+type IChannel =
+    abstract Send : ChannelMessage -> Task<unit>
+    abstract Receive : unit -> Task<ChannelMessage>
+
 
 type EventCode =
     {
-        Callback : option<System.Text.Json.JsonElement -> unit>
-        Code : list<string>
+        EventType : Type
+        Callback : option<Event -> bool>
+        PointerCapture : bool
     }
 
-    static member Empty = { Callback = None; Code = [] }
+    static member Empty = { EventType = typeof<Event>; Callback = None; PointerCapture = false }
 
 [<RequireQualifiedAccess>]
 type AttributeValue =
     | Set of values : Set<string>
     | String of value : string
     | Event of capture : EventCode * bubble : EventCode
+    | Execute of channels : array<IChannel -> Task<unit>> * code : (array<string> -> list<string>)
     
     static member Merge(l : AttributeValue, r : AttributeValue) =
         match r with
@@ -36,7 +49,7 @@ type AttributeValue =
                     match rb.Callback with
                     | Some rb ->
                         match lb.Callback with
-                        | Some lb -> Some (fun e -> lb e; rb e)
+                        | Some lb -> Some (fun e -> lb e && rb e)
                         | None -> Some rb
                     | None ->
                         lb.Callback
@@ -45,17 +58,33 @@ type AttributeValue =
                     match rc.Callback with
                     | Some rc ->
                         match lc.Callback with
-                        | Some lc -> Some (fun e -> lc e; rc e)
+                        | Some lc -> Some (fun e -> lc e && rc e)
                         | None -> Some rc
                     | None ->
                         lc.Callback
 
+                let bubbleEvtType =
+                    if lb.EventType.IsAssignableFrom rb.EventType then rb.EventType
+                    elif rb.EventType.IsAssignableFrom lb.EventType then lb.EventType
+                    else failwithf "inconsistent event-types: %A vs %A" lb.EventType rb.EventType
+                    
+                let captureEvtType =
+                    if lc.EventType.IsAssignableFrom rc.EventType then rc.EventType
+                    elif rc.EventType.IsAssignableFrom lc.EventType then lc.EventType
+                    else failwithf "inconsistent event-types: %A vs %A" lc.EventType rc.EventType
+
                 AttributeValue.Event(
-                    { Callback = bubble; Code = lb.Code @ rb.Code },
-                    { Callback = capture; Code = lc.Code @ rc.Code }
+                    { EventType = bubbleEvtType; Callback = bubble; PointerCapture = lb.PointerCapture || rb.PointerCapture },
+                    { EventType = captureEvtType; Callback = capture; PointerCapture = lc.PointerCapture || rc.PointerCapture }
                 )
             | _ ->
                 r
+
+        | AttributeValue.Execute(lc, ljs) ->
+            match r with
+            | AttributeValue.Execute(rc, rjs) -> 
+                AttributeValue.Execute (Array.append lc rc, fun names -> ljs (Array.take lc.Length names) @ rjs (Array.skip lc.Length names))
+            | r -> r
 
 [<Struct>]
 type Attribute(name : string, value : AttributeValue) =
@@ -100,37 +129,53 @@ type Att private() =
         let style = props |> Seq.map (fun p -> $"{p.Name}: {p.Value}") |> String.concat "; "
         Attribute("style", AttributeValue.String style)
 
-    static member inline On<'a when 'a :> Event and 'a : (static member TryParse : System.Text.Json.JsonElement -> option<'a>)>(name : string, js : string, callback : 'a -> unit, ?useCapture : bool) =
-        let run (e : System.Text.Json.JsonElement) =
-            match (^a : (static member TryParse : System.Text.Json.JsonElement -> option<'a>) (e)) with
-            | Some evt -> callback evt
-            | None -> ()
-
-        let code =
-            if System.String.IsNullOrWhiteSpace js then []
-            else [js]
-
+    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> bool, ?useCapture : bool, ?pointerCapture : bool) =
+        let pointerCapture = defaultArg pointerCapture false
         match useCapture with
         | Some true -> 
-            Attribute(name, AttributeValue.Event({ Callback = Some run; Code = code}, { Callback = None; Code = [] }))
+            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture}, EventCode.Empty))
         | _ -> 
-            Attribute(name, AttributeValue.Event({ Callback = None; Code = [] }, { Callback = Some run; Code = code}))
+            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture }))
 
-    static member inline On<'a when 'a :> Event and 'a : (static member TryParse : System.Text.Json.JsonElement -> option<'a>)>(name : string, callback : 'a -> unit, ?useCapture : bool) =
-        Att.On(name, "", callback, ?useCapture = useCapture)
+            
+    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> unit, ?useCapture : bool, ?pointerCapture : bool) =
+        let pointerCapture = defaultArg pointerCapture false
+        match useCapture with
+        | Some true -> 
+            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture}, EventCode.Empty))
+        | _ -> 
+            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture }))
 
-    static member OnContextMenu(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    static member OnContextMenu(callback : MouseEvent -> unit, ?useCapture : bool) = 
         Att.On(
             "contextmenu", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
 
-    static member OnClick(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
+    
+    static member OnMouseEnter(callback : MouseEvent -> unit) = 
+        Att.On(
+            "mouseenter", 
+            callback
+        )
+        
+    static member OnMouseLeave(callback : MouseEvent -> unit) = 
+        Att.On(
+            "mouseleave", 
+            callback
+        )
+
+    static member OnClick(callback : MouseEvent -> unit, ?useCapture : bool) = 
         Att.On(
             "click", 
-            code preventDefault stopPropagation, 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member OnClick(callback : MouseEvent -> bool, ?useCapture : bool) = 
+        Att.On(
+            "click", 
             callback, 
             ?useCapture = useCapture
         )
@@ -138,14 +183,13 @@ type Att private() =
     static member OnDoubleClick(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "dblclick", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
+    
     static member OnMouseDown(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "mousedown", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
@@ -153,7 +197,6 @@ type Att private() =
     static member OnMouseUp(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "mousedown", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
@@ -161,46 +204,50 @@ type Att private() =
     static member OnMouseMove(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "mousemove", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
-
+    
     static member OnPointerDown(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "pointerdown", 
-            "{0}.target.setPointerCapture({0}.pointerId);" + code preventDefault stopPropagation, 
             callback, 
+            pointerCapture = true,
             ?useCapture = useCapture
         )
 
     static member OnPointerUp(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "pointerup", 
-            "{0}.target.releasePointerCapture({0}.pointerId);" + code preventDefault stopPropagation, 
-            callback, 
+            callback,
+            pointerCapture = true,
             ?useCapture = useCapture
         )
 
     static member OnPointerMove(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?stopPropagation : bool) = 
         Att.On(
             "pointermove", 
-            code preventDefault stopPropagation, 
             callback, 
             ?useCapture = useCapture
         )
 
+    static member Require(url : string) = 
+        Attribute("require", AttributeValue.Set (Set.singleton url))
+
+    static member Require(urls : #seq<string>) =
+        Attribute("require", AttributeValue.Set (Set.ofSeq urls))
+
     static member OnBoot(code : string) =
-        Attribute("boot", AttributeValue.Event({ Code = [code]; Callback = None }, EventCode.Empty))
+        Attribute("boot", AttributeValue.Execute([||], fun _ -> [code]))
 
     static member OnShutdown(code : string) =
-        Attribute("shutdown", AttributeValue.Event({ Code = [code]; Callback = None }, EventCode.Empty))
+        Attribute("shutdown", AttributeValue.Execute([||], fun _ -> [code]))
 
     static member OnBoot(code : #seq<string>) =
-        Attribute("boot", AttributeValue.Event({ Code = [String.concat "\n" code]; Callback = None }, EventCode.Empty))
+        Attribute("boot", AttributeValue.Execute([||], fun _ -> [String.concat "\n" code]))
 
     static member OnShutdown(code : #seq<string>) =
-        Attribute("shutdown", AttributeValue.Event({ Code = [String.concat "\n" code]; Callback = None }, EventCode.Empty))
+        Attribute("shutdown", AttributeValue.Execute([||], fun _ -> [String.concat "\n" code]))
 
     
 open FSharp.Data.Adaptive

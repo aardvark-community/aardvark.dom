@@ -4,15 +4,29 @@ open System.Web
 open System.Text
 open System.Text.Json
 open System.Collections.Generic
+open Aardvark.Base
+open Aardvark.Rendering
 open FSharp.Data.Adaptive
 
 #nowarn "1337"
+
+type RenderControlInfo =
+    {
+        ViewportSize : aval<V2i>
+    }
+    
+type DomScene =
+    {
+        View : aval<Trafo3d>
+        Proj : aval<Trafo3d>
+        Scene : ISceneNode
+    }
 
 type DomNode =
     | VoidElement of tag : string * attributes : AttributeMap
     | Text of content : aval<string>
     | Element of tag : string * attributes : AttributeMap * children : alist<DomNode>
-
+    | RenderControl of attributes : AttributeMap * getScene : (RenderControlInfo -> DomScene)
 
 [<CompilerMessage("internal", 1337, IsHidden = true)>]
 module NodeBuilderHelpers = 

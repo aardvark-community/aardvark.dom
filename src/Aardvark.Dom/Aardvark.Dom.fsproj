@@ -6,12 +6,22 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Style.fs" />
-    <Compile Include="Events.fs" />
-    <Compile Include="Attribute.fs" />
-    <Compile Include="AttributeMap.fs" />
-    <Compile Include="DomNode.fs" />
-    <Compile Include="RemoteUpdater.fs" />
+    <Compile Include="SceneGraph\BVH.fs" />
+    <Compile Include="SceneGraph\Intersectable.fs" />
+    <Compile Include="SceneGraph\SceneEvent.fs" />
+    <Compile Include="SceneGraph\TraversalState.fs" />
+    <Compile Include="SceneGraph\SceneGraph.fs" />
+    <Compile Include="SceneGraph\SceneHandler.fs" />
+    <Compile Include="UI\Style.fs" />
+    <Compile Include="UI\Events.fs" />
+    <Compile Include="UI\Attribute.fs" />
+    <Compile Include="UI\AttributeMap.fs" />
+    <Compile Include="UI\DomNode.fs" />
+    <Compile Include="UI\Updater.fs" />
+    <Compile Include="UI\RemoteUtilities.fs" />
+    <Compile Include="Remote\TurboJpeg.fs" />
+    <Compile Include="Remote\JpegDownload.fs" />
+    <Compile Include="Remote\RemoteUpdater.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>
