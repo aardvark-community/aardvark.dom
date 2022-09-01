@@ -18,48 +18,12 @@ open Aardvark.Base
 open Aardvark.Application
 open Aardvark.Dom
 open Aardvark.Dom.Remote
+open Aardvark.Rendering
+
 
 #nowarn "3511"
 
 type Marker = class end
-
-[<AbstractClass; Sealed; Extension>]
-type WebSocketExtensions private() =
-    [<Extension>]
-    static member ReceiveMessage(socket : WebSocket, ct : CancellationToken) =
-        task {
-            let mutable buffer = Array.zeroCreate 4096
-            let! res = socket.ReceiveAsync(ArraySegment buffer, ct)
-            let typ = res.MessageType
-            if res.EndOfMessage then
-                if res.Count < buffer.Length then Array.Resize(&buffer, res.Count)
-                return typ, buffer
-            else
-                let mutable size = res.Count
-                let mutable fin = false
-                while not fin do
-                    let rem = buffer.Length - size
-                    if rem < 2048 then 
-                        let cap = buffer.Length * 2
-                        Array.Resize(&buffer, cap)
-                    
-                    let! res = socket.ReceiveAsync(ArraySegment(buffer, size, buffer.Length - size), ct)
-                    size <- size + res.Count
-                    if res.EndOfMessage then    
-                        fin <- true
-
-                if size < buffer.Length then Array.Resize(&buffer, size)
-                return typ, buffer
-        }
-    
-    [<Extension>]
-    static member ReceiveMessage(socket : WebSocket) =
-        socket.ReceiveMessage(CancellationToken.None)
-
-    [<Extension>]
-    static member Send(socket : WebSocket, message : string) =
-        let bytes = Encoding.UTF8.GetBytes message
-        socket.SendAsync(ArraySegment bytes, WebSocketMessageType.Text, true, CancellationToken.None)
 
 let aardvarkJs = 
     let ass = typeof<Marker>.Assembly
@@ -178,35 +142,6 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
                     ctx.Response.StatusCode <- 404
                     next ctx
         )
-        //route "/registered" >=> (fun next ctx -> 
-        //    match ctx.Request.Query.TryGetValue "id" with
-        //    | (true, id) ->
-        //        match ctx.WebSockets.IsWebSocketRequest with
-        //        | true ->
-        //            task {
-        //                match lock sockets (fun () -> sockets.TryGetValue id) with
-        //                | (true, handler) ->
-        //                    let! (ws : WebSocket) = ctx.WebSockets.AcceptWebSocketAsync()
-        //                    do! handler ws
-        //                    return! next ctx
-        //                | _ ->
-        //                    ctx.Response.StatusCode <- 404
-        //                    return! next ctx
-                            
-        //            }
-        //        | false ->
-        //            match lock resources (fun () -> resources.TryGetValue id) with
-        //            | (true, (mime, content)) -> 
-        //                ctx.SetContentType mime
-        //                ctx.WriteBytesAsync content
-        //            | _ ->
-        //                ctx.Response.StatusCode <- 400
-        //                next ctx
-        //    | _ ->
-        //        ctx.Response.StatusCode <- 400
-        //        next ctx
-        //)
-        
         route "/aardvark-dom.js" >=> js aardvarkJs
         route "/ping"   >=> text "pong"
         route "/"       >=> htmlString mainPage
@@ -297,9 +232,6 @@ module private ThreadingHelpers =
             )
 
 module Updater =
-
-
-
     let run (state : UpdateState<int64>) (b : RemoteHtmlBackend) (action : string -> Task) (updater : Updater<int64>) =
         let mutable running = true
         let signal = AsyncSignal(true)
@@ -316,292 +248,6 @@ module Updater =
                         do! action code
 
         }
-
-
-open Aardvark.Rendering
-
-type JpegRenderTarget(runtime : IRuntime, getTask : IFramebufferSignature -> IRenderTask, size : V2i, samples : int, quality : int) =
-    inherit AdaptiveObject()
-
-    let mutable clearTask : option<IRenderTask> = None
-    let mutable task : option<IRenderTask> = None
-    let mutable size = size
-    let mutable samples = samples
-    let mutable quality = quality
-    let mutable signature : option<IFramebufferSignature> = None
-
-    let mutable fbo : option<IFramebuffer * IRenderbuffer * IRenderbuffer> = None
-    
-    let getFramebufferSignature (samples : int) =
-        match signature with
-        | Some s when s.Samples = samples -> s
-        | _ ->
-            match signature with
-            | Some s -> s.Dispose()
-            | None -> ()
-
-            let s = runtime.CreateFramebufferSignature([DefaultSemantic.Colors, TextureFormat.Rgba8; DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8], samples)
-            signature <- Some s
-            s
-
-    let getFramebuffer (size : V2i) (samples : int) =
-        match fbo with
-        | Some (f,_,_) when f.Size = size && f.Signature.Samples = samples ->   
-            f
-        | _ ->
-            match fbo with
-            | Some (f, c, d) ->
-                runtime.DeleteFramebuffer f
-                runtime.DeleteRenderbuffer c
-                runtime.DeleteRenderbuffer d
-            | None ->
-                ()
-            let s = getFramebufferSignature samples
-            let c = runtime.CreateRenderbuffer(size, TextureFormat.Rgba8, samples)
-            let d = runtime.CreateRenderbuffer(size, TextureFormat.Depth24Stencil8, samples)
-            let f = 
-                runtime.CreateFramebuffer(s, [
-                    DefaultSemantic.Colors, c :> IFramebufferOutput
-                    DefaultSemantic.DepthStencil, d :> IFramebufferOutput
-                ])
-
-            fbo <- Some (f, c, d)
-            f
-
-    member x.Size
-        with get() = size
-        and set v = 
-            if v <> size then
-                size <- v
-                x.MarkOutdated()
-                
-    member x.Samples
-        with get() = samples
-        and set v =
-            if v <> samples then
-                samples <- v
-                x.MarkOutdated()
-                
-    member x.Quality
-        with get() = quality
-        and set v = 
-            if v <> quality then
-                quality <- v
-                x.MarkOutdated()
-
-    member x.Dispose() =
-        match fbo with
-        | Some (f, c, d) ->
-            runtime.DeleteFramebuffer f
-            runtime.DeleteRenderbuffer c
-            runtime.DeleteRenderbuffer d
-            fbo <- None
-        | None ->
-            ()
-
-        match signature with
-        | Some s -> 
-            s.Dispose()
-            signature <- None
-        | None -> ()
-        
-        match clearTask with
-        | Some t -> 
-            t.Dispose()
-            clearTask <- None
-        | None ->
-            ()
-
-        match task with
-        | Some t -> 
-            t.Dispose()
-            task <- None
-        | None ->
-            ()
-
-    member x.Run(token : AdaptiveToken) =
-        x.EvaluateAlways token (fun token ->
-            use __ = runtime.ContextLock
-            let fbo = getFramebuffer size samples
-
-            let clearTask = 
-                match clearTask with
-                | Some c -> c
-                | None -> 
-                    let t = runtime.CompileClear(fbo.Signature, clear { color C4f.Black; depth 1.0; stencil 0 })
-                    clearTask <- Some t
-                    t
-
-            let task = 
-                match task with
-                | Some t -> t
-                | None ->
-                    let t = getTask fbo.Signature
-                    task <- Some t
-                    t
-
-            clearTask.Run(token, RenderToken.Empty, fbo)
-            task.Run(token, RenderToken.Empty, fbo)
-
-            fbo.DownloadJpegColor(1.0, quality)
-        )
-
-    interface IDisposable with
-        member x.Dispose() = x.Dispose()
-
-let renderJpeg (runtime : IRuntime) (getRenderTask : IFramebufferSignature -> aval<V2i> -> aval<DateTime> -> Aardvark.Rendering.IRenderTask) =
-    Attribute(
-        "boot", 
-        AttributeValue.Execute(
-            [|     
-                fun (c : IChannel) ->
-                    task {     
-                        let tryReadInfo (msg : ChannelMessage) =
-                            match msg with
-                            | ChannelMessage.Text a ->
-                                try 
-                                    let json = System.Text.Json.JsonDocument.Parse a
-                                    let e = json.RootElement
-                                    match e.TryGetProperty "cmd" with
-                                    | (true, prop) ->
-                                        match prop.GetString() with
-                                        | "requestimage" ->
-                                            let mutable s = V2i.II
-                                            let mutable samples = 1
-                                            let mutable quality = 80
-
-                                            match e.TryGetProperty "width" with
-                                            | (true, p) -> s.X <- max 1 (p.GetInt32())
-                                            | _ -> ()
-                                            
-                                            match e.TryGetProperty "height" with
-                                            | (true, p) -> s.Y <- max 1 (p.GetInt32())
-                                            | _ -> ()
-
-                                            match e.TryGetProperty "samples" with
-                                            | (true, p) -> samples <- p.GetInt32()
-                                            | _ -> ()
-
-                                            match e.TryGetProperty "quality" with
-                                            | (true, p) -> quality <- p.GetInt32()
-                                            | _ -> ()
-
-                                            Some (s, samples, quality)
-
-                                        | _ ->
-                                            None
-                                    | _ ->
-                                        None
-                                with _ ->
-                                    None
-                            | _ ->
-                                None
-
-                        let mutable info = None
-                        while Option.isNone info do
-                            let! msg = c.Receive()
-                            info <- tryReadInfo msg
-                        let (size, samples, quality) = info.Value
-                        
-                        let t0 = DateTime.Now
-                        let dt = System.Diagnostics.Stopwatch.StartNew()
-                        let time = cval t0
-                        let size = cval size
-
-                        let rt s = getRenderTask s size time
-                        let render = new JpegRenderTarget(runtime, rt, size.Value, samples, quality)
-
-                        let mutable running = true
-
-                        let renderDirty = MVar.create ()
-                        let sub = render.AddMarkingCallback (MVar.put renderDirty)
-                        let renderThread =
-                            startThread <| fun () ->
-                                let sw = System.Diagnostics.Stopwatch.StartNew()
-                                let mm = new MultimediaTimer.Trigger(1)
-                                while running do
-                                    MVar.take renderDirty
-                                    if running then
-                                        printfn "render"
-                                        let data = render.Run(AdaptiveToken.Top)
-                                        c.Send(ChannelMessage.Binary data).Result
-                                        while sw.Elapsed.TotalMilliseconds < 16.66666666666 do
-                                            mm.Wait()
-                                    
-                                        transact (fun () -> time.Value <- t0 + dt.Elapsed)
-                                        sw.Restart()
-
-                        while running do
-                            let! msg = c.Receive()
-                            match msg with
-                            | ChannelMessage.Close -> 
-                                running <- false
-                                MVar.put renderDirty ()
-                            | msg -> 
-                                match tryReadInfo msg with
-                                | Some (newSize, samples, quality) ->
-                                    transact (fun () ->
-                                        size.Value <- newSize
-                                        render.Size <- newSize
-                                        render.Samples <- samples
-                                        render.Quality <- quality
-                                        //render.MarkOutdated()
-                                    )
-                                | None ->
-                                    ()
-                                    
-                        sub.Dispose()
-                        renderThread.Join()
-                        render.Dispose()
-
-                    }
-                                
-            |], 
-            fun n ->
-                let n = n.[0]
-                [
-                    $"{n}.binaryType = \"blob\";"
-                    $"const img = document.createElement(\"img\");"
-                    $"img.setAttribute(\"draggable\", \"false\");"
-                    $"img.style.userSelect = \"none\";"
-                    $"img.style.pointerEvents = \"none\";"
-                    $"var requestImage = function() {{"
-                    $"    const r = __THIS__.getBoundingClientRect();"
-                    $"    const sam = parseInt(__THIS__.getAttribute(\"data-samples\") || 4);"
-                    $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
-                    $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, samples: sam, quality: q }}));"
-                    $"}};" 
-                    $"let unsub = (() => {{}});"
-                    $"var start = function() {{"
-                    $"      requestImage();"
-                    $"      unsub = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
-                    $"}};"
-                    $"if({n}.readyState == 1) {{ start(); }}"
-                    $"else {{ {n}.onopen = () => {{ start() }}; }}"
-                    $"{n}.onmessage = function(e) {{"
-                    $"    if(e.data instanceof Blob) {{"
-                    $"        let url = URL.createObjectURL(e.data)"
-                    $"        let o = img.src;"
-                    $"        img.src = url;"
-                    $"        if(o) {{ URL.revokeObjectURL(o); }}"
-                    $"        requestImage();"
-                    $"    }}"
-                    $"}};"
-                    $"{n}.onerror = function(e) {{"
-                    $"  unsub();"
-                    $"}}"
-                    $"{n}.onclose = function(e) {{"
-                    $"  unsub();"
-                    $"}}"
-                    $"__THIS__.appendChild(img);"
-                    
-                ]
-        )
-    )
-
-
-open Aardvark.SceneGraph
-
 
 let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
     let content = cval 0
@@ -865,6 +511,7 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
                         )
                     )
                     Sg.OnPointerMove(fun e ->
+                        let m = e.ModelTrafo
                         transact (fun () -> 
                             marker.Value <- Ray3d(e.Position, e.Normal)
                         )
@@ -899,140 +546,112 @@ let myView (server : IServer) (runtime : IRuntime) (ctx : Context)=
 
             }
 
-            //DomNode.RenderControl(fun info ->
-            //    att { 
-            //        Style [Width "100%"; Height "600px"; Background "red"] 
-            //        //Att.OnPointerMove(fun e -> printfn "move: %A %A" e.OffsetX e.OffsetY)
-            //        Att.OnMouseEnter(fun e ->
-            //            printfn "enter rc"
-            //        )
-            //        Att.OnMouseLeave(fun e ->
-            //            printfn "leave rc"
-            //            transact (fun _ -> marker.Value <- Ray3d(V3d.NaN, V3d.Zero))
-            //        )
-            //        Attribute("data-samples", AttributeValue.String "4")
-            //    },
-            //    ASet.empty, (
-            //        let view = CameraView.lookAt (V3d(3,4,5)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant
-            //        let proj = info.ViewportSize |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
-
-            //        let rotActive = cval true
-
-            //        let seconds = 
-            //            let sw = System.Diagnostics.Stopwatch.StartNew()
-            //            info.Time |> AVal.map (fun t ->
-            //                sw.Elapsed.TotalSeconds
-            //            )
-
-            //        let rot = 
-            //            AVal.integrate Trafo3d.Identity info.Time [
-            //                rotActive |> AVal.map (function
-            //                    | true ->
-            //                        seconds |> AVal.step (fun t dt v ->
-            //                            if dt > 0.1 then
-            //                                printfn "%.3f" dt
-            //                            v * Trafo3d.RotationZ(dt)
-            //                        )
-            //                    | false ->
-            //                        AdaptiveFunc.Identity
-            //                )
-            //            ]
-
-            //        //let rot =
-            //        //    rotActive |> AVal.bind (function
-            //        //    let t0 = System.DateTime.Now
-            //        //    info.Time |> AVal.map (fun t ->
-            //        //        let dt = (t - t0).TotalSeconds
-            //        //        Trafo3d.RotationZ(dt)
-            //        //    )
-
-            //        let scene = 
-            //            sg {
-            //                Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
-                            
-            //                Sg.View view
-            //                Sg.Proj proj
-            //                Sg.Scale 5.0
-            //                Sg.Translate(-1.0, 0.0, 0.0)
-            //                Sg.Trafo rot
-
-            //                Sg.Cursor Aardvark.Application.Cursor.Hand
-
-            //                Sg.OnPointerEnter(fun e ->
-            //                    printfn "enter tea"
-            //                    transact (fun () -> rotActive.Value <- false)
-            //                )
-            //                Sg.OnPointerLeave(fun e ->
-            //                    printfn "leave tea"
-            //                    transact (fun () -> 
-            //                        rotActive.Value <- true
-            //                    )
-            //                )
-            //                Sg.OnPointerMove(fun e ->
-            //                    transact (fun () -> 
-            //                        marker.Value <- Ray3d(e.Position, e.Normal)
-            //                    )
-            //                )
-            //                sg {
-            //                    Sg.NoEvents
-
-            //                    let len = 0.1
-            //                    let h = 0.03
-            //                    let radius = 0.005
-            //                    Primitives.Cone(marker |> AVal.map (fun r -> Cone3d(r.GetPointOnRay len, -r.Direction * h, Constant.PiQuarter / 2.0)))
-            //                    Primitives.Cylinder(marker |> AVal.map (fun r -> Cylinder3d(r.Origin, r.GetPointOnRay (len - h), radius)))
-            //                }
-                            
-            //                sg {
-            //                    Primitives.Teapot(C4b.Green)
-
-            //                    Translate(2.0, 0.0, 0.0)
-            //                    Primitives.WireSphere(0.5)
-            //                }
-
-
-            //            }
-
-            //        {
-            //            Scene = scene
-            //            View = view
-            //            Proj = proj
-            //        }
-            //    )
-            //)
 
         }
         
-    let backend = RemoteHtmlBackend(server)
-    let state = { token = AdaptiveToken.Top; runtime = runtime }
-    let reader =
-        task {
-            while true do
-                let! msg = ctx.Receive()
-                match msg with
-                | Message.Text json ->
-                    try
-                        let msg = System.Text.Json.JsonDocument.Parse(json).RootElement
-                        let id = msg.GetProperty("source").GetInt64()
-                        let typ = msg.GetProperty("type").GetString()
-                        let data = msg.GetProperty "data"
-                        backend.RunCallback(id, typ, data)
-                    with _ ->
+    task {
+        let checks =
+            [
+                $"let supported = {{}};"
+                for t in RemoteHtmlBackend.ImageTransfers do
+                    if t.IsSupported runtime then
+                        let code = t.ClientCheck |> String.concat "\n"
+                        $"supported[\"{t.GetType().AssemblyQualifiedName}\"] ="
+                        $"(function() {{"
+                        $"{code}"
+                        $"}})();"
+                $"aardvark.send(aardvark.stringify(supported));"
+            ]
+        do! ctx.Execute (String.concat "\n" checks)
+        let! msg = ctx.Receive()
+
+        let transfer = 
+            match msg with
+            | Message.Text str -> 
+                let doc = System.Text.Json.JsonDocument.Parse(str)
+                RemoteHtmlBackend.ImageTransfers |> List.pick (fun t ->
+                    let name = t.GetType().AssemblyQualifiedName
+                    match doc.RootElement.TryGetProperty name with
+                    | (true, p) -> 
+                        if p.GetBoolean() then
+                            Some t
+                        else
+                            None
+                    | _ -> None
+                )
+            | _ ->  
+                failwithf "unexpected initial message: %A" msg
+
+        Log.line "using %s" (transfer.GetType().Name)
+        let backend = RemoteHtmlBackend(runtime, server, transfer)
+        let state = { token = AdaptiveToken.Top; runtime = runtime }
+
+    
+
+        let reader =
+            task {
+                while true do
+                    let! msg = ctx.Receive()
+                    match msg with
+                    | Message.Text json ->
+                        try
+                            let msg = System.Text.Json.JsonDocument.Parse(json).RootElement
+                            let id = msg.GetProperty("source").GetInt64()
+                            let typ = msg.GetProperty("type").GetString()
+                            let data = msg.GetProperty "data"
+                            backend.RunCallback(id, typ, data)
+                        with _ ->
+                            ()
+                    | _ ->
                         ()
-                | _ ->
-                    ()
-        }
+            }
 
-    let u = Updater.Body(runtime, view, backend :> IHtmlBackend<_>)
-    u |> Updater.run state backend (fun code ->
-        ctx.Execute code
-    )
-
-
+        let u = Updater.Body(runtime, view, backend :> IHtmlBackend<_>)
+        return! 
+            u |> Updater.run state backend (fun code ->
+                ctx.Execute code
+            )
+    }
 
 
 
 
+[<Struct>]
+type HMap(store : HashMap<Symbol, obj>) =
+    static member Empty = HMap HashMap.empty
+
+    member x.Add(key : TypedSymbol<'a>, value : 'a) =
+        HMap(HashMap.add key.Symbol (box value) store)
+
+    member x.Remove(key : TypedSymbol<'a>) =
+        HMap(HashMap.remove key.Symbol store)
+
+    member x.TryRemove(key : TypedSymbol<'a>) =
+        match HashMap.tryRemove key.Symbol store with
+        | Some(value, rest) ->
+            Some(value :?> 'a, HMap rest)
+        | _ ->
+            None
+
+    member x.TryFind(key : TypedSymbol<'a>) =
+        match HashMap.tryFind key.Symbol store with
+        | Some r -> Some (r :?> 'a)
+        | None -> None
+
+module HMap =
+    let empty = HMap.Empty
+
+    let add (key : TypedSymbol<'a>) (value : 'a) (map : HMap) =
+        map.Add(key, value)
+        
+    let remove (key : TypedSymbol<'a>) (map : HMap) =
+        map.Remove(key)
+
+    let tryRemove (key : TypedSymbol<'a>) (map : HMap) =
+        map.TryRemove(key)
+
+    let tryFind (key : TypedSymbol<'a>) (map : HMap) =
+        map.TryFind(key)
 
 [<EntryPoint>]
 let main _ =

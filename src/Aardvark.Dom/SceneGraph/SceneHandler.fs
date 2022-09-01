@@ -975,7 +975,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
 
             match x.Read(pixel, pointerId) with
             | Some (best, target, depth, viewNormal) ->
-                let model = TraversalState.modelTrafo best |> AVal.force
+                let model = TraversalState.modelTrafo best
                 let button = defaultArg button -1
                 let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
                 let evt = ScenePointerEvent(x, best, target, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
@@ -1004,7 +1004,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
                 match kind with
                 | SceneEventKind.Click when Option.isSome lastFocus.Value -> 
                     let button = defaultArg button -1
-                    let loc = SceneEventLocation(Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
                     let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
                     TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt None
                 | _ -> ()
@@ -1012,7 +1012,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
 
                 if Option.isSome lastOver.Value then
                     let button = defaultArg button -1
-                    let loc = SceneEventLocation(Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
                     let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
                     TraversalState.handleMove lastOver evt None
 
@@ -1027,8 +1027,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
 
             let model =
                 match newTarget with
-                | Some t -> TraversalState.modelTrafo t |> AVal.force
-                | None -> Trafo3d.Identity
+                | Some t -> TraversalState.modelTrafo t
+                | None -> AVal.constant Trafo3d.Identity
 
 
             let evtLocation =
@@ -1052,7 +1052,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
 
         match lastFocus.Value with
         | Some best ->
-            let model = TraversalState.modelTrafo best |> AVal.force
+            let model = TraversalState.modelTrafo best
             let view = AVal.force view 
             let proj = AVal.force proj
             let evtLocation =
@@ -1098,8 +1098,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
                 let proj = AVal.force proj
                 let loc, target = 
                     match scope with
-                    | Some (scope, depth, viewNormal) -> SceneEventLocation(TraversalState.modelTrafo scope |> AVal.force, view, proj, V2d px, viewportSize, depth, viewNormal), Some scope
-                    | None -> SceneEventLocation(Trafo3d.Identity, view, proj, V2d px, viewportSize, 1.0, V3d.Zero), None
+                    | Some (scope, depth, viewNormal) -> SceneEventLocation(TraversalState.modelTrafo scope, view, proj, V2d px, viewportSize, depth, viewNormal), Some scope
+                    | None -> SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d px, viewportSize, 1.0, V3d.Zero), None
 
                 let eventTarget =
                     match target with

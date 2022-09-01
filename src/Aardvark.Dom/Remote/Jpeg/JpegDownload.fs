@@ -1,5 +1,5 @@
 #nowarn "9"
-namespace Aardvark.Dom.Remote
+namespace Aardvark.Dom.Remote.Jpeg
 
 
 open System
@@ -19,7 +19,7 @@ open System.Threading.Tasks
 
 //#nowarn "9"
 [<AutoOpen>]
-module JpegTools = 
+module private JpegTools = 
     //open TurboJpegWrapper
     open System.Diagnostics
     open System.Runtime.CompilerServices

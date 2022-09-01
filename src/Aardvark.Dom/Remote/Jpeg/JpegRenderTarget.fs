@@ -1,11 +1,13 @@
-﻿namespace Aardvark.Dom.Remote
+﻿namespace Aardvark.Dom.Remote.Jpeg
 
 open System
 open FSharp.Data.Adaptive
 open Aardvark.Base
 open Aardvark.Rendering
+open Aardvark.Dom
+open Aardvark.Dom.Remote
 
-type JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignature, task : IRenderTask, size : V2i, quality : int) =
+type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignature, task : IRenderTask, size : V2i, quality : int) =
     inherit AdaptiveObject()
 
     let mutable clearTask : option<IRenderTask> = None
@@ -92,3 +94,56 @@ type JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignature, task
 
     interface IDisposable with
         member x.Dispose() = x.Dispose()
+   
+type JpegTransfer() =
+
+    [<OnAardvarkInit>]
+    static member Init() = RemoteHtmlBackend.RegisterImageTransfer<JpegTransfer>(0)
+
+    interface IImageTransfer with
+        member x.ClientCheck = ["return (URL.createObjectURL != undefined);"]
+        member x.IsSupported(runtime : IRuntime) =
+            true
+
+        member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, quality : aval<int>) =
+            let runtime = signature.Runtime :?> IRuntime
+            
+            let target = new JpegRenderTarget(runtime, signature, scene, AVal.force size, AVal.force quality)
+
+            { new TransferImageRenderer() with
+                member x.RenderFrame(token) =
+                    let s = size.GetValue token
+                    let q = quality.GetValue token
+                    transact (fun () ->
+                        target.Size <- s
+                        target.Quality <- q
+                    )
+                    target.Run(token) |> ChannelMessage.Binary
+                member x.Destroy() =
+                    target.Dispose()
+            }
+
+        member x.Boot(channelName) =
+            [
+                $"{channelName}.binaryType = \"blob\";"
+                $"const img = document.createElement(\"img\");"
+                $"img.setAttribute(\"draggable\", \"false\");"
+                $"img.style.userSelect = \"none\";"
+                $"img.style.pointerEvents = \"none\";"
+                $"__THIS__.appendChild(img);"
+            ]
+
+        member x.Shutdown(channelName) =
+            [
+                $"img.remove();"
+            ]
+
+        member x.ClientCode message =
+            [
+                $"    if({message} instanceof Blob) {{"
+                $"        let url = URL.createObjectURL({message})"
+                $"        let o = img.src;"
+                $"        img.src = url;"
+                $"        if(o) {{ URL.revokeObjectURL(o); }}"
+                $"    }}"
+            ]

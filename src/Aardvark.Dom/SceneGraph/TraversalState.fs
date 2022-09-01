@@ -185,6 +185,11 @@ module TraversalState =
             | _ ->
                 match HashMap.tryFind e.Kind (AMap.force state.EventHandlers) with
                 | Some h ->
+                    let model = 
+                        match state.Parent with
+                        | Some p -> modelTrafo p |> AVal.force
+                        | None -> Trafo3d.Identity
+                    let e = e.Transformed model
                     h.Capture |> List.iter (fun h -> h e |> ignore)
                     h.Bubble |> List.iter (fun h -> h e |> ignore)
                 | None ->
@@ -198,12 +203,17 @@ module TraversalState =
             match excl with
             | Some e when e = state -> ()
             | _ ->
-                match state.Parent with
-                | Some p -> runDown e excl p
-                | None -> ()
-
+                let model = 
+                    match state.Parent with
+                    | Some p -> 
+                        runDown e excl p
+                        modelTrafo p |> AVal.force
+                    | None -> 
+                        Trafo3d.Identity
+                        
                 match HashMap.tryFind e.Kind (AMap.force state.EventHandlers) with
                 | Some h ->
+                    let e = e.Transformed model
                     h.Capture |> List.iter (fun h -> h e |> ignore)
                     h.Bubble |> List.iter (fun h -> h e |> ignore)
                 | None ->
@@ -230,8 +240,6 @@ module TraversalState =
             | None ->
                 ()
         
-
-
     let handleMove (lastOver : cval<option<TraversalState>>) (e : SceneEvent) (state : option<TraversalState>) =
         handleDifferential lastOver SceneEventKind.PointerEnter SceneEventKind.PointerLeave e state
 

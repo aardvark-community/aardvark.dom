@@ -19,11 +19,11 @@
     <Compile Include="UI\AttributeMap.fs" />
     <Compile Include="UI\DomNode.fs" />
     <Compile Include="UI\Updater.fs" />
-    <Compile Include="UI\RemoteUtilities.fs" />
-    <Compile Include="Remote\TurboJpeg.fs" />
-    <Compile Include="Remote\JpegDownload.fs" />
-    <Compile Include="Remote\JpegRenderTarget.fs" />
-    <Compile Include="Remote\RemoteUpdater.fs" />
+    <Compile Include="Remote\RemoteUtilities.fs" />
+    <Compile Include="Remote\RemoteHtmlBackend.fs" />
+    <Compile Include="Remote\Jpeg\TurboJpeg.fs" />
+    <Compile Include="Remote\Jpeg\JpegDownload.fs" />
+    <Compile Include="Remote\Jpeg\JpegRenderTarget.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

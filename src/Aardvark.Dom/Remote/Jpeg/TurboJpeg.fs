@@ -1,4 +1,4 @@
-﻿namespace Aardvark.Dom.Remote
+﻿namespace Aardvark.Dom.Remote.Jpeg
 
 open System
 open System.Runtime.InteropServices

@@ -49,13 +49,70 @@ type IServer =
     abstract RegisterWebSocket : (System.Net.WebSockets.WebSocket -> Task<unit>) -> string * System.IDisposable
     abstract RegisterResource : mime : string * content : string -> string
 
+type internal RemoteEventCallbacks() =
+    let mutable capture : option<System.Text.Json.JsonElement -> bool> = None
+    let mutable bubble : option<System.Text.Json.JsonElement -> bool> = None
+    
+    member x.Capture
+        with get() = capture
+        and set v = capture <- v
+        
+    member x.Bubble
+        with get() = bubble
+        and set v = bubble <- v
 
-type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<string, System.Text.Json.JsonElement -> bool>>, currentId : ref<int>, parentIds : Dict<int64, int64>, childIds : Dict<int64, DictSet<int64>>, code : CodeBuilder) =
-    static let bstr (b : bool) =
-        match b with
-        | true -> "true"
-        | false -> "false"
+    member x.Item
+        with get(cap : bool) =
+            if cap then capture
+            else bubble
+        and set (cap : bool) value =
+            if cap then capture <- value
+            else bubble <- value
 
+    member x.IsEmpty =
+        Option.isNone capture && Option.isNone bubble
+        
+    member x.IsNonEmpty =
+        Option.isSome capture || Option.isSome bubble
+
+[<AbstractClass>]
+type TransferImageRenderer() =
+    inherit AdaptiveObject()
+    abstract RenderFrame : token : AdaptiveToken -> ChannelMessage
+    abstract Destroy : unit -> unit
+
+    member x.Run(token : AdaptiveToken) =
+        x.EvaluateAlways token (fun token ->
+            x.RenderFrame(token)
+        )
+
+    member private x.Dispose(disposing : bool) =
+        if disposing then System.GC.SuppressFinalize x
+        x.Destroy()
+
+    member x.Dispose() = x.Dispose true
+    override x.Finalize() = x.Dispose false
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+
+type IImageTransfer =
+    abstract IsSupported : runtime : IRuntime -> bool
+    abstract CreateRenderer : signature : IFramebufferSignature * scene : IRenderTask * size : aval<V2i> * quality : aval<int> -> TransferImageRenderer
+    abstract Boot : channelName : string -> list<string>
+    abstract Shutdown : channelName : string -> list<string>
+    abstract ClientCode : messageName : string -> list<string>
+    abstract ClientCheck : list<string> 
+
+type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer, eventListeners : Dict<int64, Dict<string, RemoteEventCallbacks>>, currentId : ref<int>, parentIds : Dict<int64, int64>, childIds : Dict<int64, DictSet<int64>>, code : CodeBuilder) =
+    static let toSortedTransferList(m) =
+        m
+        |> HashMap.toValueList
+        |> List.sortByDescending fst
+        |> List.map snd
+
+
+    static let mutable imageTransferTable = HashMap.empty
+    static let mutable imageTransfers = []
 
     let newId() =
         System.Threading.Interlocked.Increment(&currentId.contents)
@@ -71,16 +128,21 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
         | _ -> ()
         parentIds.Remove node |> ignore
 
-    let subscribedListeners = Dict<int64 * string, ref<int>>()
+    static member ImageTransfers = imageTransfers
 
-    new(server : IServer) = RemoteHtmlBackend(server, Dict(), ref 0, Dict(), Dict(), CodeBuilder())
+    static member RegisterImageTransfer<'t when 't :> IImageTransfer and 't : (new : unit -> 't)>(priority : int) =
+        imageTransferTable <- HashMap.add typeof<'t> (priority, new 't() :> IImageTransfer) imageTransferTable
+        imageTransfers <- toSortedTransferList imageTransferTable
+
+    new(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer) = RemoteHtmlBackend(runtime, server, imageTransfer, Dict(), ref 0, Dict(), Dict(), CodeBuilder())
+
 
     interface IHtmlBackend<int64> with
 
         member x.Root = 0L
 
         member x.Delay(action : IHtmlBackend<int64> -> unit) =
-            let inner = RemoteHtmlBackend(server, eventListeners, currentId, parentIds, childIds, CodeBuilder(System.Collections.Generic.Dictionary code.Variables))
+            let inner = RemoteHtmlBackend(runtime, server, imageTransfer, eventListeners, currentId, parentIds, childIds, CodeBuilder(System.Collections.Generic.Dictionary code.Variables))
             action inner
             inner.GetCode() :> obj
 
@@ -106,7 +168,6 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                                                 match prop.GetString() with
                                                 | "requestimage" ->
                                                     let mutable s = V2i.II
-                                                    let mutable samples = 1
                                                     let mutable quality = 80
 
                                                     match e.TryGetProperty "width" with
@@ -117,15 +178,11 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                                                     | (true, p) -> s.Y <- max 1 (p.GetInt32())
                                                     | _ -> ()
 
-                                                    match e.TryGetProperty "samples" with
-                                                    | (true, p) -> samples <- p.GetInt32()
-                                                    | _ -> ()
-
                                                     match e.TryGetProperty "quality" with
                                                     | (true, p) -> quality <- p.GetInt32()
                                                     | _ -> ()
-
-                                                    Some (s, samples, quality)
+                                                    
+                                                    Some (s, quality)
 
                                                 | _ ->
                                                     None
@@ -140,13 +197,14 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                                 while Option.isNone info do
                                     let! msg = c.Receive()
                                     info <- tryReadInfo msg
-                                let (size, samples, quality) = info.Value
+                                let (size, quality) = info.Value
                         
+                                let size = cval size
+                                let quality = cval quality
                                 let t0 = System.DateTime.Now
                                 let dt = System.Diagnostics.Stopwatch.StartNew()
-                                let size = cval size
-
-                                let render = new JpegRenderTarget(scene.Runtime, scene.FramebufferSignature, scene.RenderTask, size.Value, quality)
+                              
+                                let render = imageTransfer.CreateRenderer(scene.FramebufferSignature, scene.RenderTask, size, quality)
 
                                 let mutable running = true
 
@@ -160,7 +218,7 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                                             MVar.take renderDirty
                                             if running then
                                                 let data = render.Run(AdaptiveToken.Top)
-                                                c.Send(ChannelMessage.Binary data).Result
+                                                c.Send(data).Result
                                                 while sw.Elapsed.TotalMilliseconds < 16.66666666666 do
                                                     mm.Wait()
                                     
@@ -175,12 +233,10 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                                         MVar.put renderDirty ()
                                     | msg -> 
                                         match tryReadInfo msg with
-                                        | Some (newSize, samples, quality) ->
+                                        | Some (newSize, newQuality) ->
                                             transact (fun () ->
                                                 size.Value <- newSize
-                                                render.Size <- newSize
-                                                render.Quality <- quality
-                                                //render.MarkOutdated()
+                                                quality.Value <- newQuality
                                             )
                                         | None ->
                                             ()
@@ -195,16 +251,11 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                     fun n ->
                         let n = n.[0]
                         [
-                            $"{n}.binaryType = \"blob\";"
-                            $"const img = document.createElement(\"img\");"
-                            $"img.setAttribute(\"draggable\", \"false\");"
-                            $"img.style.userSelect = \"none\";"
-                            $"img.style.pointerEvents = \"none\";"
+                            String.concat "\n" (imageTransfer.Boot n)
                             $"var requestImage = function() {{"
                             $"    const r = __THIS__.getBoundingClientRect();"
-                            $"    const sam = parseInt(__THIS__.getAttribute(\"data-samples\") || 4);"
                             $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
-                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, samples: sam, quality: q }}));"
+                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, quality: q }}));"
                             $"}};" 
                             $"let unsub = (() => {{}});"
                             $"var start = function() {{"
@@ -214,21 +265,17 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                             $"if({n}.readyState == 1) {{ start(); }}"
                             $"else {{ {n}.onopen = () => {{ start() }}; }}"
                             $"{n}.onmessage = function(e) {{"
-                            $"    if(e.data instanceof Blob) {{"
-                            $"        let url = URL.createObjectURL(e.data)"
-                            $"        let o = img.src;"
-                            $"        img.src = url;"
-                            $"        if(o) {{ URL.revokeObjectURL(o); }}"
-                            $"        requestImage();"
-                            $"    }}"
+                            String.concat "\n" (imageTransfer.ClientCode "e.data")
+                            $"    requestImage();"
                             $"}};"
                             $"{n}.onerror = function(e) {{"
                             $"  unsub();"
+                            String.concat "\n" (imageTransfer.Shutdown n)
                             $"}}"
                             $"{n}.onclose = function(e) {{"
                             $"  unsub();"
+                            String.concat "\n" (imageTransfer.Shutdown n)
                             $"}}"
-                            $"__THIS__.appendChild(img);"
                     
                         ]
                 )
@@ -377,8 +424,8 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
             eventListeners.Remove node |> ignore
 
         member x.SetListener(element, name, capture, pointerCapture, evtType, callback) =
-            let refCount = subscribedListeners.GetOrCreate((element, name), fun _ -> ref 0)
-            if refCount.Value = 0 then
+            let listeners = eventListeners.GetOrCreate(element, fun _ -> Dict()).GetOrCreate(name, fun _ -> RemoteEventCallbacks())
+            if listeners.IsEmpty then
                 let var = code.GetOrCreateVar element
           
                 let body =
@@ -387,15 +434,15 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                         "e.preventDefault();"
                         if pointerCapture then
                             match name.ToLower() with
-                            | "pointerdown" -> $"{var}.setPointerCapture(e.pointerId);"
-                            | "pointerup" -> $"{var}.releasePointerCapture(e.pointerId);"
+                            | "pointerdown" -> $"e.target.setPointerCapture(e.pointerId);"
+                            | "pointerup" -> $"e.target.releasePointerCapture(e.pointerId);"
                             | _ -> ()
                         $"aardvark.trigger((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
                     ]
                 // aardvark.setListener = function (node, type, action, capture) {
                 code.AppendLine $"aardvark.setListener({var}, \"{name}\", ((e) => {{ {body} }}), false);"
 
-            refCount.Value <- refCount.Value + 1
+
             // TODO: perfromance concerns here
             let m = evtType.GetMethod("TryParse", BindingFlags.Static ||| BindingFlags.NonPublic ||| BindingFlags.Public)
             if isNull m then failwithf "non-parsable event type: %A" evtType
@@ -408,7 +455,7 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                 else name + "_bubble"
 
 
-            l.[triggerName] <- fun json ->  
+            let callback json =
                 // parse json
                 let e = m.Invoke(null, [| json :> obj |])
                 if isNull e then true
@@ -416,74 +463,25 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
                     let e = pValue.GetValue e :?> Event
                     callback e
 
-        member x.RemoveListener(element, name, capture) =   
-            match subscribedListeners.TryGetValue((element, name)) with
-            | (true, refCount) ->
-                let triggerName =
-                    if capture then name + "_capture"
-                    else name + "_bubble"
+            listeners.[capture] <- Some callback
 
-                match eventListeners.TryGetValue element with
-                | (true, l) -> 
-                    if l.Remove(triggerName) then
+        member x.RemoveListener(element, name, capture) =   
+            match eventListeners.TryGetValue element with
+            | (true, elementListeners) ->
+                match elementListeners.TryGetValue name with
+                | (true, listeners) ->
+                    listeners.[capture] <- None
+                    if listeners.IsEmpty then
                         let var = code.GetOrCreateVar element
-                        if refCount.Value = 1 then 
-                            code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
-                            subscribedListeners.Remove((element,name)) |> ignore
-                        if l.Count = 0 then eventListeners.Remove element |> ignore
+                        code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
+                        eventListeners.Remove element |> ignore
                 | _ ->
                     ()
-
-                refCount.Value <- refCount.Value - 1
             | _ ->
                 ()
 
     
     member x.RunCallback(srcId : int64, name : string, data : System.Text.Json.JsonElement) =
-
-        let rec runCapture (captures : list<JsonElement -> bool>) (nodeId : int64) =
-            match parentIds.TryGetValue nodeId with
-            | (true, pid) ->
-                match eventListeners.TryGetValue nodeId with
-                | (true, evts) ->
-                    match evts.TryGetValue $"{name}_capture" with
-                    | (true, cb) -> runCapture (cb :: captures) pid
-                    | _ -> runCapture captures pid
-                | _ ->
-                    runCapture captures pid
-            | _ ->
-                match eventListeners.TryGetValue nodeId with
-                | (true, evts) ->
-                    let cont = 
-                        match evts.TryGetValue $"{name}_capture" with
-                        | (true, cb) -> cb data
-                        | _ -> true
-                    
-                    if cont then
-                        captures |> List.forall (fun cb -> cb data)
-                    else
-                        false
-                | _ ->
-                    captures |> List.forall (fun cb -> cb data)
-
-        let rec runBubble (nodeId : int64) =
-            
-            let cont =
-                match eventListeners.TryGetValue nodeId with
-                | (true, evts) ->
-                    match evts.TryGetValue $"{name}_bubble" with
-                    | (true, cb) -> cb data
-                    | _ -> true
-                | _ ->
-                    true
-
-            if cont then
-                match parentIds.TryGetValue nodeId with
-                | (true, pid) -> runBubble pid
-                | _ -> cont
-            else
-                false
-
         let bubbles = 
             match data.TryGetProperty "bubbles" with
             | (true, prop) ->
@@ -492,21 +490,49 @@ type RemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Dict<strin
             | _ ->
                 false
 
-        if bubbles then
-            if runCapture [] srcId then
-                runBubble srcId |> ignore
-        else
-            match eventListeners.TryGetValue srcId with
-            | (true, evts) ->
-                match evts.TryGetValue $"{name}_capture" with
-                | (true, cb) -> cb data |> ignore
-                | _ -> ()
+        let rec getPath (acc : list<RemoteEventCallbacks>) (nodeId : int64) =
+            let newAcc =
+                match eventListeners.TryGetValue nodeId with
+                | (true, l) ->
+                    match l.TryGetValue name with
+                    | (true, evt) -> evt :: acc
+                    | _ -> acc
+                | _ ->
+                    acc
 
-                match evts.TryGetValue $"{name}_bubble" with
-                | (true, cb) -> cb data |> ignore
-                | _ -> ()
-            | _ ->
-                ()
+            match parentIds.TryGetValue nodeId with
+            | (true, pid) -> getPath newAcc pid
+            | _ -> newAcc
+            
+        let rec run (bubble : list<System.Text.Json.JsonElement -> bool>) (data : System.Text.Json.JsonElement) (p : list<RemoteEventCallbacks>) =
+            match p with
+            | [] -> 
+                bubble |> List.forall (fun cb -> cb data)
+            | h :: rest ->
+                let cont = 
+                    match h.Capture with
+                    | Some cb -> cb data
+                    | None -> true
+
+                if cont then
+                    let newBubble =
+                        if bubbles then
+                            match h.Bubble with
+                            | Some b -> b :: bubble
+                            | None -> bubble
+                        else
+                            match h.Bubble with
+                            | Some b -> [b]
+                            | None -> []
+
+                    run newBubble data rest
+                else
+                    false
+
+        getPath [] srcId
+        |> run [] data 
+        |> ignore
+
 
     member x.GetCode() =
         try code.ToString()
