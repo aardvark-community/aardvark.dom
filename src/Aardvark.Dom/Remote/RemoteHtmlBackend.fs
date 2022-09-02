@@ -141,7 +141,7 @@ type CodeBuilder(variables : System.Collections.Generic.Dictionary<int64, string
 
 type IServer =
     abstract RegisterWebSocket : (System.Net.WebSockets.WebSocket -> Task<unit>) -> string * System.IDisposable
-    abstract RegisterResource : mime : string * content : byte[] -> string
+    abstract RegisterResource : id : Guid * mime : string * content : byte[] -> string
 
 type internal RemoteEventCallbacks() =
     let mutable capture : option<System.Text.Json.JsonElement -> bool> = None
@@ -195,7 +195,7 @@ type Dependency =
     | Wasm of byte[]
 
 type IImageTransfer =   
-    abstract Requirements : list<string * byte[]>
+    abstract Requirements : list<System.Guid * string * byte[]>
     abstract IsSupported : runtime : IRuntime -> bool
     abstract CreateRenderer : signature : IFramebufferSignature * scene : IRenderTask * size : aval<V2i> * quality : aval<int> -> TransferImageRenderer
     abstract Boot : channelName : string -> list<string>
@@ -260,7 +260,7 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
             let urls = 
                 match imageTransfer.Requirements with
                 | [] -> Set.empty
-                | refs -> refs |> List.map (fun (mime, data) -> server.RegisterResource(mime, data)) |> Set.ofList
+                | refs -> refs |> List.map (fun (guid, mime, data) -> server.RegisterResource(guid, mime, data)) |> Set.ofList
 
             let mutable disp = Unchecked.defaultof<_>
 

@@ -136,6 +136,15 @@ type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebuff
 
 type SharedMemoryTransfer() =
 
+    let supported =
+        lazy (
+            try 
+                let shm = SharedMemory.create "test" (1 <<< 20)
+                shm.Dispose()
+            with _ ->
+                ()
+        )
+
     [<OnAardvarkInit>]
     static member Init() = RemoteHtmlBackend.RegisterImageTransfer<SharedMemoryTransfer>(100)
 
@@ -144,9 +153,7 @@ type SharedMemoryTransfer() =
 
         member x.ClientCheck = ["return (aardvark.openMapping != undefined);"]
 
-        member x.IsSupported(runtime : IRuntime) =
-            true
-
+        member x.IsSupported(runtime : IRuntime) = supported.Value
         member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, _quality : aval<int>) =
             let runtime = signature.Runtime :?> IRuntime
             

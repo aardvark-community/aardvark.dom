@@ -96,14 +96,23 @@ type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignatu
    
 type JpegTransfer() =
 
+    let supported =
+        lazy (
+            try
+                let t = new TJCompressor()
+                t.Dispose()
+                true
+            with _ ->
+                false
+        )
+
     [<OnAardvarkInit>]
     static member Init() = RemoteHtmlBackend.RegisterImageTransfer<JpegTransfer>(0)
 
     interface IImageTransfer with
         member x.Requirements = []
         member x.ClientCheck = ["return (URL.createObjectURL != undefined);"]
-        member x.IsSupported(runtime : IRuntime) =
-            true
+        member x.IsSupported(runtime : IRuntime) = supported.Value
 
         member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, quality : aval<int>) =
             let runtime = signature.Runtime :?> IRuntime

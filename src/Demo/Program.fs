@@ -71,7 +71,7 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
     let app = new Aardvark.Application.Slim.OpenGlApplication()
     let sockets = Dict<string, WebSocket -> Task<unit>>()
     let resources = Dict<string, string * byte[]>()
-    let resourceIds = Dict<string * string, string>()
+    let resourceIds = Dict<Guid, string>()
 
 
     let server =
@@ -99,10 +99,10 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
                         }
                     )
 
-                member x.RegisterResource(mime : string, content : byte[]) =
+                member x.RegisterResource(uniqueId : Guid, mime : string, content : byte[]) =
                     let hash = System.Convert.ToBase64String (sha.ComputeHash content)
                     lock resources (fun () ->
-                        match resourceIds.TryGetValue ((mime, hash)) with
+                        match resourceIds.TryGetValue uniqueId with
                         | (true, url) -> 
                             url
                         | _ -> 
@@ -118,7 +118,7 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
                             let name = sprintf "%s%s" id ext
                             let url = sprintf "/registered/%s" name
                             resources.[name] <- (mime, content)
-                            resourceIds.[(mime,hash)] <- url
+                            resourceIds.[uniqueId] <- url
                             url
                     )
         }
