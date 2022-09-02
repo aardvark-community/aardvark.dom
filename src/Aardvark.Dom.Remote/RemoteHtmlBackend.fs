@@ -214,6 +214,13 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
     static let mutable imageTransferTable = HashMap.empty
     static let mutable imageTransfers = []
 
+    static let aardvarkDom =
+        let ass = typeof<RemoteHtmlBackend>.Assembly
+        let resourceName = $"{ass.GetName().Name}.aardvark-dom.js"
+        use s = ass.GetManifestResourceStream resourceName
+        use r = new System.IO.StreamReader(s)
+        r.ReadToEnd()
+
     let renderThread = runtime.RenderThread
 
     let newId() =
@@ -238,6 +245,7 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
 
     new(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer) = RemoteHtmlBackend(runtime, server, imageTransfer, Dict(), ref 0, Dict(), Dict(), CodeBuilder())
 
+    static member AardvarkDomJavascript = aardvarkDom
 
     interface IHtmlBackend<int64> with
 
@@ -566,11 +574,12 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                     String.concat "" [
                         "if(e.bubbles) e.stopImmediatePropagation();"
                         "e.preventDefault();"
-                        if pointerCapture then
-                            match name.ToLower() with
-                            | "pointerdown" -> $"e.target.setPointerCapture(e.pointerId);"
-                            | "pointerup" -> $"e.target.releasePointerCapture(e.pointerId);"
-                            | _ -> ()
+                        //if pointerCapture then
+                        //    match name.ToLower() with
+                        //    | "pointerdown" -> $"e.target.setPointerCapture(e.pointerId);"
+                        //    | "pointerup" -> $"e.target.releasePointerCapture(e.pointerId);"
+                        //    | _ -> ()
+                        $"console.log((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
                         $"aardvark.trigger((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
                     ]
                 // aardvark.setListener = function (node, type, action, capture) {
@@ -608,7 +617,8 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                     if listeners.IsEmpty then
                         let var = code.GetOrCreateVar element
                         code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
-                        eventListeners.Remove element |> ignore
+                        if elementListeners.Remove name && elementListeners.Count = 0 then
+                            eventListeners.Remove element |> ignore
                 | _ ->
                     ()
             | _ ->

@@ -31,3 +31,4 @@ symbolCache.db
 /.fsdocs
 /output
 /.idea
+/src/Demo/Aardvark.log

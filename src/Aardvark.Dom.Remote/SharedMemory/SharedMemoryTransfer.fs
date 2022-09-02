@@ -141,8 +141,9 @@ type SharedMemoryTransfer() =
             try 
                 let shm = SharedMemory.create "test" (1 <<< 20)
                 shm.Dispose()
+                true
             with _ ->
-                ()
+                false
         )
 
     [<OnAardvarkInit>]
