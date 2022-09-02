@@ -12,6 +12,100 @@ open System.Reflection
 open System.Threading.Tasks
 open Aardvark.Dom
 open System.Threading
+open System.Runtime.CompilerServices
+open System
+
+[<AutoOpen>]
+module RuntimeThreading =
+
+    let private startRenderThread (runtime : IRuntime) (action : unit -> unit) =
+        match runtime with
+        | :? Aardvark.Rendering.GL.Runtime as runtime ->
+            startThread <| fun () ->
+                use __ = runtime.Context.ResourceLock
+                action()
+        | _ ->
+            startThread action
+
+    type private AsyncResult<'a> =
+        | Ok of 'a
+        | Error of exn
+        | Empty
+
+    module private AsyncResult =
+        let inline isEmpty (r : AsyncResult<'a>) =
+            match r with
+            | Empty -> true
+            | _ -> false
+
+    type RenderThread private (runtime : IRuntime) =
+        [<ThreadStatic; DefaultValue>]
+        static val mutable private IsRenderThread_ : bool
+
+        static let renderThreads = ConditionalWeakTable<IRuntime, RenderThread>()
+
+        let queue = new System.Collections.Concurrent.BlockingCollection<unit -> unit>()
+
+        let thread = 
+            startRenderThread runtime <| fun () ->
+                RenderThread.IsRenderThread_ <- true
+                for action in queue.GetConsumingEnumerable() do
+                    try action()
+                    with e -> Log.warn "bad: %A" e
+
+        static member IsRenderThread = RenderThread.IsRenderThread_
+
+        static member Get(runtime : IRuntime) =
+            lock renderThreads (fun () ->
+                match renderThreads.TryGetValue runtime with
+                | (true, t) -> t
+                | _ ->
+                    let t = new RenderThread(runtime)
+                    renderThreads.Add(runtime, t)
+                    t
+            )
+
+        member x.Run(action : unit -> 'a) =
+            if RenderThread.IsRenderThread_ then
+                action()
+            else
+                if queue.IsAddingCompleted then raise <| System.ObjectDisposedException "RenderThread"
+                let result = ref Empty
+                queue.Add <| fun () ->
+                    let value = 
+                        try Ok (action())
+                        with e -> Error e
+
+                    lock result (fun () ->
+                        result := value
+                        Monitor.PulseAll result
+                    )
+
+                lock result (fun () ->
+                    while AsyncResult.isEmpty result.Value do
+                        Monitor.Wait result |> ignore
+                )
+                match result.Value with
+                | Ok v -> v
+                | Error e -> raise e
+                | Empty -> failwith "impossible"
+
+        member private x.Dispose(disposing : bool) =    
+            if disposing then System.GC.SuppressFinalize x
+            queue.CompleteAdding()
+
+        member x.Dispose() = x.Dispose true
+        override x.Finalize() = x.Dispose false
+
+    type IRuntime with
+        member x.RenderThread =
+            RenderThread.Get(x)
+
+        member x.RunRender(action : unit -> 'a) =
+            let t = RenderThread.Get(x)
+            t.Run(action)
+
+
 
 type CodeBuilder(variables : System.Collections.Generic.Dictionary<int64, string>) =
     let builder = System.Text.StringBuilder()
@@ -47,7 +141,7 @@ type CodeBuilder(variables : System.Collections.Generic.Dictionary<int64, string
 
 type IServer =
     abstract RegisterWebSocket : (System.Net.WebSockets.WebSocket -> Task<unit>) -> string * System.IDisposable
-    abstract RegisterResource : mime : string * content : string -> string
+    abstract RegisterResource : mime : string * content : byte[] -> string
 
 type internal RemoteEventCallbacks() =
     let mutable capture : option<System.Text.Json.JsonElement -> bool> = None
@@ -95,7 +189,13 @@ type TransferImageRenderer() =
     interface System.IDisposable with
         member x.Dispose() = x.Dispose()
 
-type IImageTransfer =
+type Dependency =
+    | Javascript of string
+    | Css of string
+    | Wasm of byte[]
+
+type IImageTransfer =   
+    abstract Requirements : list<string * byte[]>
     abstract IsSupported : runtime : IRuntime -> bool
     abstract CreateRenderer : signature : IFramebufferSignature * scene : IRenderTask * size : aval<V2i> * quality : aval<int> -> TransferImageRenderer
     abstract Boot : channelName : string -> list<string>
@@ -113,6 +213,8 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
 
     static let mutable imageTransferTable = HashMap.empty
     static let mutable imageTransfers = []
+
+    let renderThread = runtime.RenderThread
 
     let newId() =
         System.Threading.Interlocked.Increment(&currentId.contents)
@@ -152,135 +254,167 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
         member x.SetupRenderer(element : int64, scene : SceneHandler) =
             let x = x :> IHtmlBackend<int64>
 
-            let disp =
-                x.Execute(Some element, 
-                    [|     
-                        fun (c : IChannel) ->
-                            task {     
-                                let tryReadInfo (msg : ChannelMessage) =
-                                    match msg with
-                                    | ChannelMessage.Text a ->
-                                        try 
-                                            let json = System.Text.Json.JsonDocument.Parse a
-                                            let e = json.RootElement
-                                            match e.TryGetProperty "cmd" with
-                                            | (true, prop) ->
-                                                match prop.GetString() with
-                                                | "requestimage" ->
-                                                    let mutable s = V2i.II
-                                                    let mutable quality = 80
+            let cloudLock = obj()
+            let mutable framesInCloud = 0
 
-                                                    match e.TryGetProperty "width" with
-                                                    | (true, p) -> s.X <- max 1 (p.GetInt32())
-                                                    | _ -> ()
+            let urls = 
+                match imageTransfer.Requirements with
+                | [] -> Set.empty
+                | refs -> refs |> List.map (fun (mime, data) -> server.RegisterResource(mime, data)) |> Set.ofList
+
+            let mutable disp = Unchecked.defaultof<_>
+
+            x.Require(urls, fun x ->
+                
+                disp <-
+                    x.Execute(Some element, 
+                        [|     
+                            fun (c : IChannel) ->
+                                task {     
+                                    let tryReadInfo (msg : ChannelMessage) =
+                                        match msg with
+                                        | ChannelMessage.Text a ->
+                                            try 
+                                                let json = System.Text.Json.JsonDocument.Parse a
+                                                let e = json.RootElement
+                                                match e.TryGetProperty "cmd" with
+                                                | (true, prop) ->
+                                                    match prop.GetString() with
+                                                    | "requestimage" ->
+                                                        let mutable s = V2i.II
+                                                        let mutable quality = 80
+
+                                                        match e.TryGetProperty "width" with
+                                                        | (true, p) -> s.X <- max 1 (p.GetInt32())
+                                                        | _ -> ()
                                             
-                                                    match e.TryGetProperty "height" with
-                                                    | (true, p) -> s.Y <- max 1 (p.GetInt32())
-                                                    | _ -> ()
+                                                        match e.TryGetProperty "height" with
+                                                        | (true, p) -> s.Y <- max 1 (p.GetInt32())
+                                                        | _ -> ()
 
-                                                    match e.TryGetProperty "quality" with
-                                                    | (true, p) -> quality <- p.GetInt32()
-                                                    | _ -> ()
+                                                        match e.TryGetProperty "quality" with
+                                                        | (true, p) -> quality <- p.GetInt32()
+                                                        | _ -> ()
                                                     
-                                                    Some (s, quality)
+                                                        Some (s, quality)
 
+                                                    | _ ->
+                                                        None
                                                 | _ ->
                                                     None
-                                            | _ ->
+                                            with _ ->
                                                 None
-                                        with _ ->
+                                        | _ ->
                                             None
-                                    | _ ->
-                                        None
 
-                                let mutable info = None
-                                while Option.isNone info do
-                                    let! msg = c.Receive()
-                                    info <- tryReadInfo msg
-                                let (size, quality) = info.Value
+                                    let mutable info = None
+                                    while Option.isNone info do
+                                        let! msg = c.Receive()
+                                        info <- tryReadInfo msg
+                                    let (size, quality) = info.Value
                         
-                                let size = cval size
-                                let quality = cval quality
-                                let t0 = System.DateTime.Now
-                                let dt = System.Diagnostics.Stopwatch.StartNew()
+                                    let size = cval size
+                                    let quality = cval quality
+                                    let t0 = System.DateTime.Now
+                                    let dt = System.Diagnostics.Stopwatch.StartNew()
                               
-                                let render = imageTransfer.CreateRenderer(scene.FramebufferSignature, scene.RenderTask, size, quality)
+                                    let render = imageTransfer.CreateRenderer(scene.FramebufferSignature, scene.RenderTask, size, quality)
 
-                                let mutable running = true
+                                    let mutable running = true
 
-                                let renderDirty = MVar.create ()
-                                let sub = render.AddMarkingCallback (MVar.put renderDirty)
-                                let renderThread =
-                                    startThread <| fun () ->
-                                        let sw = System.Diagnostics.Stopwatch.StartNew()
-                                        let mm = new MultimediaTimer.Trigger(1)
-                                        while running do
-                                            MVar.take renderDirty
-                                            if running then
-                                                let data = render.Run(AdaptiveToken.Top)
-                                                c.Send(data).Result
-                                                while sw.Elapsed.TotalMilliseconds < 16.66666666666 do
-                                                    mm.Wait()
+                                    let renderDirty = MVar.create ()
+                                    let sub = render.AddMarkingCallback (fun () -> MVar.put renderDirty ())
+                                    let renderThread =
+                                        startThread <| fun () ->
+                                            let sw = System.Diagnostics.Stopwatch.StartNew()
+                                            let mm = new MultimediaTimer.Trigger(1)
+                                            while running do
+                                                MVar.take renderDirty
+                                                if running then
+                                                    let didWait = 
+                                                        lock cloudLock (fun () ->
+                                                            let mutable didWait = false
+                                                            while framesInCloud > 3 do
+                                                                didWait <- true
+                                                                Log.warn "waiting: %A" framesInCloud
+                                                                Monitor.Wait cloudLock |> ignore
+
+                                                            framesInCloud <- framesInCloud + 1
+                                                            didWait
+                                                        )
+
+                                                    if didWait then
+                                                        Log.warn "resume"
+
+                                                    let data = renderThread.Run (fun () -> render.Run(AdaptiveToken.Top))
+                                                    c.Send(data).Result
+                                                    while sw.Elapsed.TotalMilliseconds < 16.66666666666 do
+                                                        mm.Wait()
                                     
-                                                transact (fun () -> scene.Time.Value <- t0 + dt.Elapsed)
-                                                sw.Restart()
+                                                    transact (fun () -> scene.Time.Value <- t0 + dt.Elapsed)
+                                                    sw.Restart()
 
-                                while running do
-                                    let! msg = c.Receive()
-                                    match msg with
-                                    | ChannelMessage.Close -> 
-                                        running <- false
-                                        MVar.put renderDirty ()
-                                    | msg -> 
-                                        match tryReadInfo msg with
-                                        | Some (newSize, newQuality) ->
-                                            transact (fun () ->
-                                                size.Value <- newSize
-                                                quality.Value <- newQuality
-                                            )
-                                        | None ->
-                                            ()
+                                    while running do
+                                        let! msg = c.Receive()
+                                        match msg with
+                                        | ChannelMessage.Close -> 
+                                            running <- false
+                                            MVar.put renderDirty ()
+                                        | msg -> 
+                                            match tryReadInfo msg with
+                                            | Some (newSize, newQuality) ->
+                                                transact (fun () ->
+                                                    size.Value <- newSize
+                                                    quality.Value <- newQuality
+                                                )
+                                            
+                                                lock cloudLock (fun () ->
+                                                    framesInCloud <- framesInCloud - 1
+                                                    Monitor.PulseAll cloudLock
+                                                )
+                                            | None ->
+                                                ()
                                     
-                                sub.Dispose()
-                                renderThread.Join()
-                                render.Dispose()
+                                    sub.Dispose()
+                                    renderThread.Join()
+                                    render.Dispose()
 
-                            }
+                                }
                                 
-                    |], 
-                    fun n ->
-                        let n = n.[0]
-                        [
-                            String.concat "\n" (imageTransfer.Boot n)
-                            $"var requestImage = function() {{"
-                            $"    const r = __THIS__.getBoundingClientRect();"
-                            $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
-                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, quality: q }}));"
-                            $"}};" 
-                            $"let unsub = (() => {{}});"
-                            $"var start = function() {{"
-                            $"      requestImage();"
-                            $"      unsub = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
-                            $"}};"
-                            $"if({n}.readyState == 1) {{ start(); }}"
-                            $"else {{ {n}.onopen = () => {{ start() }}; }}"
-                            $"{n}.onmessage = function(e) {{"
-                            String.concat "\n" (imageTransfer.ClientCode "e.data")
-                            $"    requestImage();"
-                            $"}};"
-                            $"{n}.onerror = function(e) {{"
-                            $"  unsub();"
-                            String.concat "\n" (imageTransfer.Shutdown n)
-                            $"}}"
-                            $"{n}.onclose = function(e) {{"
-                            $"  unsub();"
-                            String.concat "\n" (imageTransfer.Shutdown n)
-                            $"}}"
+                        |], 
+                        fun n ->
+                            let n = n.[0]
+                            [
+                                String.concat "\n" (imageTransfer.Boot n)
+                                $"var requestImage = function() {{"
+                                $"    const r = __THIS__.getBoundingClientRect();"
+                                $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
+                                $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, quality: q }}));"
+                                $"}};" 
+                                $"let unsub = (() => {{}});"
+                                $"var start = function() {{"
+                                $"      requestImage();"
+                                $"      unsub = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
+                                $"}};"
+                                $"if({n}.readyState == 1) {{ start(); }}"
+                                $"else {{ {n}.onopen = () => {{ start() }}; }}"
+                                $"{n}.onmessage = function(e) {{"
+                                String.concat "\n" (imageTransfer.ClientCode "e.data")
+                                $"    requestImage();"
+                                $"}};"
+                                $"{n}.onerror = function(e) {{"
+                                $"  unsub();"
+                                String.concat "\n" (imageTransfer.Shutdown n)
+                                $"}}"
+                                $"{n}.onclose = function(e) {{"
+                                $"  unsub();"
+                                String.concat "\n" (imageTransfer.Shutdown n)
+                                $"}}"
                     
-                        ]
-                )
+                            ]
+                    ) 
+            )
 
-            ()
             
         member x.DestroyRenderer(element : int64, scene : SceneHandler) =
             ()

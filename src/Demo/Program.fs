@@ -64,12 +64,15 @@ let js (str : string) : HttpHandler =
         ctx.SetContentType "text/javascript"
         ctx.WriteBytesAsync bytes
 
+let private sha = System.Security.Cryptography.SHA1.Create()
+
 let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit>) =
     
     let app = new Aardvark.Application.Slim.OpenGlApplication()
     let sockets = Dict<string, WebSocket -> Task<unit>>()
     let resources = Dict<string, string * byte[]>()
     let resourceIds = Dict<string * string, string>()
+
 
     let server =
         {
@@ -96,9 +99,10 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
                         }
                     )
 
-                member x.RegisterResource(mime : string, content : string) =
+                member x.RegisterResource(mime : string, content : byte[]) =
+                    let hash = System.Convert.ToBase64String (sha.ComputeHash content)
                     lock resources (fun () ->
-                        match resourceIds.TryGetValue ((mime, content)) with
+                        match resourceIds.TryGetValue ((mime, hash)) with
                         | (true, url) -> 
                             url
                         | _ -> 
@@ -108,12 +112,13 @@ let webApp (run : IServer -> Aardvark.Rendering.IRuntime -> Context -> Task<unit
                                 match mime with
                                 | "text/css" -> ".css"
                                 | "application/javascript" -> ".js"
+                                | "application/wasm" -> ".wasm"
                                 | _ -> ""
 
                             let name = sprintf "%s%s" id ext
                             let url = sprintf "/registered/%s" name
-                            resources.[name] <- (mime, System.Text.Encoding.UTF8.GetBytes content)
-                            resourceIds.[(mime,content)] <- url
+                            resources.[name] <- (mime, content)
+                            resourceIds.[(mime,hash)] <- url
                             url
                     )
         }

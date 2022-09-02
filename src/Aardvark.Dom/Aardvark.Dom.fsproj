@@ -23,7 +23,10 @@
     <Compile Include="Remote\RemoteHtmlBackend.fs" />
     <Compile Include="Remote\Jpeg\TurboJpeg.fs" />
     <Compile Include="Remote\Jpeg\JpegDownload.fs" />
-    <Compile Include="Remote\Jpeg\JpegRenderTarget.fs" />
+    <Compile Include="Remote\Jpeg\JpegTransfer.fs" />
+    <Compile Include="Remote\SharedMemory\SharedMemory.fs" />
+    <Compile Include="Remote\SharedMemory\RawDownload.fs" />
+    <Compile Include="Remote\SharedMemory\SharedMemoryTransfer.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

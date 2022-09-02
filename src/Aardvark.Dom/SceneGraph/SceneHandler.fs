@@ -784,7 +784,6 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
                 if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved, ImageTrafo.Identity)
                 else runtime.Copy(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
                 
-                
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
                 viewportSize <- outputInfo.PickTextureResolved.Size.XY
                     
@@ -794,16 +793,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
             )
         
         let task = 
-            RenderTask.custom (fun (t, rt, o) ->
+            RenderTask.custom (fun (t, _rt, o) ->
                 let outputInfo = getFramebuffers o.framebuffer.Size
                 if o.framebuffer.Size <> fboSize.Value then
                     transact (fun () -> fboSize.Value <- o.framebuffer.Size)
                     trigger (SceneHandlerEvent.Resize o.framebuffer.Size)
                 
                 realTask.GetValue t
-
                 runtime.BlitFramebuffer(outputInfo.NonPickableFramebuffer, o.framebuffer)
-                //outputInfo.RenderOutline.Run(t, rt, o)
             )
 
         let dispose() =
@@ -816,7 +813,6 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
             | Some o ->
                 runtime.DeleteFramebuffer o.PickableFramebuffer
                 runtime.DeleteFramebuffer o.NonPickableFramebuffer
-                //for f in o.PickLevelFramebuffers do runtime.DeleteFramebuffer f
                 for t in o.Textures do runtime.DeleteTexture t
                 fbos <- None
             | None ->

@@ -74,7 +74,6 @@ type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignatu
 
     member x.Run(token : AdaptiveToken) =
         x.EvaluateAlways token (fun token ->
-            use __ = runtime.ContextLock
             let fbo = getFramebuffer size
 
             let clearTask = 
@@ -101,6 +100,7 @@ type JpegTransfer() =
     static member Init() = RemoteHtmlBackend.RegisterImageTransfer<JpegTransfer>(0)
 
     interface IImageTransfer with
+        member x.Requirements = []
         member x.ClientCheck = ["return (URL.createObjectURL != undefined);"]
         member x.IsSupported(runtime : IRuntime) =
             true
