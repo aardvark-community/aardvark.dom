@@ -263,16 +263,19 @@ module DomNode =
                                     |> Encoding.UTF8.GetBytes
                             ws.SendAsync(ArraySegment data, WebSocketMessageType.Text, true, CancellationToken.None)
                     
-                        let rec receive () =
+                        let receive () =
                             task {
-                                let! typ, data = ws.ReceiveMessage()
-                                match typ with
-                                | WebSocketMessageType.Text -> 
-                                    return ChannelMessage.Text (Encoding.UTF8.GetString data)
-                                | WebSocketMessageType.Binary ->
-                                    return ChannelMessage.Binary data
-                                | _ ->
-                                    return! receive()
+                                let mutable result = None
+                                while Option.isNone result do
+                                    let! typ, data = ws.ReceiveMessage()
+                                    match typ with
+                                    | WebSocketMessageType.Text -> 
+                                        result <- Some (ChannelMessage.Text (Encoding.UTF8.GetString data))
+                                    | WebSocketMessageType.Binary ->
+                                        result <- Some( ChannelMessage.Binary data)
+                                    | _ ->
+                                        ()
+                                return Option.get result
                             }
                     
                         try

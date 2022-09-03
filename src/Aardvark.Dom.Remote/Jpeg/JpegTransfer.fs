@@ -7,12 +7,10 @@ open Aardvark.Rendering
 open Aardvark.Dom
 open Aardvark.Dom.Remote
 
-type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignature, task : IRenderTask, size : V2i, quality : int) =
+type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignature, task : IRenderTask, size : aval<V2i>, quality : aval<int>) =
     inherit AdaptiveObject()
 
-    let mutable clearTask : option<IRenderTask> = None
-    let mutable size = size
-    let mutable quality = quality
+    //let mutable clearTask : option<IRenderTask> = None
     let mutable fbo : option<IFramebuffer * IRenderbuffer * IRenderbuffer> = None
     
     let getFramebuffer (size : V2i) =
@@ -41,17 +39,9 @@ type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignatu
 
     member x.Size
         with get() = size
-        and set v = 
-            if v <> size then
-                size <- v
-                x.MarkOutdated()
    
     member x.Quality
         with get() = quality
-        and set v = 
-            if v <> quality then
-                quality <- v
-                x.MarkOutdated()
 
     member x.Dispose() =
         match fbo with
@@ -63,29 +53,41 @@ type private JpegRenderTarget(runtime : IRuntime, signature :IFramebufferSignatu
         | None ->
             ()
 
-        match clearTask with
-        | Some t -> 
-            t.Dispose()
-            clearTask <- None
-        | None ->
-            ()
+        //match clearTask with
+        //| Some t -> 
+        //    t.Dispose()
+        //    clearTask <- None
+        //| None ->
+        //    ()
 
     
 
     member x.Run(token : AdaptiveToken) =
         x.EvaluateAlways token (fun token ->
+            let size = size.GetValue token
+            let quality = quality.GetValue token
             let fbo = getFramebuffer size
 
-            let clearTask = 
-                match clearTask with
-                | Some c -> c
-                | None -> 
-                    let t = runtime.CompileClear(fbo.Signature, clear { color C4f.Black; depth 1.0; stencil 0 })
-                    clearTask <- Some t
-                    t
+            //let clearTask = 
+            //    match clearTask with
+            //    | Some c -> c
+            //    | None -> 
+            //        let color = background |> AVal.map (fun c ->  c.ToC4f())
+
+            //        let values =
+            //            color |> AVal.map (fun color ->
+            //                ClearValues.empty
+            //                |> ClearValues.color color
+            //                |> ClearValues.depth 1.0
+            //                |> ClearValues.stencil 0
+            //            )
+
+            //        let t = runtime.CompileClear(fbo.Signature, values)
+            //        clearTask <- Some t
+            //        t
 
 
-            clearTask.Run(token, RenderToken.Empty, fbo)
+            //clearTask.Run(token, RenderToken.Empty, fbo)
             task.Run(token, RenderToken.Empty, fbo)
 
             fbo.DownloadJpegColor(1.0, quality)
@@ -114,19 +116,24 @@ type JpegTransfer() =
         member x.ClientCheck = ["return (URL.createObjectURL != undefined);"]
         member x.IsSupported(runtime : IRuntime) = supported.Value
 
-        member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, quality : aval<int>) =
+        member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, requestData : amap<string, string>) =
             let runtime = signature.Runtime :?> IRuntime
             
-            let target = new JpegRenderTarget(runtime, signature, scene, AVal.force size, AVal.force quality)
+            let quality =
+                requestData |> AMap.tryFind "quality" |> AVal.map (function
+                    | None -> 80
+                    | Some q ->
+                        match System.Int32.TryParse q with
+                        | (true, q) ->
+                            clamp 1 100 q
+                        | _ ->
+                            80
+                )
+
+            let target = new JpegRenderTarget(runtime, signature, scene, size, quality)
 
             { new TransferImageRenderer() with
                 member x.RenderFrame(token) =
-                    let s = size.GetValue token
-                    let q = quality.GetValue token
-                    transact (fun () ->
-                        target.Size <- s
-                        target.Quality <- q
-                    )
                     target.Run(token) |> ChannelMessage.Binary
                 member x.Destroy() =
                     target.Dispose()

@@ -1,6 +1,8 @@
 namespace Aardvark.Dom
 
 open System
+open Aardvark.Base
+open Aardvark.Rendering
 
 [<AutoOpen>]
 module private EventParserUtilities =
@@ -167,6 +169,11 @@ type MouseEvent(
                 )
         }
 
+    member x.ClientPosition = V2i(clientX, clientY)
+    member x.PagePosition = V2i(pageX, pageY)
+    member x.OffsetPosition = V2i(offsetX, offsetY)
+    member x.Movement = V2i(movementX, movementY)
+
     member x.ClientX = clientX
     member x.ClientY = clientY
     member x.ScreenX = screenX
@@ -177,10 +184,10 @@ type MouseEvent(
     member x.OffsetY = offsetY
     member x.MovementX = movementX
     member x.MovementY = movementY
-    member x.CtrlKey = ctrlKey
-    member x.ShiftKey = shiftKey
-    member x.AltKey = altKey
-    member x.MetaKey = metaKey
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
     member x.Button = button
     member x.Buttons = buttons
 
@@ -245,6 +252,12 @@ type WheelEvent(
                 )
         }
 
+    member x.ClientPosition = V2i(clientX, clientY)
+    member x.PagePosition = V2i(pageX, pageY)
+    member x.OffsetPosition = V2i(offsetX, offsetY)
+    member x.Movement = V2i(movementX, movementY)
+    member x.Delta = V3i(deltaX, deltaY, deltaZ)
+
     member x.ClientX = clientX
     member x.ClientY = clientY
     member x.ScreenX = screenX
@@ -255,10 +268,10 @@ type WheelEvent(
     member x.OffsetY = offsetY
     member x.MovementX = movementX
     member x.MovementY = movementY
-    member x.CtrlKey = ctrlKey
-    member x.ShiftKey = shiftKey
-    member x.AltKey = altKey
-    member x.MetaKey = metaKey
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
     member x.Button = button
     member x.Buttons = buttons
     member x.DeltaX = deltaX
@@ -283,6 +296,11 @@ type PointerEvent(
     inherit Event(
         target, timeStamp, isTrusted, typ
     )
+    
+    member x.ClientPosition = V2i(clientX, clientY)
+    member x.PagePosition = V2i(pageX, pageY)
+    member x.OffsetPosition = V2i(offsetX, offsetY)
+    member x.Movement = V2i(movementX, movementY)
 
     member x.ClientX = clientX
     member x.ClientY = clientY
@@ -294,10 +312,10 @@ type PointerEvent(
     member x.OffsetY = offsetY
     member x.MovementX = movementX
     member x.MovementY = movementY
-    member x.CtrlKey = ctrlKey
-    member x.ShiftKey = shiftKey
-    member x.AltKey = altKey
-    member x.MetaKey = metaKey
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
     member x.Button = button
     member x.Buttons = buttons
     member x.PointerId = pointerId

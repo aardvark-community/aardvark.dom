@@ -23,6 +23,7 @@ let testApp (_runtime : IRuntime) =
 
     let down = cset[]
     let pos = cval V2d.Zero
+    let frameTime = cval ""
 
     let view = 
         body {
@@ -47,7 +48,7 @@ let testApp (_runtime : IRuntime) =
                 Att.OnClick((fun e -> printfn "bubble 0"; true), false)
                 li { "Hans" }
                 li {
-                    
+                    frameTime
                     OnMouseEnter(fun e -> printfn "enter 1")
                     OnMouseLeave(fun e -> printfn "leave 1")
                     Att.OnClick((fun e -> printfn "capture 1"; true), true)
@@ -127,61 +128,61 @@ let testApp (_runtime : IRuntime) =
             down |> ASet.sort |> AList.map (fun d ->
                 pre {
                     
-                    //OnShutdown("__THIS__.shutdown();")
+                    OnShutdown("__THIS__.shutdown();")
 
-                    //Attribute(
-                    //    "boot", 
-                    //    AttributeValue.Execute(
-                    //        [|
+                    Attribute(
+                        "boot", 
+                        AttributeValue.Execute(
+                            [|
                             
-                    //            fun (c : IChannel) ->
-                    //                task {
+                                fun (c : IChannel) ->
+                                    task {
                                     
-                    //                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                                        let sw = System.Diagnostics.Stopwatch.StartNew()
 
-                    //                    let mutable t : System.Threading.Timer = null 
-                    //                    let tick(_) =
-                    //                        try c.Send(ChannelMessage.Text (string sw.Elapsed.TotalSeconds)).Result
-                    //                        with _ -> ()
+                                        let mutable t : System.Threading.Timer = null 
+                                        let tick(_) =
+                                            try c.Send(ChannelMessage.Text (string sw.Elapsed.TotalSeconds)).Result
+                                            with _ -> ()
 
-                    //                    t <- new System.Threading.Timer(TimerCallback(tick), null, 1000, 1000)
+                                        t <- new System.Threading.Timer(TimerCallback(tick), null, 1000, 1000)
                                     
-                    //                    let rec run () =
-                    //                        task {
-                    //                            let! msg = c.Receive()
-                    //                            match msg with
-                    //                            | ChannelMessage.Close -> 
-                    //                                return ()
-                    //                            | ChannelMessage.Binary a -> 
-                    //                                printfn "%A" a
-                    //                                return! run()
-                    //                            | ChannelMessage.Text a ->
-                    //                                printfn "%A" a
-                    //                                return! run()
-                    //                        }
+                                        let run () =
+                                            task {
+                                                let mutable running = true
+                                                while running do
+                                                    let! msg = c.Receive()
+                                                    match msg with
+                                                    | ChannelMessage.Close -> 
+                                                        running <- false
+                                                    | ChannelMessage.Binary a -> 
+                                                        printfn "%A" a
+                                                    | ChannelMessage.Text a ->
+                                                        printfn "%A" a
+                                            }
 
-                    //                    do! run()
-                    //                    printfn "CLOSE"
-                    //                    t.Dispose()
-                    //                }
+                                        do! run()
+                                        printfn "CLOSE"
+                                        t.Dispose()
+                                    }
                                 
-                    //        |], 
-                    //        fun n ->
-                    //            let n = n.[0]
-                    //            [
-                    //                $"{n}.onmessage = (e) => {{"
-                    //                $"  console.log(\"got\", e.data); "
-                    //                $"  {n}.send(e.data);"
-                    //                $"  let t = parseFloat(e.data);"
-                    //                $"  if(t >= 10.0) {n}.close();"
-                    //                $"}};"
-                    //                $"{n}.onclose = (e) => {{"
-                    //                $"  console.log(\"close\"); "
-                    //                $"}};"
-                    //                $"__THIS__.shutdown = () => {{ console.warn(\"shutdown\"); }}";
-                    //            ]
-                    //    )
-                    //)
+                            |], 
+                            fun n ->
+                                let n = n.[0]
+                                [
+                                    $"{n}.onmessage = (e) => {{"
+                                    $"  console.log(\"got\", e.data); "
+                                    $"  {n}.send(e.data);"
+                                    $"  let t = parseFloat(e.data);"
+                                    $"  if(t >= 10.0) {n}.close();"
+                                    $"}};"
+                                    $"{n}.onclose = (e) => {{"
+                                    $"  console.log(\"close\"); "
+                                    $"}};"
+                                    $"__THIS__.shutdown = () => {{ console.warn(\"shutdown\"); }}";
+                                ]
+                        )
+                    )
 
 
                     $"pointer{d}"
@@ -212,7 +213,7 @@ let testApp (_runtime : IRuntime) =
 
             renderControl  {
                 // HTML attributes
-                Style [Width "100%"; Height "600px"; Background "black"] 
+                Style [Width "100%"; Height "600px"; Background "#202124"] 
                 Att.OnMouseEnter(fun e ->
                     printfn "enter rc"
                 )
@@ -220,6 +221,10 @@ let testApp (_runtime : IRuntime) =
                     printfn "leave rc"
                     transact (fun _ -> marker.Value <- Ray3d(V3d.NaN, V3d.Zero))
                 )
+
+                Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true)
+                Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true, useCapture = true)
+
                 Attribute("data-samples", AttributeValue.String "4")
 
                 // react to resize of the RenderControl
@@ -227,6 +232,8 @@ let testApp (_runtime : IRuntime) =
                     Log.warn "resize: %A" s
                 )
                 RenderControl.OnRendered(fun s ->
+                    if s.FrameTime <> MicroTime.Zero then
+                        transact (fun () -> frameTime.Value <- sprintf "%.3fms"  s.FrameTime.TotalMilliseconds)
                     () // some code here
                 )
 
@@ -309,6 +316,7 @@ let testApp (_runtime : IRuntime) =
         }
         
     view
+
 
 [<EntryPoint>]
 let main _ =

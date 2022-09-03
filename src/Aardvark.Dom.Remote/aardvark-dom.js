@@ -150,6 +150,39 @@
         catch (e) { return new URL(aardvark.relativePath("http", str)); }
     };
 
+    const pointerCaptureSym = Symbol("changePointerCapture");
+    const preventDefaultSym = Symbol("preventDefault");
+
+    aardvark.setListenerFlags = function (node, evtName, pointerCapture, preventDefault) {
+        let captureDict = node[pointerCaptureSym];
+        if (!captureDict) {
+            captureDict = {};
+            node[pointerCaptureSym] = captureDict;
+        }
+
+        let preventDefaultDict = node[preventDefaultSym];
+        if (!preventDefaultDict) {
+            preventDefaultDict = {};
+            node[preventDefaultSym] = preventDefaultDict;
+        }
+
+        captureDict[evtName] = pointerCapture;
+        preventDefaultDict[evtName] = preventDefault;
+    };
+
+    aardvark.getListenerFlags = function (node, evtName) {
+        let result = { pointerCapture: false, preventDefault: false };
+
+        let captureDict = node[pointerCaptureSym];
+        if (captureDict) result.pointerCapture = captureDict[evtName] || false;
+
+        let preventDefaultDict = node[preventDefaultSym];
+        if (preventDefaultDict) result.preventDefault = preventDefaultDict[evtName] || false;
+        return result;
+    };
+
+
+
     aardvark.require = function (urls, cont) {
         const run = function (urls, i, cont) {
             if (i >= urls.length) {
@@ -262,7 +295,7 @@
         return protocol + "://" + document.location.host + path + q;
     };
 
-    aardvark.trigger = function(srcId, typ, evt) {
+    aardvark.trigger = function (srcId, typ, evt) {
         aardvark.send(aardvark.stringify({ source : srcId, type : typ, data : evt }));
     };
 
@@ -369,6 +402,15 @@
         node[fieldName] = thing;
     };
 
+    aardvark.getDataAttributeDict = function (node) {
+        let dict = {}
+        node.getAttributeNames().filter((n) => n.startsWith("data-")).forEach((n) => {
+            dict[n.substr(5)] = node.getAttribute(n);
+        });
+        return dict;
+    }
+
+
     aardvark.removeListener = function (node, type, capture) {
         const suffix = capture ? "_capture" : "_bubble";
         const fieldName = "evt_" + type + suffix;
@@ -376,6 +418,7 @@
             node[fieldName].destroy();
             delete node[fieldName];
         }
+        aardvark.setListenerFlags(node, type, false, false);
     };
 
     function onReady(action) {

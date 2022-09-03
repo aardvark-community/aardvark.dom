@@ -33,7 +33,7 @@ type IHtmlBackend<'a> =
     abstract InsertBefore : ref : 'a * node : 'a -> unit
     abstract Remove : 'a -> unit
 
-    abstract SetListener : element : 'a * evtName : string * useCapture : bool * pointerCapture : bool * evtType : System.Type * callback : (Event -> bool) -> unit
+    abstract SetListener : element : 'a * evtName : string * useCapture : bool * preventDefault : bool * pointerCapture : bool * evtType : System.Type * callback : (Event -> bool) -> unit
     abstract RemoveListener : element : 'a * evtName : string * useCapture : bool -> unit
 
     abstract Require : urls : Set<string> * (IHtmlBackend<'a> -> unit) -> unit
@@ -165,14 +165,14 @@ and internal AttributeUpdater<'a>(targetId : 'a, attributes : AttributeMap) =
                     | AttributeValue.Event(capture, bubble) ->
                         match capture.Callback with
                         | Some c ->
-                            code.SetListener(targetId, key, true, capture.PointerCapture, capture.EventType, c)
+                            code.SetListener(targetId, key, true, capture.PreventDefault, capture.PointerCapture, capture.EventType, c)
                         | None ->
                             code.RemoveListener(targetId, key, true)
 
                             
                         match bubble.Callback with
                         | Some c ->
-                            code.SetListener(targetId, key, false, bubble.PointerCapture, bubble.EventType, c)
+                            code.SetListener(targetId, key, false, bubble.PreventDefault, bubble.PointerCapture, bubble.EventType, c)
                         | None ->
                             code.RemoveListener(targetId, key, false)
 
@@ -185,8 +185,7 @@ and internal AttributeUpdater<'a>(targetId : 'a, attributes : AttributeMap) =
                         code.RemoveAttribute(targetId, key)
                     | None ->
                         ()
-    
-
+   
     member x.Require =
         require.Value
 
@@ -425,7 +424,7 @@ and internal ElementUpdater<'a>(runtime : IRuntime, id : 'a, tag : string, attri
         att.Delete(state, code)
         for u in updaters do u.Delete(state, code)
 
-and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : RenderControlInfo -> AttributeMap * aset<SceneHandlerEvent -> unit> * DomScene) =
+and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : RenderControlInfo -> AttributeMap * amap<RenderControlEventKind, RenderControlEventInfo -> unit> * DomScene) =
     inherit Updater<'a>(runtime, id)
 
     static let signatureCache = System.Collections.Concurrent.ConcurrentDictionary<IRuntime * int, IFramebufferSignature>()
@@ -466,17 +465,17 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
 
     let handlePointerEvent (kind : SceneEventKind) (e : PointerEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, e.PointerId, V2d.Zero, int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, int e.Button)
         | None -> true
         
     let handleMouseEvent (kind : SceneEventKind) (e : MouseEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, 1, V2d.Zero, int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, int e.Button)
         | None -> true
         
     let handleWheelEvent (kind : SceneEventKind) (e : WheelEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.CtrlKey, e.ShiftKey, e.AltKey, e.MetaKey, 1, V2d(e.DeltaX, e.DeltaY), int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d(e.DeltaX, e.DeltaY), int e.Button)
         | None -> true
 
     let additionalAttributesBefore =
@@ -515,9 +514,10 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
     let setCursor (c : option<Cursor>) =
         transact (fun () -> cursor.Value <- c)
 
-    let handleSceneEvent (e : SceneHandlerEvent) =
-        for h in ASet.force sceneHandlers do    
-            h e
+    let handleSceneEvent (e : RenderControlEvent) =
+        match HashMap.tryFind e.Kind (AMap.force sceneHandlers) with
+        | Some h -> h e.Info
+        | None -> ()
 
     override x.Boot = att.Boot
     override x.Shutdown = att.Shutdown

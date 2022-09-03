@@ -11,7 +11,7 @@ open Microsoft.FSharp.NativeInterop
 
 #nowarn "9"
 
-type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : V2i) =
+type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : aval<V2i>) =
     inherit AdaptiveObject()
 
     static let randomString() =
@@ -29,12 +29,11 @@ type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebuff
 
 
 
-    let mutable clearTask : option<IRenderTask> = None
-    let mutable size = size
+    //let mutable clearTask : option<IRenderTask> = None
     let mutable fbo : option<IFramebuffer * IRenderbuffer * IRenderbuffer> = None
     
-    let mutable shmSize = size
-    let mutable shm = newSharedMemory (getMappingSize size)
+    let mutable shmSize = AVal.force size
+    let mutable shm = newSharedMemory (getMappingSize shmSize)
 
     let mutable downloader : option<IDownloader> = None //renderThread.Run (fun () -> RawDownloader.create runtime signature.Samples)
     
@@ -64,10 +63,6 @@ type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebuff
 
     member x.Size
         with get() = size
-        and set v = 
-            if v <> size then
-                size <- v
-                x.MarkOutdated()
 
     member x.Dispose() =
         shm.Dispose()
@@ -86,17 +81,18 @@ type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebuff
         | None ->
             ()
 
-        match clearTask with
-        | Some t -> 
-            t.Dispose()
-            clearTask <- None
-        | None ->
-            ()
+        //match clearTask with
+        //| Some t -> 
+        //    t.Dispose()
+        //    clearTask <- None
+        //| None ->
+        //    ()
 
 
     member x.Run(token : AdaptiveToken) =
         x.EvaluateAlways token (fun token ->
-        
+            let size = size.GetValue token
+
             if shmSize <> size then
                 shmSize <- size
                 let mapSize = getMappingSize size
@@ -114,16 +110,25 @@ type private SharedMemoryRenderTarget(runtime : IRuntime, signature : IFramebuff
                     downloader <- Some d
                     d
 
-            let clearTask = 
-                match clearTask with
-                | Some c -> c
-                | None -> 
-                    let t = runtime.CompileClear(fbo.Signature, clear { color C4f.Black; depth 1.0; stencil 0 })
-                    clearTask <- Some t
-                    t
+            //let clearTask = 
+            //    match clearTask with
+            //    | Some c -> c
+            //    | None -> 
+            //        let color = background |> AVal.map (fun c ->  c.ToC4f())
+
+            //        let values =
+            //            color |> AVal.map (fun color ->
+            //                ClearValues.empty
+            //                |> ClearValues.color color
+            //                |> ClearValues.depth 1.0
+            //                |> ClearValues.stencil 0
+            //            )
+            //        let t = runtime.CompileClear(fbo.Signature, values)
+            //        clearTask <- Some t
+            //        t
 
             
-            clearTask.Run(token, RenderToken.Empty, fbo)
+            //clearTask.Run(token, RenderToken.Empty, fbo)
             task.Run(token, RenderToken.Empty, fbo)
 
             downloader.Download(fbo, shm.Pointer)
@@ -155,17 +160,14 @@ type SharedMemoryTransfer() =
         member x.ClientCheck = ["return (aardvark.openMapping != undefined);"]
 
         member x.IsSupported(runtime : IRuntime) = supported.Value
-        member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, _quality : aval<int>) =
+        member x.CreateRenderer(signature : IFramebufferSignature, scene : IRenderTask, size : aval<V2i>, _requestData : amap<string, string>) =
             let runtime = signature.Runtime :?> IRuntime
             
-            let target = new SharedMemoryRenderTarget(runtime, signature, scene, AVal.force size)
+            let target = new SharedMemoryRenderTarget(runtime, signature, scene, size)
 
             { new TransferImageRenderer() with
                 member x.RenderFrame(token) =
                     let s = size.GetValue token
-                    transact (fun () ->
-                        target.Size <- s
-                    )
                     let (name, size, length) = target.Run(token)
                     let json = $"{{ \"name\": \"{name}\", \"length\": {length}, \"size\": {{ \"width\": {size.X}, \"height\": {size.Y} }} }}"
                     ChannelMessage.Text json

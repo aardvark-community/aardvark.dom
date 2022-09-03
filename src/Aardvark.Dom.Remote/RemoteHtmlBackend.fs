@@ -143,14 +143,22 @@ type IServer =
     abstract RegisterWebSocket : (System.Net.WebSockets.WebSocket -> Task<unit>) -> string * System.IDisposable
     abstract RegisterResource : id : Guid * mime : string * content : byte[] -> string
 
+
+type internal RemoveEventHandler = { Callback : option<System.Text.Json.JsonElement -> bool>; PointerCapture : bool; PreventDefault : bool } with
+    member x.IsEmpty = Option.isNone x.Callback
+    static member Empty = { Callback = None; PointerCapture = false; PreventDefault = false }
+
 type internal RemoteEventCallbacks() =
-    let mutable capture : option<System.Text.Json.JsonElement -> bool> = None
-    let mutable bubble : option<System.Text.Json.JsonElement -> bool> = None
-    
+    let mutable capture = RemoveEventHandler.Empty
+    let mutable bubble = RemoveEventHandler.Empty
+
+    member x.PointerCapture = capture.PointerCapture || bubble.PointerCapture
+    member x.PreventDefault = capture.PreventDefault || bubble.PreventDefault
+
     member x.Capture
         with get() = capture
         and set v = capture <- v
-        
+          
     member x.Bubble
         with get() = bubble
         and set v = bubble <- v
@@ -164,10 +172,10 @@ type internal RemoteEventCallbacks() =
             else bubble <- value
 
     member x.IsEmpty =
-        Option.isNone capture && Option.isNone bubble
+        capture.IsEmpty && bubble.IsEmpty
         
     member x.IsNonEmpty =
-        Option.isSome capture || Option.isSome bubble
+        not capture.IsEmpty || not bubble.IsEmpty
 
 [<AbstractClass>]
 type TransferImageRenderer() =
@@ -197,11 +205,123 @@ type Dependency =
 type IImageTransfer =   
     abstract Requirements : list<System.Guid * string * byte[]>
     abstract IsSupported : runtime : IRuntime -> bool
-    abstract CreateRenderer : signature : IFramebufferSignature * scene : IRenderTask * size : aval<V2i> * quality : aval<int> -> TransferImageRenderer
+    abstract CreateRenderer : signature : IFramebufferSignature * scene : IRenderTask * size : aval<V2i> * requestData : amap<string, string> -> TransferImageRenderer
     abstract Boot : channelName : string -> list<string>
     abstract Shutdown : channelName : string -> list<string>
     abstract ClientCode : messageName : string -> list<string>
     abstract ClientCheck : list<string> 
+
+module private EventParser =
+    open Aardvark.Base.IL
+    open Microsoft.FSharp.Reflection
+    let private cache = System.Collections.Concurrent.ConcurrentDictionary<Type, System.Text.Json.JsonElement -> option<Event>>()
+
+    let private cilSupported =  
+        try
+            let test : int -> int =
+                cil { 
+                    do! IL.ldarg 0
+                    do! IL.ldconst 10
+                    do! IL.add
+                    do! IL.ret
+                }
+            test 1 = 11
+        with _ ->
+            false
+
+    let getParser (typ : Type) =
+        cache.GetOrAdd(typ, System.Func<_,_>(fun (typ : Type) ->
+            let mTryParse = typ.GetMethod("TryParse", BindingFlags.Static ||| BindingFlags.NonPublic ||| BindingFlags.Public, [| typeof<System.Text.Json.JsonElement> |])
+            if isNull mTryParse || not mTryParse.ReturnType.IsGenericType || mTryParse.ReturnType.GetGenericTypeDefinition() <> typedefof<option<_>> then
+                Log.warn "%s lacks a proper `TryParse : JsonElement -> option<SelfType>` method and cannot be parsed" typ.FullName
+                fun _ -> None
+            else
+                if cilSupported then
+                    let cases = FSharpType.GetUnionCases(mTryParse.ReturnType, true)
+                    let value = 
+                        let cSome = cases |> Array.find (fun c -> c.Name = "Some")
+                        cSome.GetFields().[0]
+
+                    let mCreateRes = 
+                        let t = typeof<option<Event>>
+                        let c = FSharpType.GetUnionCases(t) |> Array.find (fun c -> c.Name = "Some")
+                        FSharpValue.PreComputeUnionConstructorInfo c
+                    let res = Local(mTryParse.ReturnType)
+                    let lNull = Label()
+                    cil {
+                        do! IL.ldarg 0
+                        do! IL.call mTryParse
+                        do! IL.stloc res
+
+                        do! IL.ldloc res
+                        do! IL.jmp JumpCondition.False lNull
+
+                        do! IL.ldloc res
+                        do! IL.call value.GetMethod
+                        do! IL.call mCreateRes
+                        do! IL.ret
+
+                        do! IL.mark lNull
+                        do! IL.ldnull
+                        do! IL.ret
+                    }
+                else
+                    let cSome = FSharpType.GetUnionCases(mTryParse.ReturnType, true) |> Array.find (fun c -> c.Name = "Some")
+                    let readSome = FSharpValue.PreComputeUnionReader cSome
+                    fun (data : System.Text.Json.JsonElement) ->
+                        let res = mTryParse.Invoke(null, [|data|])
+                        if isNull res then 
+                            None
+                        else
+                            let values = readSome res
+                            Some (values.[0] :?> Event)
+        ))
+        
+            //let m = evtType.GetMethod("TryParse", BindingFlags.Static ||| BindingFlags.NonPublic ||| BindingFlags.Public)
+            //if isNull m then failwithf "non-parsable event type: %A" evtType
+            //let t = typedefof<option<_>>.MakeGenericType [| evtType |]
+            //let pValue = t.GetProperty("Value")
+
+
+module private Color =
+    open System.Text.RegularExpressions 
+
+    let private namedColors =
+        let props = typeof<C4b>.GetProperties(BindingFlags.NonPublic ||| BindingFlags.Static)
+        props |> Array.map (fun p ->
+            p.Name.ToLower(), (p.GetValue null :?> C4b)
+        )
+        |> Dict.ofArray
+
+    let private rgbaRx = Regex @"^rgba?[ t]*\(([0-9]+)[ t]*,[ t]*([0-9]+)[ t]*,[ t]*([0-9]+)([ t]*,[ t]*([0-9\.]+)[ t]*)?\)$"
+    let private hexRx = Regex @"^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$"
+
+    let tryParse (str : string) =
+        let str = str.Trim().ToLower()
+        match namedColors.TryGetValue str with
+        | (true, c) -> Some c
+        | _ ->
+            let m = rgbaRx.Match str
+            if m.Success then
+                let r = m.Groups.[1].Value |> byte
+                let g = m.Groups.[2].Value |> byte
+                let b = m.Groups.[3].Value |> byte
+                let a =
+                    if m.Groups.[4].Success then float m.Groups.[5].Value |> clamp 0.0 1.0
+                    else 1.0
+
+                let color = C4b(r, g, b, byte (255.0 * a))
+                Some color
+            else
+                let m = hexRx.Match str 
+                if m.Success then
+                    let r = System.Int32.Parse(m.Groups.[1].Value, Globalization.NumberStyles.HexNumber) |> byte
+                    let g = System.Int32.Parse(m.Groups.[2].Value, Globalization.NumberStyles.HexNumber) |> byte
+                    let b = System.Int32.Parse(m.Groups.[3].Value, Globalization.NumberStyles.HexNumber) |> byte
+                    Some (C4b(r, g, b, 255uy))
+                else
+                    None
+
 
 type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer, eventListeners : Dict<int64, Dict<string, RemoteEventCallbacks>>, currentId : ref<int>, parentIds : Dict<int64, int64>, childIds : Dict<int64, DictSet<int64>>, code : CodeBuilder) =
     static let toSortedTransferList(m) =
@@ -290,7 +410,8 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                                     match prop.GetString() with
                                                     | "requestimage" ->
                                                         let mutable s = V2i.II
-                                                        let mutable quality = 80
+                                                        let mutable data = HashMap.empty
+                                                        let mutable bg = None
 
                                                         match e.TryGetProperty "width" with
                                                         | (true, p) -> s.X <- max 1 (p.GetInt32())
@@ -299,12 +420,26 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                                         match e.TryGetProperty "height" with
                                                         | (true, p) -> s.Y <- max 1 (p.GetInt32())
                                                         | _ -> ()
-
-                                                        match e.TryGetProperty "quality" with
-                                                        | (true, p) -> quality <- p.GetInt32()
+                                                        
+                                                        match e.TryGetProperty "background" with
+                                                        | (true, p) ->
+                                                            let str = p.GetString()
+                                                            match Color.tryParse str with
+                                                            | Some c -> bg <- Some c
+                                                            | None -> ()
                                                         | _ -> ()
+
+                                                        match e.TryGetProperty "data" with
+                                                        | (true, p) ->
+                                                            try
+                                                                for k in p.EnumerateObject() do
+                                                                    data <- HashMap.add k.Name (k.Value.GetString()) data
+                                                            with _ ->
+                                                                ()
+                                                        | _ -> 
+                                                            ()
                                                     
-                                                        Some (s, quality)
+                                                        Some (s, bg, data)
 
                                                     | _ ->
                                                         None
@@ -319,14 +454,21 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                     while Option.isNone info do
                                         let! msg = c.Receive()
                                         info <- tryReadInfo msg
-                                    let (size, quality) = info.Value
-                        
+                                    let (size, bg, requestData) = info.Value
+                                
+                                    let background = 
+                                        match bg with
+                                        | Some bg when bg.A >= 255uy -> bg.ToC4f()
+                                        | _ -> C4f.Black
+
+                                    transact (fun () -> scene.ClearColor.Value <- background)
+
                                     let size = cval size
-                                    let quality = cval quality
+                                    let request = cmap requestData
                                     let t0 = System.DateTime.Now
                                     let dt = System.Diagnostics.Stopwatch.StartNew()
                               
-                                    let render = imageTransfer.CreateRenderer(scene.FramebufferSignature, scene.RenderTask, size, quality)
+                                    let render = imageTransfer.CreateRenderer(scene.FramebufferSignature, scene.RenderTask, size, request)
 
                                     let mutable running = true
 
@@ -370,10 +512,13 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                             MVar.put renderDirty ()
                                         | msg -> 
                                             match tryReadInfo msg with
-                                            | Some (newSize, newQuality) ->
+                                            | Some (newSize, bg, newRequestData) ->
                                                 transact (fun () ->
+                                                    match bg with
+                                                    | Some bg when bg.A >= 255uy -> scene.ClearColor.Value <- bg.ToC4f()
+                                                    | _ -> scene.ClearColor.Value <- C4f.Black
                                                     size.Value <- newSize
-                                                    quality.Value <- newQuality
+                                                    request.Value <- newRequestData
                                                 )
                                             
                                                 lock cloudLock (fun () ->
@@ -396,8 +541,9 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                 String.concat "\n" (imageTransfer.Boot n)
                                 $"var requestImage = function() {{"
                                 $"    const r = __THIS__.getBoundingClientRect();"
-                                $"    const q = parseInt(__THIS__.getAttribute(\"data-quality\") || 80);"
-                                $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, quality: q }}));"
+                                $"    const data = aardvark.getDataAttributeDict(__THIS__);"
+                                $"    const bg = __THIS__.computedStyleMap().get(\"background-color\").toString();"
+                                $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, background: bg, data: data }}));"
                                 $"}};" 
                                 $"let unsub = (() => {{}});"
                                 $"var start = function() {{"
@@ -565,60 +711,65 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
             code.AppendLine $"aardvark.delete({node}, {var});"
             eventListeners.Remove node |> ignore
 
-        member x.SetListener(element, name, capture, pointerCapture, evtType, callback) =
+        member x.SetListener(element, name, capture, preventDefault, pointerCapture, evtType, callback) =
             let listeners = eventListeners.GetOrCreate(element, fun _ -> Dict()).GetOrCreate(name, fun _ -> RemoteEventCallbacks())
+
+
             if listeners.IsEmpty then
                 let var = code.GetOrCreateVar element
-          
                 let body =
                     String.concat "" [
+                        $"const flags = aardvark.getListenerFlags({var}, \"{name}\");"
                         "if(e.bubbles) e.stopImmediatePropagation();"
-                        "e.preventDefault();"
-                        //if pointerCapture then
-                        //    match name.ToLower() with
-                        //    | "pointerdown" -> $"e.target.setPointerCapture(e.pointerId);"
-                        //    | "pointerup" -> $"e.target.releasePointerCapture(e.pointerId);"
-                        //    | _ -> ()
-                        $"console.log((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
-                        $"aardvark.trigger((e.bubbles ? aardvark.getEventTargetId(e) : {element}), \"{name}\", e);"
+                        "if(flags.preventDefault) { e.preventDefault(); }"
+                            
+                        match name.ToLower() with
+                        | "pointerdown" -> $"if(flags.pointerCapture) {{ {var}.setPointerCapture(e.pointerId); }}"
+                        | "pointerup" -> $"if(flags.pointerCapture) {{ {var}.releasePointerCapture(e.pointerId); }}"
+                        | _ -> ()
+                        $"aardvark.trigger({element}, \"{name}\", e);"
                     ]
-                // aardvark.setListener = function (node, type, action, capture) {
+
                 code.AppendLine $"aardvark.setListener({var}, \"{name}\", ((e) => {{ {body} }}), false);"
 
+            let oldPointerCapture = listeners.PointerCapture
+            let oldPreventDefault = listeners.PreventDefault
 
-            // TODO: perfromance concerns here
-            let m = evtType.GetMethod("TryParse", BindingFlags.Static ||| BindingFlags.NonPublic ||| BindingFlags.Public)
-            if isNull m then failwithf "non-parsable event type: %A" evtType
-            let t = typedefof<option<_>>.MakeGenericType [| evtType |]
-            let pValue = t.GetProperty("Value")
-            let l = eventListeners.GetOrCreate(element, fun _ -> Dict())
-
-            let triggerName =
-                if capture then name + "_capture"
-                else name + "_bubble"
-
-
+            let tryParse = EventParser.getParser evtType
             let callback json =
-                // parse json
-                let e = m.Invoke(null, [| json :> obj |])
-                if isNull e then true
-                else
-                    let e = pValue.GetValue e :?> Event
-                    callback e
+                match tryParse json with
+                | Some e -> callback e
+                | None -> true
 
-            listeners.[capture] <- Some callback
+            listeners.[capture] <- { Callback = Some callback; PreventDefault = preventDefault; PointerCapture = pointerCapture }
+
+            if listeners.PreventDefault <> oldPreventDefault || listeners.PointerCapture <> oldPointerCapture then
+                let var = code.GetOrCreateVar element
+                let inline bstr a = if a then "true" else "false"
+                code.AppendLine $"aardvark.setListenerFlags({var}, \"{name}\", {bstr listeners.PointerCapture}, {bstr listeners.PreventDefault});"
+
 
         member x.RemoveListener(element, name, capture) =   
             match eventListeners.TryGetValue element with
             | (true, elementListeners) ->
                 match elementListeners.TryGetValue name with
                 | (true, listeners) ->
-                    listeners.[capture] <- None
+                    
+                    let oldPointerCapture = listeners.PointerCapture
+                    let oldPreventDefault = listeners.PreventDefault
+
+                    listeners.[capture] <- RemoveEventHandler.Empty
                     if listeners.IsEmpty then
                         let var = code.GetOrCreateVar element
                         code.AppendLine $"aardvark.removeListener({var}, \"{name}\", false);"
                         if elementListeners.Remove name && elementListeners.Count = 0 then
                             eventListeners.Remove element |> ignore
+                    else
+                        if listeners.PreventDefault <> oldPreventDefault || listeners.PointerCapture <> oldPointerCapture then
+                            let var = code.GetOrCreateVar element
+                            let inline bstr a = if a then "true" else "false"
+                            code.AppendLine $"aardvark.setListenerFlags({var}, \"{name}\", {bstr listeners.PointerCapture}, {bstr listeners.PreventDefault});"
+                        
                 | _ ->
                     ()
             | _ ->
@@ -654,18 +805,18 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                 bubble |> List.forall (fun cb -> cb data)
             | h :: rest ->
                 let cont = 
-                    match h.Capture with
+                    match h.Capture.Callback with
                     | Some cb -> cb data
                     | None -> true
 
                 if cont then
                     let newBubble =
                         if bubbles then
-                            match h.Bubble with
+                            match h.Bubble.Callback with
                             | Some b -> b :: bubble
                             | None -> bubble
                         else
-                            match h.Bubble with
+                            match h.Bubble.Callback with
                             | Some b -> [b]
                             | None -> []
 

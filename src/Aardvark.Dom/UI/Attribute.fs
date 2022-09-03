@@ -18,9 +18,10 @@ type EventCode =
         EventType : Type
         Callback : option<Event -> bool>
         PointerCapture : bool
+        PreventDefault : bool
     }
 
-    static member Empty = { EventType = typeof<Event>; Callback = None; PointerCapture = false }
+    static member Empty = { EventType = typeof<Event>; Callback = None; PointerCapture = false; PreventDefault = false }
 
 [<RequireQualifiedAccess>]
 type AttributeValue =
@@ -74,8 +75,8 @@ type AttributeValue =
                     else failwithf "inconsistent event-types: %A vs %A" lc.EventType rc.EventType
 
                 AttributeValue.Event(
-                    { EventType = bubbleEvtType; Callback = bubble; PointerCapture = lb.PointerCapture || rb.PointerCapture },
-                    { EventType = captureEvtType; Callback = capture; PointerCapture = lc.PointerCapture || rc.PointerCapture }
+                    { EventType = bubbleEvtType; Callback = bubble; PointerCapture = lb.PointerCapture || rb.PointerCapture; PreventDefault = lb.PreventDefault || rb.PreventDefault },
+                    { EventType = captureEvtType; Callback = capture; PointerCapture = lc.PointerCapture || rc.PointerCapture; PreventDefault = lc.PreventDefault || rc.PreventDefault }
                 )
             | _ ->
                 r
@@ -129,22 +130,24 @@ type Att private() =
         let style = props |> Seq.map (fun p -> $"{p.Name}: {p.Value}") |> String.concat "; "
         Attribute("style", AttributeValue.String style)
 
-    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> bool, ?useCapture : bool, ?pointerCapture : bool) =
+    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> bool, ?useCapture : bool, ?pointerCapture : bool, ?preventDefault : bool) =
         let pointerCapture = defaultArg pointerCapture false
+        let preventDefault = defaultArg preventDefault false
         match useCapture with
         | Some true -> 
-            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture}, EventCode.Empty))
+            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture; PreventDefault = preventDefault}, EventCode.Empty))
         | _ -> 
-            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture }))
+            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (unbox<'a> >> callback); PointerCapture = pointerCapture; PreventDefault = preventDefault }))
 
             
-    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> unit, ?useCapture : bool, ?pointerCapture : bool) =
+    static member inline On<'a when 'a :> Event>(name : string, callback : 'a -> unit, ?useCapture : bool, ?pointerCapture : bool, ?preventDefault : bool) =
         let pointerCapture = defaultArg pointerCapture false
+        let preventDefault = defaultArg preventDefault false
         match useCapture with
         | Some true -> 
-            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture}, EventCode.Empty))
+            Attribute(name, AttributeValue.Event({ EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture; PreventDefault = preventDefault}, EventCode.Empty))
         | _ -> 
-            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture }))
+            Attribute(name, AttributeValue.Event(EventCode.Empty, { EventType = typeof<'a>; Callback = Some (fun e -> callback (unbox e); true); PointerCapture = pointerCapture; PreventDefault = preventDefault }))
 
     static member OnContextMenu(callback : MouseEvent -> unit, ?useCapture : bool) = 
         Att.On(

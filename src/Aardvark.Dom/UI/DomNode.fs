@@ -30,9 +30,8 @@ type DomNode =
     | VoidElement of tag : string * attributes : AttributeMap
     | Text of content : aval<string>
     | Element of tag : string * attributes : AttributeMap * children : alist<DomNode>
-    | RenderControl of (RenderControlInfo -> AttributeMap * aset<SceneHandlerEvent -> unit> * DomScene)
+    | RenderControl of (RenderControlInfo -> AttributeMap * amap<RenderControlEventKind, RenderControlEventInfo -> unit> * DomScene)
 
-[<CompilerMessage("internal", 1337, IsHidden = true)>]
 module NodeBuilderHelpers = 
     open FSharp.Data.Traceable
 
@@ -421,7 +420,7 @@ module NodeBuilderHelpers =
 
     type RenderControlBuilderState(info : RenderControlInfo) =
         let mutable attributes = AttributeTable.Empty
-        let mutable actions = ASet.empty
+        let mutable actions = AMap.empty
         let scene = SceneNodeBuilderState()
 
         member x.Info = info
@@ -435,8 +434,8 @@ module NodeBuilderHelpers =
         member x.Append(atts : aset<ISceneNode>) =
             scene.Append atts
             
-        member x.Append(rcAction : SceneHandlerEvent -> unit) =
-            actions <- ASet.union actions (ASet.single rcAction)
+        member x.Append(kind : RenderControlEventKind, action : RenderControlEventInfo -> unit) =
+            actions <- AMap.unionWith (fun _ l r -> fun i -> l i; r i) actions (AMap.single kind action)
 
         member x.Build() =
             let scene = 
@@ -461,27 +460,26 @@ module NodeBuilderHelpers =
 
     type RenderControlBuilder<'a> = RenderControlBuilderState -> 'a
 
+
+
+open NodeBuilderHelpers
+
 module RenderControl = 
     type ViewportSize = ViewportSize
     type Time = Time
     type Info = Info
 
-    let OnResize (action : V2i -> unit) =   
-        fun (e : SceneHandlerEvent) ->
-            match e with
-            | SceneHandlerEvent.Resize s -> action s
-            | _ -> ()
-            
-    let OnRendered (action : unit -> unit) =   
-        fun (e : SceneHandlerEvent) ->
-            match e with
-            | SceneHandlerEvent.PostRender -> action ()
-            | _ -> ()
+[<AbstractClass; Sealed; AutoOpen>]
+type RenderControl private() =
+    static member OnResize (action : RenderControlEventInfo -> unit) =   
+        RenderControlEventKind.Resize, fun (e : RenderControlEventInfo) -> action e
+        
+    static member OnBeforeRender (action : RenderControlEventInfo -> unit) =   
+        RenderControlEventKind.PreRender, fun (e : RenderControlEventInfo) -> action e
 
+    static member OnRendered (action : RenderControlEventInfo -> unit) =   
+        RenderControlEventKind.PostRender, fun (e : RenderControlEventInfo) -> action e
 
-
-
-open NodeBuilderHelpers
 
 type RenderControlBuilder() =
     static member wrap (sg : Aardvark.SceneGraph.ISg) =
@@ -574,8 +572,8 @@ type RenderControlBuilder() =
     member inline x.Yield(att : aval<option<Attribute>>) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofOptionA att) 
             
-    member inline x.Yield(att : SceneHandlerEvent -> unit) : RenderControlBuilder<unit> =
-        fun (s : RenderControlBuilderState) -> s.Append att
+    member inline x.Yield((kind : RenderControlEventKind, callback : RenderControlEventInfo -> unit)) : RenderControlBuilder<unit> =
+        fun (s : RenderControlBuilderState) -> s.Append(kind, callback)
 
     member inline x.Run(run : RenderControlBuilder<unit>) =
         let getContent (info : RenderControlInfo) =

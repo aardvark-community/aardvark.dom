@@ -3,6 +3,7 @@ namespace Aardvark.Dom
 open Aardvark.Base
 open Aardvark.Application
 open FSharp.Data.Adaptive
+open Aardvark.Rendering
 
 [<RequireQualifiedAccess>]
 type SceneEventKind =
@@ -167,3 +168,38 @@ module SceneEventHandler =
         }
 
 
+        
+[<RequireQualifiedAccess>]
+type RenderControlEventKind =
+    | Resize
+    | PreRender
+    | PostRender
+
+type RenderControlEventInfo =
+    {
+        Signature   : IFramebufferSignature
+        Size        : V2i
+        FrameIndex  : int
+        Time        : MicroTime
+        FrameTime   : MicroTime
+    }
+
+type RenderControlEvent(kind : RenderControlEventKind, info : RenderControlEventInfo) =
+    member x.Kind = kind
+    member x.Info = info
+
+    static member Resize(info : RenderControlEventInfo) =
+        RenderControlEvent(RenderControlEventKind.Resize, info)
+    static member PreRender(info : RenderControlEventInfo) =
+        RenderControlEvent(RenderControlEventKind.PreRender, info)
+    static member PostRender(info : RenderControlEventInfo) =
+        RenderControlEvent(RenderControlEventKind.PostRender, info)
+
+[<AutoOpen>]
+module RenderControlEvent =
+
+    let (|Resize|PreRender|PostRender|) (e : RenderControlEvent) =
+        match e.Kind with
+        | RenderControlEventKind.Resize -> Resize(e.Info)
+        | RenderControlEventKind.PreRender -> PreRender(e.Info)
+        | RenderControlEventKind.PostRender -> PostRender(e.Info)

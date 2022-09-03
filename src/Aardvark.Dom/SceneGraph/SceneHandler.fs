@@ -567,15 +567,38 @@ type private SceneHandlerFramebuffers =
         Textures                    : list<IBackendTexture>
 
     }
-         
-
-type SceneHandlerEvent =
-    | Resize of V2i
-    | PreRender
-    | PostRender
 
 
-type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent -> unit, setCursor : option<Cursor> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
+type private Stats(maxCnt : int) =
+    let mutable sum = 0.0
+    let mutable sumSq = 0.0
+    let elements = System.Collections.Generic.Queue<float>(maxCnt + 1)
+
+    member x.Add(value : float) =
+        sum <- sum + value
+        sumSq <- sumSq + value * value
+        elements.Enqueue(value)
+
+        if elements.Count > maxCnt then
+            let o = elements.Dequeue()
+            sum <- sum - o
+            sumSq <- sumSq - o * o
+
+    member x.Average = 
+        let c = elements.Count
+        if c <= 0 then 0.0
+        else sum / float c
+
+    member x.StdDev = 
+        let c = elements.Count
+        if c > 1 then
+            let avg = sum / float c
+            sqrt (max 0.0 ((sumSq - avg * sum) / float (c - 1)))
+        else
+            0.0
+
+
+type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<Cursor> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
     static let pickBuffer = Symbol.Create "PickId"
     
     let runtime = signature.Runtime :?> IRuntime
@@ -601,6 +624,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
     let cursorSub =
         cursor.AddCallback setCursor
 
+
+    let clearColor = cval C4f.Black
 
     let getId(scope : TraversalState) =
         pickIds.GetOrCreate(scope, fun s -> 
@@ -763,18 +788,49 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
                 fbos <- Some result
                 result
                 
-                
-                
-          
-        let clear = runtime.CompileClear (newSignature, clear { colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit C4f.Black; pickBuffer, ClearColor.op_Implicit V4i.NNNN]); depth 1.0; stencil 0})
+               
+        let clear = 
+            let clearValues =
+                clearColor
+                |> AVal.map (fun color ->
+                    ClearValues.empty
+                    |> ClearValues.colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit color; pickBuffer, ClearColor.op_Implicit V4i.NNNN])
+                    |> ClearValues.depth 1.0
+                    |> ClearValues.stencil 0
+                )
+            runtime.CompileClear (newSignature, clearValues)
         
-        let realTask =
-            AVal.custom (fun t ->
-                let s = fboSize.GetValue t
+        let mutable idx = 0
+        let sw = System.Diagnostics.Stopwatch.StartNew()
+        let frameTimeWatch = System.Diagnostics.Stopwatch()
+        let mutable frameTimeStats = Stats(30)
 
+        let inline getInfo (size : V2i) =
+            {
+                Signature = signature
+                Size = size
+                FrameIndex = idx
+                Time = sw.MicroTime
+                FrameTime = MicroTime(System.TimeSpan(int64 frameTimeStats.Average))
+            }
+      
+
+        let task = 
+            RenderTask.custom (fun (t, _rt, o) ->
+                frameTimeWatch.Restart()
+                let size = o.framebuffer.Size
+                let evtInfo = getInfo size
+
+                if o.framebuffer.Size <> fboSize.Value then
+                    transact (fun () -> fboSize.Value <- o.framebuffer.Size)
+                    trigger (RenderControlEvent.Resize evtInfo)
+               
+                let s = fboSize.GetValue t
                 let rt = RenderToken.Empty
                 let outputInfo = getFramebuffers s
-                trigger SceneHandlerEvent.PreRender
+
+             
+                trigger (RenderControlEvent.PreRender evtInfo)
 
                 clear.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
@@ -786,21 +842,15 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
                 
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
                 viewportSize <- outputInfo.PickTextureResolved.Size.XY
-                    
-                
-                trigger SceneHandlerEvent.PostRender
-                
-            )
-        
-        let task = 
-            RenderTask.custom (fun (t, _rt, o) ->
-                let outputInfo = getFramebuffers o.framebuffer.Size
-                if o.framebuffer.Size <> fboSize.Value then
-                    transact (fun () -> fboSize.Value <- o.framebuffer.Size)
-                    trigger (SceneHandlerEvent.Resize o.framebuffer.Size)
-                
-                realTask.GetValue t
+           
+                trigger (RenderControlEvent.PostRender evtInfo)
+
+
                 runtime.BlitFramebuffer(outputInfo.NonPickableFramebuffer, o.framebuffer)
+                idx <- idx + 1
+                frameTimeWatch.Stop()
+                frameTimeStats.Add (float frameTimeWatch.Elapsed.Ticks)
+                
             )
 
         let dispose() =
@@ -873,7 +923,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : SceneHandlerEvent
 
 
     member x.Time = time
-
+    member x.ClearColor = clearColor
     member x.Runtime = runtime
     member x.FramebufferSignature = signature
 
