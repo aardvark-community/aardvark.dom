@@ -295,7 +295,24 @@
         return protocol + "://" + document.location.host + path + q;
     };
 
-    aardvark.trigger = function (srcId, typ, evt) {
+
+    let buffer = [];
+    aardvark.send = function (str) {
+        buffer.push(str);
+    };
+
+    aardvark.connect = function (connect, arg) {
+        connect((sender) => {
+            aardvark.send = sender;
+            for (let i = 0; i < buffer.length; i++) {
+                sender(buffer[i]);
+            }
+            buffer = null;
+        }, arg);
+    };
+
+    aardvark.trigger = function (srcNode, srcId, typ, evt) {
+        evt.clientRect = srcNode.getBoundingClientRect();
         aardvark.send(aardvark.stringify({ source : srcId, type : typ, data : evt }));
     };
 
@@ -421,7 +438,9 @@
         aardvark.setListenerFlags(node, type, false, false);
     };
 
-    function onReady(action) {
+
+
+    aardvark.onReady = function(action) {
         if(document.readyState === "complete") {
             action();
         }
@@ -434,95 +453,99 @@
         }
     }
 
-    onReady(() => {
-        const path = aardvark.relativePath("ws", "/socket");
-        
-        function receive(data) {
-            if(!data)return;
-            try {
-                const msg = JSON.parse(data);
-                switch(msg.command) {
-                    case "execute":
-                        console.debug(msg.code);
-                        try { new Function(msg.code)(); }
-                        catch(e) { console.error("bad code", msg.code); }
-                        break;
-                    default:
-                        console.log(msg);
-                        break;
+    aardvark.connectSocket = function(cont, path) {
+        aardvark.onReady(() => {
+
+            function receive(data) {
+                if (!data) return;
+                try {
+                    const msg = JSON.parse(data);
+                    switch (msg.command) {
+                        case "execute":
+                            console.debug(msg.code);
+                            try { new Function(msg.code)(); }
+                            catch (e) { console.error("bad code", msg.code); }
+                            break;
+                        default:
+                            console.log(msg);
+                            break;
+                    }
                 }
-            } 
-            catch(e) {
-                console.error("bad message", data);
+                catch (e) {
+                    console.error("bad message", data);
+                }
             }
-        }
-        
-        function runSocket(path, receive) {
-            let messageBuffer = [];
-            let socket = new WebSocket(path);
-            let connected = false;
-            
-            let result =
+
+            function runSocket(path, receive) {
+                let messageBuffer = [];
+                let socket = new WebSocket(path);
+                let connected = false;
+
+                let result =
                 {
                     socket: null,
                     send: (msg) => { messageBuffer.push(msg); }
                 }
-            
-            socket.onopen = () => { 
-                connected = true; 
-                while(document.body.firstChild) document.body.firstChild.remove();
-                
-                try { 
-                    while(messageBuffer.length > 0) {
-                        const m = messageBuffer[0];
-                        socket.send(m); 
-                        messageBuffer.splice(0, 1);
-                    }
-                 }
-                catch(e) {}
-            };
-            socket.onmessage = (event) => {
-                if(event.data) {
-                    if(event.data !== "!pong") receive(event.data);
-                }
-            };
-            socket.onerror = () => { };
-            socket.onclose = () => {
-                connected = false;
-                console.log("reconnect");
-                setTimeout(() => {
-                    const res = runSocket(path, receive);
-                    result.socket = res.socket;
-                    result.send = res.send;
-                }, 500);
-            };
-            
-            function ping() {
-                if(connected) {
+
+                socket.onopen = () => {
+                    connected = true;
+                    while (document.body.firstChild) document.body.firstChild.remove();
+
                     try {
-                        socket.send("!ping");
-                        setTimeout(ping, 1000);
+                        while (messageBuffer.length > 0) {
+                            const m = messageBuffer[0];
+                            socket.send(m);
+                            messageBuffer.splice(0, 1);
+                        }
                     }
-                    catch(e) {
-                        connected = false;
-                    }   
+                    catch (e) { }
+                };
+                socket.onmessage = (event) => {
+                    if (event.data) {
+                        if (event.data !== "!pong") receive(event.data);
+                    }
+                };
+                socket.onerror = () => { };
+                socket.onclose = () => {
+                    connected = false;
+                    console.log("reconnect");
+                    setTimeout(() => {
+                        const res = runSocket(path, receive);
+                        result.socket = res.socket;
+                        result.send = res.send;
+                    }, 500);
+                };
+
+                function ping() {
+                    if (connected) {
+                        try {
+                            socket.send("!ping");
+                            setTimeout(ping, 1000);
+                        }
+                        catch (e) {
+                            connected = false;
+                        }
+                    }
                 }
+                ping();
+
+                function send(msg) {
+                    if (connected) socket.send(msg);
+                    else messageBuffer.push(msg);
+                }
+                result.send = send;
+                result.socket = socket;
+
+                return result;
             }
-            ping();
-            
-            function send(msg) {
-                if(connected) socket.send(msg);
-                else messageBuffer.push(msg);
-            }
-            result.send = send;
-            result.socket = socket;
-            
-            return result;
-        }
-        
-        
-        let ws = runSocket(path, receive);
-        aardvark.send = (msg) => { ws.send(msg); };
-    });
-})();
+
+
+            let ws = runSocket(path, receive);
+            cont((msg) => { ws.send(msg); });
+        });
+    }
+
+    
+
+}) ();
 

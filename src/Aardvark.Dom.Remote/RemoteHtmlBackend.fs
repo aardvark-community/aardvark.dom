@@ -727,7 +727,7 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                         | "pointerdown" -> $"if(flags.pointerCapture) {{ {var}.setPointerCapture(e.pointerId); }}"
                         | "pointerup" -> $"if(flags.pointerCapture) {{ {var}.releasePointerCapture(e.pointerId); }}"
                         | _ -> ()
-                        $"aardvark.trigger({element}, \"{name}\", e);"
+                        $"aardvark.trigger({var}, {element}, \"{name}\", e);"
                     ]
 
                 code.AppendLine $"aardvark.setListener({var}, \"{name}\", ((e) => {{ {body} }}), false);"

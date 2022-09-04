@@ -23,6 +23,7 @@ module DomNode =
                 "<html>"
                 "   <head>"
                 "       <script src='./aardvark-dom.js'></script>"
+                "       <script>aardvark.connect(aardvark.connectSocket, aardvark.relativePath(\"ws\", \"/socket\"));</script>"
                 "   </head>"
                 "   <body>"
                 "   </body>"

@@ -224,6 +224,7 @@ let testApp (_runtime : IRuntime) =
 
                 Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true)
                 Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true, useCapture = true)
+                Att.On("contextmenu", (fun (e : Event) -> ()), preventDefault = true)
 
                 Attribute("data-samples", AttributeValue.String "4")
 

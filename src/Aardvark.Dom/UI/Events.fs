@@ -97,12 +97,32 @@ module private EventParserUtilities =
         else
             Unchecked.defaultof<'a>
 
-[<AbstractClass>]
-type Event(target : string, timeStamp : float, isTrusted : bool, typ : string) =
+type Event(target : string, timeStamp : float, isTrusted : bool, typ : string, clientRect : Box2d) =
     member x.Target = target
     member x.TimeStamp = timeStamp
     member x.IsTrusted = isTrusted
     member x.Type = typ
+    member x.ClientRect = clientRect
+    
+    static member TryParse(str : System.Text.Json.JsonElement) =
+        opt {
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = str?target
+
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+
+            return
+                Event(
+                    target, timeStamp, isTrusted, typ, clientRect
+                )
+        }
 
 type Button =
     | Left = 0
@@ -122,7 +142,7 @@ type Buttons =
 
 type MouseEvent(    
         target : string, timeStamp : float, 
-        isTrusted : bool, typ : string, 
+        isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
         screenX : float, screenY : float,
         pageX : float, pageY : float,
@@ -131,7 +151,7 @@ type MouseEvent(
         ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool,
         button : Button, buttons : Buttons
     ) =
-    inherit Event(target, timeStamp, isTrusted, typ)
+    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
 
     static member TryParse(str : System.Text.Json.JsonElement) =
         opt {
@@ -159,9 +179,16 @@ type MouseEvent(
             let! (button : int) = str?button
             let! (buttons : int) = str?buttons
 
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+
             return
                 MouseEvent(
-                    target, timeStamp, isTrusted, typ,
+                    target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
                     movementX, movementY, ctrlKey, shiftKey, altKey, metaKey,
@@ -198,7 +225,7 @@ type WheelDeltaMode =
 
 type WheelEvent(
         target : string, timeStamp : float, 
-        isTrusted : bool, typ : string, 
+        isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
         screenX : float, screenY : float,
         pageX : float, pageY : float,
@@ -208,7 +235,7 @@ type WheelEvent(
         button : Button, buttons : Buttons,
         deltaX : float, deltaY : float, deltaZ : float, deltaMode : WheelDeltaMode
     ) =
-    inherit Event(target, timeStamp, isTrusted, typ)
+    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
 
     static member TryParse(str : System.Text.Json.JsonElement) =
         opt {
@@ -240,10 +267,17 @@ type WheelEvent(
             let! (dy : float) = str?deltaY
             let! (dz : float) = str?deltaZ
             let! (dm : int) = str?deltaMode
+            
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
 
             return
                 WheelEvent(
-                    target, timeStamp, isTrusted, typ,
+                    target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
                     movementX, movementY, ctrlKey, shiftKey, altKey, metaKey,
@@ -281,7 +315,7 @@ type WheelEvent(
 
 type PointerEvent(  
         target : string, timeStamp : float, 
-        isTrusted : bool, typ : string, 
+        isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
         screenX : float, screenY : float,
         pageX : float, pageY : float,
@@ -294,7 +328,7 @@ type PointerEvent(
         tiltX : float, tiltY : float, pointerType : string
     ) =
     inherit Event(
-        target, timeStamp, isTrusted, typ
+        target, timeStamp, isTrusted, typ, clientRect
     )
     
     member x.ClientPosition = V2i(clientX, clientY)
@@ -343,8 +377,6 @@ type PointerEvent(
             let! (pageY : float) = str?pageY
             let! (offsetX : float) = str?offsetX
             let! (offsetY : float) = str?offsetY
-            // let! (x : float) = str?x
-            // let! (y : float) = str?y
             let! (movementX : float) = str?movementX
             let! (movementY : float) = str?movementY
             let! (ctrlKey : bool) = str?ctrlKey
@@ -362,10 +394,17 @@ type PointerEvent(
             let (tiltX : option<float>) = str?tiltX
             let (tiltY : option<float>) = str?tiltY
             let (pointerType : option<string>) = str?pointerType
+            
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
 
             return
                 PointerEvent(
-                    target, timeStamp, isTrusted, typ,
+                    target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
                     movementX, movementY, ctrlKey, shiftKey, altKey, metaKey,

@@ -421,6 +421,8 @@ module NodeBuilderHelpers =
     type RenderControlBuilderState(info : RenderControlInfo) =
         let mutable attributes = AttributeTable.Empty
         let mutable actions = AMap.empty
+        let mutable view = None
+        let mutable proj = None
         let scene = SceneNodeBuilderState()
 
         member x.Info = info
@@ -429,6 +431,13 @@ module NodeBuilderHelpers =
             attributes <- AttributeTable.Combine(attributes, AttributeTable atts)
             
         member x.Append(atts : list<SceneAttribute>) =
+            match view with
+            | None -> view <- atts |> List.tryPick (function SceneAttribute.View v -> Some v | _ -> None)
+            | _ -> ()
+            match proj with
+            | None -> proj <- atts |> List.tryPick (function SceneAttribute.Proj v -> Some v | _ -> None)
+            | _ -> ()
+
             scene.Append atts
 
         member x.Append(atts : aset<ISceneNode>) =
@@ -439,22 +448,18 @@ module NodeBuilderHelpers =
 
         member x.Build() =
             let scene = 
-                match scene.Build() with
-                | :? Applicator as app ->   
-                    let view =
-                        match app.Attributes |> List.tryPick (function SceneAttribute.View v -> Some v | _ -> None) with
-                        | Some v -> v
-                        | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
+                let view =
+                    match view with
+                    | Some v -> v
+                    | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
 
-                    let proj =
-                        match app.Attributes |> List.tryPick (function SceneAttribute.Proj v -> Some v | _ -> None) with
-                        | Some v -> v
-                        | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
-
-                    { Scene = app; View = view; Proj = proj }
-                | node ->
-                    { Scene = node; View = AVal.constant Trafo3d.Identity; Proj = AVal.constant Trafo3d.Identity }
+                let proj =
+                    match proj with
+                    | Some v -> v
+                    | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
                     
+                { Scene = scene.Build(); View = view; Proj = proj }
+
             AttributeMap (attributes.ToAMap()), actions, scene
 
 
