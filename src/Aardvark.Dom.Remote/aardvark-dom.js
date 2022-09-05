@@ -453,7 +453,14 @@
         }
     }
 
-    aardvark.connectSocket = function(cont, path) {
+
+    aardvark.connectWebSocket = function (cont, path) {
+
+
+        aardvark.newSocket = function (name) {
+            return new WebSocket(aardvark.relativePath("ws", name));
+        };
+
         aardvark.onReady(() => {
 
             function receive(data) {
@@ -464,7 +471,7 @@
                         case "execute":
                             console.debug(msg.code);
                             try { new Function(msg.code)(); }
-                            catch (e) { console.error("bad code", msg.code); }
+                            catch (e) { console.error("bad code", msg.code, e); }
                             break;
                         default:
                             console.log(msg);

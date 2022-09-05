@@ -13,13 +13,12 @@
     <Compile Include="SceneGraph\SceneGraph.fs" />
     <Compile Include="SceneGraph\SceneHandler.fs" />
     <Compile Include="SceneGraph\SceneFrontend.fs" />
-    <Compile Include="UI\Style.fs" />
     <Compile Include="UI\Events.fs" />
     <Compile Include="UI\Attribute.fs" />
     <Compile Include="UI\AttributeMap.fs" />
     <Compile Include="UI\DomNode.fs" />
-    <Compile Include="UI\Updater.fs" />
     <Compile Include="Frontend.fs" />
+    <Compile Include="Updater.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

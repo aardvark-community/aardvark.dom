@@ -622,7 +622,7 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
 
             let prefix = 
                 (names, urls) ||> Array.map2 (fun n (u,_) -> 
-                    $"const {n} = new WebSocket(aardvark.relativePath(\"ws\", \"{u}\"));"
+                    $"const {n} = aardvark.newSocket(\"{u}\");"
                 )   
                 |> Array.toList
 
@@ -669,6 +669,23 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
             else
                 let var = code.GetOrCreateVar node
                 code.AppendLine $"{var}.{name} = \"{HttpUtility.JavaScriptStringEncode(value)}\";"
+             
+        member x.SetAttribute(node : int64, name : string, value : bool) =
+            let value = if value then "true" else "false"
+            if name.Contains "-" then
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.setAttribute(\"{name}\", \"{value}\");"
+            else
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.{name} = {value};"
+            
+        member x.SetAttribute(node : int64, name : string, value : int) =
+            if name.Contains "-" then
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.setAttribute(\"{name}\", \"{value}\");"
+            else
+                let var = code.GetOrCreateVar node
+                code.AppendLine $"{var}.{name} = {value};"
             
         member x.SetAttribute(node : int64, name : string, value : Set<string>) =
             let value = String.concat " " value

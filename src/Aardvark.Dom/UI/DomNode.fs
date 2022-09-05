@@ -469,21 +469,11 @@ module NodeBuilderHelpers =
 
 open NodeBuilderHelpers
 
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module RenderControl = 
     type ViewportSize = ViewportSize
     type Time = Time
     type Info = Info
-
-[<AbstractClass; Sealed; AutoOpen>]
-type RenderControl private() =
-    static member OnResize (action : RenderControlEventInfo -> unit) =   
-        RenderControlEventKind.Resize, fun (e : RenderControlEventInfo) -> action e
-        
-    static member OnBeforeRender (action : RenderControlEventInfo -> unit) =   
-        RenderControlEventKind.PreRender, fun (e : RenderControlEventInfo) -> action e
-
-    static member OnRendered (action : RenderControlEventInfo -> unit) =   
-        RenderControlEventKind.PostRender, fun (e : RenderControlEventInfo) -> action e
 
 
 type RenderControlBuilder() =
@@ -567,16 +557,19 @@ type RenderControlBuilder() =
         
     member inline x.Yield(att : Attribute) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.single att)
-
-    member inline x.Yield(att : AttributeMap) =
-        fun (state : RenderControlBuilderState) -> state.Append att
+        
+    member inline x.Yield(att : aval<Attribute>) =
+        fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofAVal att)
 
     member inline x.Yield(att : aval<#seq<Attribute>>) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofSeqA att)
 
     member inline x.Yield(att : aval<option<Attribute>>) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofOptionA att) 
-            
+
+    member inline x.Yield(att : AttributeMap) =
+        fun (state : RenderControlBuilderState) -> state.Append att
+
     member inline x.Yield((kind : RenderControlEventKind, callback : RenderControlEventInfo -> unit)) : RenderControlBuilder<unit> =
         fun (s : RenderControlBuilderState) -> s.Append(kind, callback)
 
@@ -629,6 +622,9 @@ type NodeBuilder =
 
     member inline x.Yield(att : aval<#seq<Attribute>>) =
         { children = NodeList.Empty; attributes = AttributeTable (AttributeMap.ofSeqA att) }
+        
+    member inline x.Yield(att : aval<Attribute>) =
+        { children = NodeList.Empty; attributes = AttributeTable (AttributeMap.ofAVal att) }
 
     member inline x.Yield(att : aval<option<Attribute>>) =
         { children = NodeList.Empty; attributes = AttributeTable (AttributeMap.ofOptionA att)  }
@@ -749,115 +745,8 @@ type AttributeMapBuilder =
 
     new() = { }
     
-
+    
 [<AutoOpen>]
-module NodeBuilders =
-
+module AttributeMapBuilder =
+    
     let att = AttributeMapBuilder()
-
-    let renderControl = RenderControlBuilder()
-
-    let h1 = NodeBuilder "h1"
-    let code = NodeBuilder "code"
-    let pre = NodeBuilder "pre"
-    let span = NodeBuilder "span"
-    let div = NodeBuilder "div"
-    let table = NodeBuilder "table"
-    let tr = NodeBuilder "tr"
-    let td = NodeBuilder "td"
-    let ul = NodeBuilder "ul"
-    let li = NodeBuilder "li"
-    let a = NodeBuilder "a"
-    let p = NodeBuilder "p"
-    let button = NodeBuilder "button"
-    let input = NodeBuilder "input"
-    let textarea = NodeBuilder "textarea"
-    let img = NodeBuilder "img"
-    let br = VoidNodeBuilder "br"
-    let hr = NodeBuilder "hr"
-    let h2 = NodeBuilder "h2"
-    let h3 = NodeBuilder "h3"
-    let h4 = NodeBuilder "h4"
-    let h5 = NodeBuilder "h5"
-    let h6 = NodeBuilder "h6"
-    let b = NodeBuilder "b"
-    let i = NodeBuilder "i"
-    let strong = NodeBuilder "strong"
-    let em = NodeBuilder "em"
-    let small = NodeBuilder "small"
-    let sub = NodeBuilder "sub"
-    let sup = NodeBuilder "sup"
-    let s = NodeBuilder "s"
-    let u = NodeBuilder "u"
-    let ol = NodeBuilder "ol"
-    let dl = NodeBuilder "dl"
-    let dt = NodeBuilder "dt"
-    let dd = NodeBuilder "dd"
-    let cite = NodeBuilder "cite"
-    let blockquote = NodeBuilder "blockquote"
-    let q = NodeBuilder "q"
-    let abbr = NodeBuilder "abbr"
-    let acronym = NodeBuilder "acronym"
-    let address = NodeBuilder "address"
-    let bdo = NodeBuilder "bdo"
-    let big = NodeBuilder "big"
-    let blink = NodeBuilder "blink"
-    let center = NodeBuilder "center"
-    let cnter = NodeBuilder "cnter"
-    let strike = NodeBuilder "strike"
-    let dir = NodeBuilder "dir"
-    let font = NodeBuilder "font"
-    let nobr = NodeBuilder "nobr"
-    let noembed = NodeBuilder "noembed"
-    let noframes = NodeBuilder "noframes"
-    let plaintext = NodeBuilder "plaintext"
-    let samp = NodeBuilder "samp"
-    let select = NodeBuilder "select"
-    let tt = NodeBuilder "tt"
-    let xmp = NodeBuilder "xmp"
-    let marquee = NodeBuilder "marquee"
-    let area = NodeBuilder "area"
-    let basefont = NodeBuilder "basefont"
-    let col = NodeBuilder "col"
-    let colgroup = NodeBuilder "colgroup"
-    let frame = NodeBuilder "frame"
-    let isindex = NodeBuilder "isindex"
-    let link = NodeBuilder "link"
-    let meta = NodeBuilder "meta"
-    let param = NodeBuilder "param"
-    let embed = NodeBuilder "embed"
-    let base_ = NodeBuilder "base"
-    let body = NodeBuilder "body"
-    let head = NodeBuilder "head"
-    let html = NodeBuilder "html"
-    let form = NodeBuilder "form"
-    let fieldset = NodeBuilder "fieldset"
-    let legend = NodeBuilder "legend"
-    let optgroup = NodeBuilder "optgroup"
-    let option = NodeBuilder "option"
-    let script = NodeBuilder "script"
-    let style = NodeBuilder "style"
-    let title = NodeBuilder "title"
-    let caption = NodeBuilder "caption"
-    let colgroup_ = NodeBuilder "colgroup"
-    let table_ = NodeBuilder "table"
-    let tbody = NodeBuilder "tbody"
-    let thead = NodeBuilder "thead"
-    let tfoot = NodeBuilder "tfoot"
-    let iframe = NodeBuilder "iframe"
-    let frame_ = NodeBuilder "frame"
-    let frameset = NodeBuilder "frameset"
-    let frame_set = NodeBuilder "frame_set"
-    let label = NodeBuilder "label"
-    let option_ = NodeBuilder "option"
-    let optgroup_ = NodeBuilder "optgroup"
-    let keygen = NodeBuilder "keygen"
-    let output = NodeBuilder "output"
-    let progress = NodeBuilder "progress"
-    let meter = NodeBuilder "meter"
-    let details = NodeBuilder "details"
-    let summary = NodeBuilder "summary"
-    let datalist = NodeBuilder "datalist"
-    let menu = NodeBuilder "menu"
-    let menuitem = NodeBuilder "menuitem"
-    let multicol = NodeBuilder "multicol"

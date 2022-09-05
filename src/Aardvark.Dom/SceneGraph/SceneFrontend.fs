@@ -319,10 +319,6 @@ type Sg private() =
     static member OnKeyInput(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyInput, capture, action)
     static member OnKeyInput(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyInput, false, action)
         
-
-[<AbstractClass; Sealed; AutoOpen>]
-type Node private() =
-
     static member Render (fvc : int) =
         DirectDrawNode(DrawCallInfo(FaceVertexCount = fvc, InstanceCount = 1)) :> ISceneNode
             
@@ -437,7 +433,7 @@ type Node private() =
         }
             
     static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment) =
-        Node.Text(AVal.constant text, ?font = font, ?color = color, ?align = align)
+        Sg.Text(AVal.constant text, ?font = font, ?color = color, ?align = align)
 
 
 module private PrimitiveHelpers = 
@@ -1995,7 +1991,7 @@ type Primitives private() =
                 string DefaultSemantic.Colors, BufferView(colorBuffer, typeof<V4f>)
             ])
             SceneAttribute.Mode IndexedGeometryMode.TriangleList
-            Node.Render(index.Length)
+            Sg.Render(index.Length)
         }
             
     static member Quad(quad : aval<Quad3d>, ?color : C4b) = 
@@ -2025,7 +2021,7 @@ type Primitives private() =
                 string DefaultSemantic.Colors, BufferView(colorBuffer, typeof<V4f>)
             ])
             SceneAttribute.Mode IndexedGeometryMode.LineList
-            Node.Render(index.Length)
+            Sg.Render(index.Length)
         }
 
     static member WireQuad(quad : aval<Quad3d>, ?color : C4b) =
@@ -2071,7 +2067,7 @@ type Primitives private() =
                 string DefaultSemantic.Colors, BufferView(cBuffer, typeof<V4f>)
             ])
             SceneAttribute.Mode IndexedGeometryMode.TriangleList
-            Node.Render(triangulated |> AVal.map (fun (p, _) -> p.Length))
+            Sg.Render(triangulated |> AVal.map (fun (p, _) -> p.Length))
         }
             
     static member Polygon(polygon : aval<Polygon3d>, ?color : C4b, ?tessellationRule : TessellationRule) =
@@ -2126,7 +2122,7 @@ type Primitives private() =
                 string DefaultSemantic.Colors, BufferView(cBuffer, typeof<V4f>)
             ])
             SceneAttribute.Mode IndexedGeometryMode.LineList
-            Node.Render(edgeLines |> AVal.map (fun p -> p.Length))
+            Sg.Render(edgeLines |> AVal.map (fun p -> p.Length))
         }
             
     static member WirePolygon(polygon : Polygon3d, color : aval<C4b>) =

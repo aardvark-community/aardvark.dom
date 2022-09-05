@@ -36,7 +36,7 @@ let testApp (_runtime : IRuntime) =
             h1 {
                 Id "foo"
                 Class "bar"
-                Att.OnClick(click, true)
+                Dom.OnClick(click, true)
                 content |> AVal.map string
 
             }
@@ -44,22 +44,22 @@ let testApp (_runtime : IRuntime) =
             ul {
                 OnMouseEnter(fun e -> printfn "enter 0")
                 OnMouseLeave(fun e -> printfn "leave 0")
-                Att.OnClick((fun e -> printfn "capture 0"; true), true)
-                Att.OnClick((fun e -> printfn "bubble 0"; true), false)
+                Dom.OnClick((fun e -> printfn "capture 0"; true), true)
+                Dom.OnClick((fun e -> printfn "bubble 0"; true), false)
                 li { "Hans" }
                 li {
                     frameTime
                     OnMouseEnter(fun e -> printfn "enter 1")
                     OnMouseLeave(fun e -> printfn "leave 1")
-                    Att.OnClick((fun e -> printfn "capture 1"; true), true)
-                    Att.OnClick((fun e -> printfn "bubble 1"; false), false)
+                    Dom.OnClick((fun e -> printfn "capture 1"; true), true)
+                    Dom.OnClick((fun e -> printfn "bubble 1"; false), false)
                     ul {
                         li { 
                             "Sepp" 
                             OnMouseEnter(fun e -> printfn "enter 2")
                             OnMouseLeave(fun e -> printfn "leave 2")
-                            Att.OnClick((fun e -> printfn "capture 2"; true), true)
-                            Att.OnClick((fun e -> printfn "bubble 2"; true), false)
+                            Dom.OnClick((fun e -> printfn "capture 2"; true), true)
+                            Dom.OnClick((fun e -> printfn "bubble 2"; true), false)
                         }
                         li { "Franz" }
                     }
@@ -92,14 +92,14 @@ let testApp (_runtime : IRuntime) =
                 
 
                 OnContextMenu(click, useCapture = true)
-                Att.OnClick(click, true)
+                Dom.OnClick(click, true)
 
-                Att.OnPointerDown (fun e ->
+                Dom.OnPointerDown (fun e ->
                     transact (fun () -> down.Add e.PointerId |> ignore)
                     printfn "down\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
                 )
                 
-                Att.OnPointerUp (fun e ->
+                Dom.OnPointerUp (fun e ->
                     transact (fun () -> down.Remove e.PointerId |> ignore)
                     printfn "up\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
                 )
@@ -108,7 +108,7 @@ let testApp (_runtime : IRuntime) =
                     | true -> []
                     | false -> 
                         [
-                            Att.OnPointerMove (fun e ->
+                            Dom.OnPointerMove (fun e ->
                                 printfn "move %d: %f,%f" e.PointerId e.ClientX e.ClientY
                                 transact (fun () -> pos.Value <- V2d(e.ClientX, e.ClientY))
                             )
@@ -214,19 +214,22 @@ let testApp (_runtime : IRuntime) =
             renderControl  {
                 // HTML attributes
                 Style [Width "100%"; Height "600px"; Background "#202124"] 
-                Att.OnMouseEnter(fun e ->
+                Samples 4
+                Quality 50
+
+                Dom.OnMouseEnter(fun e ->
                     printfn "enter rc"
                 )
-                Att.OnMouseLeave(fun e ->
+                Dom.OnMouseLeave(fun e ->
                     printfn "leave rc"
                     transact (fun _ -> marker.Value <- Ray3d(V3d.NaN, V3d.Zero))
                 )
 
-                Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true)
-                Att.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true, useCapture = true)
-                Att.On("contextmenu", (fun (e : Event) -> ()), preventDefault = true)
 
-                Attribute("data-samples", AttributeValue.String "4")
+                Dom.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true)
+                Dom.On("wheel", (fun (e : WheelEvent) -> ()), preventDefault = true, useCapture = true)
+                Dom.On("contextmenu", (fun (e : Event) -> ()), preventDefault = true)
+
 
                 // react to resize of the RenderControl
                 RenderControl.OnResize(fun s ->
@@ -247,15 +250,16 @@ let testApp (_runtime : IRuntime) =
                 let proj = size |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
                 Sg.View view
                 Sg.Proj proj
-                    
+
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
-                Att.Style [Css.Cursor "crosshair"]
+                Dom.Style [Css.Cursor "crosshair"]
                 Sg.Cursor Aardvark.Application.Cursor.None
                 
+
                 // setup transformation and shaders
                 let rotActive = cval true
-                Sg.Scale 3.0
-                Sg.Trafo (rotationTrafo rotActive time)
+                Scale 3.0
+                Trafo (rotationTrafo rotActive time)
                 Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }  
                 
              
@@ -278,6 +282,7 @@ let testApp (_runtime : IRuntime) =
                         )
                     )
                     Sg.OnPointerMove(fun e ->
+                        
                         let m = e.ModelTrafo
                         transact (fun () -> 
                             marker.Value <- Ray3d(e.Position, e.Normal)

@@ -26,6 +26,8 @@ type IHtmlBackend<'a> =
     abstract RemoveAttribute : element : 'a * attName : string -> unit
     abstract SetAttribute : element : 'a * attName : string * attValue : string -> unit
     abstract SetAttribute : element : 'a * attName : string * attValue : Set<string> -> unit
+    abstract SetAttribute : element : 'a * attName : string * attValue : bool -> unit
+    abstract SetAttribute : element : 'a * attName : string * attValue : int -> unit
     
     abstract InsertFirst : parent : 'a * node : 'a -> unit
     abstract AppendChild : parent : 'a * node : 'a -> unit
@@ -154,7 +156,13 @@ and internal AttributeUpdater<'a>(targetId : 'a, attributes : AttributeMap) =
                     match value with
                     | AttributeValue.Execute _ ->
                         ()
-
+                        
+                    | AttributeValue.Bool value ->
+                        code.SetAttribute(targetId, key, value)
+                        
+                    | AttributeValue.Int value ->
+                        code.SetAttribute(targetId, key, value)
+                        
                     | AttributeValue.String value ->
                         code.SetAttribute(targetId, key, value)
                         
