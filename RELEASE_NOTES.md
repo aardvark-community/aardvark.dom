@@ -1,2 +1,2 @@
-### 0.0.1
-* initial
+### 1.0.0-prerelease0001
+* initial package
