@@ -21,6 +21,8 @@ jobs:
         run: dotnet tool restore
       - name: Restore
         run: dotnet paket restore
+      - name: Build
+        run: dotnet build -c Release
       - name: Pack
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
