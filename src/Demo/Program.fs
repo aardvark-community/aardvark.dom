@@ -1,4 +1,5 @@
 ﻿open System.Threading
+open System.Threading.Tasks
 open System.Text.Json
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
@@ -11,6 +12,7 @@ open Aardvark.Dom
 open Aardvark.Dom.Remote
 open Aardvark.Rendering
 open Aardvark.Application.Slim
+open Demo
 
 let testApp (_runtime : IRuntime) =
     let content = cval 0
@@ -38,7 +40,6 @@ let testApp (_runtime : IRuntime) =
                 Class "bar"
                 Dom.OnClick(click, true)
                 content |> AVal.map string
-
             }
 
             ul {
@@ -217,6 +218,7 @@ let testApp (_runtime : IRuntime) =
                 Samples 4
                 Quality 50
 
+
                 Dom.OnMouseEnter(fun e ->
                     printfn "enter rc"
                 )
@@ -261,9 +263,7 @@ let testApp (_runtime : IRuntime) =
                 Scale 3.0
                 Trafo (rotationTrafo rotActive time)
                 Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }  
-                
-             
-
+  
                 // scene      
                 sg {
                     // whenever something is hovered udpate the marker-arrow
@@ -282,7 +282,6 @@ let testApp (_runtime : IRuntime) =
                         )
                     )
                     Sg.OnPointerMove(fun e ->
-                        
                         let m = e.ModelTrafo
                         transact (fun () -> 
                             marker.Value <- Ray3d(e.Position, e.Normal)
@@ -324,17 +323,206 @@ let testApp (_runtime : IRuntime) =
     view
 
 
+module Elm =
+    open Adaptify
+    open FSharp.Data.Adaptive
+
+    type Message =
+        | Inc
+        | Dec
+        | Down of Button
+        | Up of Button
+
+
+    let update (env : Env<Message>) (model : Model) (msg : Message) =
+        match msg with
+        | Down b -> { model with PressedButtons = HashSet.add b model.PressedButtons }
+        | Up b -> { model with PressedButtons = HashSet.remove b model.PressedButtons }
+        | Inc -> 
+
+            task {
+                let! v = env.StartTask "return document.body.getBoundingClientRect();"
+                match v.TryGetProperty "x", v.TryGetProperty "y" with
+                | (true, x), (true, y) -> printfn "%A %A" x y
+                | _ -> printfn "NABSJKANs"
+            } |> ignore
+
+            { model with Count = model.Count + 1 }
+        | Dec -> 
+            { model with Count = model.Count - 1 }
+
+    let view (env : Env<Message>) (model : AdaptiveModel) =
+        body {
+            h1 { model.Count |> AVal.map (sprintf "Count: %d") }
+
+            div {
+                Dom.OnMouseDown(fun e -> env.Emit (Down e.Button))
+                Dom.OnMouseUp(fun e -> env.Emit (Up e.Button))
+                Dom.OnContextMenu(ignore, preventDefault = true)
+
+                //model.Count |> AVal.map (fun v ->
+                //    div {
+                //        Attribute(
+                //            "boot", AttributeValue.Execute([|
+                //                fun (c : IChannel) ->
+                //                    task {
+                //                        match! c.Receive() with
+                //                        | ChannelMessage.Text str ->
+                //                            env.Emit Inc
+                //                        | _ ->
+                //                            ()
+                //                    }
+                //            |], fun names ->
+                //                [
+                //                    $"{names.[0]}.onopen = function() {{"
+                //                    $"    {names.[0]}.send(\"{v}\");"
+                //                    $"}}"
+                //                ]
+                //            )
+                //        )
+                //    }
+                //)
+
+
+                button {
+                    Dom.OnClick (fun _ -> env.Emit Inc)
+                    Dom.OnContextMenu ((fun _ -> env.Emit Inc), preventDefault = true)
+                    "+"
+                }
+            
+                button {
+                    Dom.OnClick (fun _ -> env.Emit Dec)
+                    Dom.OnContextMenu ((fun _ -> env.Emit Dec), preventDefault = true)
+                    "-"
+                }
+            
+            
+                ASet.channel 
+                    model.PressedButtons 
+                    (fun name -> [ $"console.log('add: ', {name});"])
+                    (fun name -> [ $"console.log('rem: ', {name});"])
+                    
+                h3 { model.PressedButtons |> ASet.count |> AVal.map (sprintf "Count: %d") }
+                ul {
+                    model.PressedButtons |> ASet.sort |> AList.map (fun b ->
+                        li { 
+                            
+                            AVal.channel model.Count (fun name ->
+                                [
+                                    $"console.log('count is: ', {name});"
+                                ]
+                            )
+                            string b 
+                        }
+                    )
+                }
+            }
+        }
+
+    let app =
+        {
+            initial = { Count = 0; PressedButtons = HashSet.empty }
+            update = update
+            view = view
+            unpersist = Unpersist.instance
+        }
+
+open System
+open FSharp.Data.Adaptive
+open FSharp.Data.Traceable
+open FSharp.Core.CompilerServices
+open System.Runtime.CompilerServices
+
+[<AbstractClass; Sealed; Extension>]
+type ReaderExtensions private() = 
+    [<Extension>]
+    static member GetSpliceOperations(x : IOpReader<IndexList<'a>, IndexListDelta<'a>>, token : AdaptiveToken) =
+        let mutable old = x.State
+        let ops = x.GetChanges(token)
+        
+        let mutable result = ListCollector()
+        let mutable pendingIndex = -1
+        let mutable pendingRemoves = 0
+        let mutable pendingInserts = ListCollector()
+        
+        let flush() =
+            if pendingIndex >= 0 then
+                result.Add (pendingIndex, pendingRemoves, pendingInserts.Close())
+                pendingIndex <- -1
+                pendingRemoves <- 0
+                pendingInserts <- ListCollector()
+                
+        let mutable index = 0
+        for idx, op in ops do
+
+            let (l, s, r) = IndexList.split idx old
+            match op with
+            | Remove ->
+                if IndexList.isEmpty l then 
+                    if pendingIndex < 0 then pendingIndex <- index
+                else
+                    flush()
+                    index <- index + l.Count
+                    pendingIndex <- index
+
+                pendingRemoves <- pendingRemoves + 1
+            | Set v ->
+                let replaced = Option.isSome s
+                if IndexList.isEmpty l then 
+                    if pendingIndex < 0 then pendingIndex <- index
+                else
+                    flush()
+                    index <- index + l.Count
+                    pendingIndex <- index
+                if replaced then pendingRemoves <- pendingRemoves + 1
+                pendingInserts.Add v
+                
+            old <- r
+
+        flush()
+
+        result.Close()
+
+
+module List =
+    let applySplice (index : int) (count : int) (repl : list<'a>) (l : list<'a>) =
+        let rec applySplice (i : int) (index : int) (count : int) (repl : list<'a>) (l : list<'a>) =
+            if i = index then
+                repl @ List.skip count l
+            else
+                match l with
+                | h :: t ->
+                    h :: applySplice (i+1) index count repl t
+                | [] ->
+                    failwith ""
+        applySplice 0 index count repl l
+        
+    let applySplices (ops : list<int * int * list<'a>>) (l : list<'a>) =
+        let mutable res = l
+        for (o,c,r) in ops do
+            res <- applySplice o c r res
+        res
+
+
+
 [<EntryPoint>]
 let main _ =
     Aardvark.Init()
     let app = new OpenGlApplication()
+    let noDisposable = { new System.IDisposable with member x.Dispose() = () }
+
+
+    let run (ctx : DomContext) = 
+        testApp ctx.Runtime, noDisposable
+        //App.start ctx Elm.app
+
 
     Host.CreateDefaultBuilder()
         .ConfigureWebHostDefaults(
             fun webHostBuilder ->
                 webHostBuilder
                     .UseSockets()
-                    .Configure(fun b -> b.UseWebSockets().UseGiraffe (DomNode.toRoute app.Runtime testApp))
+                    .Configure(fun b -> b.UseWebSockets().UseGiraffe (DomNode.toRoute app.Runtime run))
                     .ConfigureServices(fun s -> s.AddGiraffe() |> ignore)
                     |> ignore
         )

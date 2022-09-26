@@ -6,9 +6,11 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Model.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Aardvark.Dom.Elm\Aardvark.Dom.Elm.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom.Giraffe\Aardvark.Dom.Giraffe.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />

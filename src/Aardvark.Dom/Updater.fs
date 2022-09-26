@@ -47,6 +47,13 @@ type IHtmlBackend<'a> =
     abstract Run : obj -> unit
 
 
+type DomContext =
+    {
+        Runtime : IRuntime
+        Execute : string -> option<System.Text.Json.JsonElement -> unit> -> unit
+    }   
+
+
 
 [<AbstractClass>]
 type Updater<'a>(runtime : IRuntime, id : 'a) =

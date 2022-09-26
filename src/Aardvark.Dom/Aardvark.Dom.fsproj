@@ -19,6 +19,7 @@
     <Compile Include="UI\DomNode.fs" />
     <Compile Include="Frontend.fs" />
     <Compile Include="Updater.fs" />
+    <Compile Include="AdaptiveUtilities.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

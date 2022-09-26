@@ -11,7 +11,7 @@ type ChannelMessage =
 type IChannel =
     abstract Send : ChannelMessage -> Task<unit>
     abstract Receive : unit -> Task<ChannelMessage>
-
+    abstract OnClose : IObservable<unit>
 
 type EventCode =
     {

@@ -13,3 +13,5 @@ nuget Aardvark.Application.Slim.GL ~> 5.2.12
 nuget Aardvark.Rendering.Vulkan ~> 5.2.12
 nuget Aardvark.Application.Slim.Vulkan ~> 5.2.12
 nuget Aardvark.Rendering.Text ~> 5.2.12
+nuget Adaptify.Core ~> 1.1.6
+nuget Adaptify.MSBuild ~> 1.1.6

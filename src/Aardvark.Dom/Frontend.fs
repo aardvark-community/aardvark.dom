@@ -3,6 +3,7 @@
 open System
 open Aardvark.Base
 open Aardvark.Dom
+open System.Threading.Tasks
 
 
 [<AutoOpen>]
@@ -506,7 +507,7 @@ type Dom private() =
 
     static member inline OnMouseUp(callback : MouseEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
-            "mousedown", 
+            "mouseup", 
             callback, 
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
@@ -514,7 +515,7 @@ type Dom private() =
         
     static member inline OnMouseUp(callback : MouseEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
-            "mousedown", 
+            "mouseup", 
             callback, 
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
@@ -553,41 +554,43 @@ type Dom private() =
         )
         
 
-    static member inline OnPointerDown(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+    static member inline OnPointerDown(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?pointerCapture : bool) = 
         Dom.On(
             "pointerdown", 
             callback, 
-            pointerCapture = true,
+            ?pointerCapture = pointerCapture,
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
         
-    static member inline OnPointerDown(callback : PointerEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+    static member inline OnPointerDown(callback : PointerEvent -> bool, ?useCapture : bool, ?preventDefault : bool, ?pointerCapture : bool) = 
         Dom.On(
             "pointerdown", 
             callback, 
-            pointerCapture = true,
+            ?pointerCapture = pointerCapture,
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
+        
 
-    static member inline OnPointerUp(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+    static member inline OnPointerUp(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool, ?pointerCapture : bool) = 
         Dom.On(
             "pointerup", 
             callback,
-            pointerCapture = true,
+            ?pointerCapture = pointerCapture,
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
         
-    static member inline OnPointerUp(callback : PointerEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+    static member inline OnPointerUp(callback : PointerEvent -> bool, ?useCapture : bool, ?preventDefault : bool, ?pointerCapture : bool) = 
         Dom.On(
             "pointerup", 
             callback,
-            pointerCapture = true,
+            ?pointerCapture = pointerCapture,
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
+        
 
     static member inline OnPointerMove(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
@@ -613,6 +616,9 @@ type Dom private() =
 
     static member inline OnBoot(code : string) =
         Attribute("boot", AttributeValue.Execute([||], fun _ -> [code]))
+
+    static member inline OnBoot(channel : IChannel -> Task<unit>, js : string -> string) =
+        Attribute("boot", AttributeValue.Execute([|channel|], fun n -> [js n.[0]]))
 
     static member inline OnShutdown(code : string) =
         Attribute("shutdown", AttributeValue.Execute([||], fun _ -> [code]))

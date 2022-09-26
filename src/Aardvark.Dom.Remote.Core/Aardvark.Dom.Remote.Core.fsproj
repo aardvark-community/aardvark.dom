@@ -7,17 +7,10 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="aardvark-dom.js" />
-    <Compile Include="RemoteUtilities.fs" />
-    <Compile Include="RemoteHtmlBackend.fs" />
-    <Compile Include="Jpeg\TurboJpeg.fs" />
-    <Compile Include="Jpeg\JpegDownload.fs" />
-    <Compile Include="Jpeg\JpegTransfer.fs" />
-    <Compile Include="SharedMemory\SharedMemory.fs" />
-    <Compile Include="SharedMemory\RawDownload.fs" />
-    <Compile Include="SharedMemory\SharedMemoryTransfer.fs" />
+    <Compile Include="AbstractRemoteHtmlBackend.fs" />
   </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
-    <ProjectReference Include="..\Aardvark.Dom.Remote.Core\Aardvark.Dom.Remote.Core.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
