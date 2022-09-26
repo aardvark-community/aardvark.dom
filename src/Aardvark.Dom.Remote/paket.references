@@ -2,7 +2,5 @@ FSharp.Core
 Aardvark.Base
 Aardvark.Build
 Aardvark.SceneGraph
-Aardvark.Rendering.GL
-Aardvark.Rendering.Vulkan
 Aardvark.Rendering.Text
 Aardvark.Application

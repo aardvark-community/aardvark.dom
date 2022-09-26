@@ -283,6 +283,7 @@ let testApp (_runtime : IRuntime) =
                     )
                     Sg.OnPointerMove(fun e ->
                         let m = e.ModelTrafo
+                        printfn "move"
                         transact (fun () -> 
                             marker.Value <- Ray3d(e.Position, e.Normal)
                         )

@@ -474,87 +474,79 @@ module private PickBuffer =
         
     
 
-
+    
 [<AutoOpen>]
 module internal BlitExtensions =
     let private pickBuffer = Symbol.Create "PickId"
-    module private GL =
-        open OpenTK.Graphics.OpenGL4
-        open Aardvark.Rendering.GL
-        let blit (src : Framebuffer) (dst : Framebuffer) =
-            let drawBuffer =
-                if dst.Handle = 0 then DrawBufferMode.BackLeft
-                else DrawBufferMode.ColorAttachment0
+    //module private GL =
+    //    open OpenTK.Graphics.OpenGL4
+    //    open Aardvark.Rendering.GL
+    //    let blit (src : Framebuffer) (dst : Framebuffer) =
+    //        let drawBuffer =
+    //            if dst.Handle = 0 then DrawBufferMode.BackLeft
+    //            else DrawBufferMode.ColorAttachment0
             
-            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, src.Handle)
-            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, dst.Handle)
+    //        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, src.Handle)
+    //        GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, dst.Handle)
             
-            GL.DrawBuffer(drawBuffer)
-            GL.ReadBuffer(ReadBufferMode.ColorAttachment0)
-            GL.BlitFramebuffer(
-                0, 0, src.Size.X, src.Size.Y,
-                0, 0, dst.Size.X, dst.Size.Y,
-                ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit ||| ClearBufferMask.StencilBufferBit,
-                BlitFramebufferFilter.Nearest
-            )
-            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, dst.Handle)
+    //        GL.DrawBuffer(drawBuffer)
+    //        GL.ReadBuffer(ReadBufferMode.ColorAttachment0)
+    //        GL.BlitFramebuffer(
+    //            0, 0, src.Size.X, src.Size.Y,
+    //            0, 0, dst.Size.X, dst.Size.Y,
+    //            ClearBufferMask.ColorBufferBit ||| ClearBufferMask.DepthBufferBit ||| ClearBufferMask.StencilBufferBit,
+    //            BlitFramebufferFilter.Nearest
+    //        )
+    //        GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, dst.Handle)
             
-        let readPixel (src : Framebuffer) (px : V2i) =
-            use __ = src.Context.ResourceLock
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, src.Handle)
-            let res = [| V4i.Zero |]
-            let (KeyValue(slot, _)) = src.Signature.Layout.ColorAttachments |> Seq.find (fun (KeyValue(id, sem)) -> sem.Name = pickBuffer)
-            GL.ReadBuffer(unbox (int ReadBufferMode.ColorAttachment0 + slot))
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0)
-            GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
-            GL.ReadPixels(px.X, src.Size.Y - 1 - px.Y, 1, 1, PixelFormat.RgbaInteger, PixelType.Int, res)
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
-            res.[0]
+    //    let readPixel (src : Framebuffer) (px : V2i) =
+    //        use __ = src.Context.ResourceLock
+    //        GL.BindFramebuffer(FramebufferTarget.Framebuffer, src.Handle)
+    //        let res = [| V4i.Zero |]
+    //        let (KeyValue(slot, _)) = src.Signature.Layout.ColorAttachments |> Seq.find (fun (KeyValue(id, sem)) -> sem.Name = pickBuffer)
+    //        GL.ReadBuffer(unbox (int ReadBufferMode.ColorAttachment0 + slot))
+    //        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0)
+    //        GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
+    //        GL.ReadPixels(px.X, src.Size.Y - 1 - px.Y, 1, 1, PixelFormat.RgbaInteger, PixelType.Int, res)
+    //        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+    //        res.[0]
+        
+    //module Vulkan =
+    //    open Aardvark.Rendering.Vulkan
+    //    let blit (src : Framebuffer) (dst : Framebuffer) =
+    //        let device = src.Device
             
-            
-    module Vulkan =
-        open Aardvark.Rendering.Vulkan
-        let blit (src : Framebuffer) (dst : Framebuffer) =
-            let device = src.Device
-            
-            device.perform {
-                for (KeyValue(name, srcView)) in src.Attachments do
-                    match dst.Attachments.TryGetValue name with
-                    | (true, dstView) ->
-                        let ap = if name = DefaultSemantic.DepthStencil then TextureAspect.DepthStencil else TextureAspect.Color
-                        let lSrc = srcView.Image.Layout
-                        let lDst = dstView.Image.Layout
-                        do! Command.TransformLayout(srcView.Image, VkImageLayout.TransferSrcOptimal)
-                        do! Command.TransformLayout(dstView.Image, VkImageLayout.TransferDstOptimal)
-                        do! Command.Copy(srcView.Image.[ap, 0, *], dstView.Image.[ap, 0, *])
-                        do! Command.TransformLayout(srcView.Image, lSrc)
-                        do! Command.TransformLayout(dstView.Image, lDst)
-                    | _ ->
-                        ()
-            }
+    //        device.perform {
+    //            for (KeyValue(name, srcView)) in src.Attachments do
+    //                match dst.Attachments.TryGetValue name with
+    //                | (true, dstView) ->
+    //                    let ap = if name = DefaultSemantic.DepthStencil then TextureAspect.DepthStencil else TextureAspect.Color
+    //                    let lSrc = srcView.Image.Layout
+    //                    let lDst = dstView.Image.Layout
+    //                    do! Command.TransformLayout(srcView.Image, VkImageLayout.TransferSrcOptimal)
+    //                    do! Command.TransformLayout(dstView.Image, VkImageLayout.TransferDstOptimal)
+    //                    do! Command.Copy(srcView.Image.[ap, 0, *], dstView.Image.[ap, 0, *])
+    //                    do! Command.TransformLayout(srcView.Image, lSrc)
+    //                    do! Command.TransformLayout(dstView.Image, lDst)
+    //                | _ ->
+    //                    ()
+    //        }
                       
-        let readPixel (src : Framebuffer) (px : V2i) =
-            let att = src.Attachments.[pickBuffer].Image :> IBackendTexture
-            let rt = src.Device.Runtime
-            let dst = PixImage<int>(Col.Format.RGBA, V2i.II)
-            rt.Download(att.[TextureAspect.Color, 0, 0], dst, px, V2i.II)
-            let r = V4i dst.Volume.Data
-            r
+    //    let readPixel (src : Framebuffer) (px : V2i) =
+    //        let att = src.Attachments.[pickBuffer].Image :> IBackendTexture
+    //        let rt = src.Device.Runtime
+    //        let dst = PixImage<int>(Col.Format.RGBA, V2i.II)
+    //        rt.Download(att.[TextureAspect.Color, 0, 0], dst, px, V2i.II)
+    //        let r = V4i dst.Volume.Data
+    //        r
             
-    type IRuntime with
+    type IFramebufferRuntime with
         member x.BlitFramebuffer(src : IFramebuffer, dst : IFramebuffer) =
-            match x with
-            | :? Aardvark.Rendering.GL.Runtime as r ->
-                GL.blit (unbox src) (unbox dst)
-            | _ ->
-                Vulkan.blit (unbox src) (unbox dst)
+            x.Copy(src, dst)
                 
-        member x.ReadPixel(src : IFramebuffer, pixel : V2i) =
-            match x with
-            | :? Aardvark.Rendering.GL.Runtime as r ->
-                GL.readPixel (unbox src) pixel
-            | _ ->
-                Vulkan.readPixel (unbox src) pixel
+        member x.ReadPixel(src : IFramebuffer, pixel : V2i) : V4i =
+            let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<int>
+            V4i img.Volume.Data
         
         
 type private SceneHandlerFramebuffers =

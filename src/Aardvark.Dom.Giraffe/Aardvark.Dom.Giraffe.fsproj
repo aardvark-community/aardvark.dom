@@ -9,7 +9,7 @@
     <Compile Include="Route.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj" />
+    <ProjectReference Include="..\Aardvark.Dom.Server\Aardvark.Dom.Server.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

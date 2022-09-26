@@ -394,16 +394,16 @@
     aardvark.setListener = function (node, type, action, capture) {
         let realAction = action;
         let destroyCallback = () => { };
-        if (type == "pointermove" || type == "mousemove") {
-            let o = aardvark.callbackWithMinDelay(16.6666, action, (a, b) => { a.movementX += b.movementX; a.movementY += b.movementY; return a });
-            realAction = function (e) {
-                const p = e.composedPath();
-                e.stopImmediatePropagation();
-                e.composedPath = () => p;
-                o.invoke(e);
-            };
-            destroyCallback = o.destroy;
-        }
+        //if (type == "pointermove" || type == "mousemove") {
+        //    let o = aardvark.callbackWithMinDelay(16.6666, action, (a, b) => { a.movementX += b.movementX; a.movementY += b.movementY; return a });
+        //    realAction = function (e) {
+        //        const p = e.composedPath();
+        //        e.stopImmediatePropagation();
+        //        e.composedPath = () => p;
+        //        o.invoke(e);
+        //    };
+        //    destroyCallback = o.destroy;
+        //}
 
 
         const suffix = capture ? "_capture" : "_bubble";

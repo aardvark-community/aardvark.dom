@@ -9,13 +9,13 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom", "src\Aardvar
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Demo", "src\Demo\Demo.fsproj", "{A15E72EF-A0F2-490C-900F-3E0039F02AE4}"
 EndProject
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom.Remote", "src\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj", "{2FEA70EA-80E2-4FCD-A760-CE5C28071E1B}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom.Server", "src\Aardvark.Dom.Server\Aardvark.Dom.Server.fsproj", "{2FEA70EA-80E2-4FCD-A760-CE5C28071E1B}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom.Giraffe", "src\Aardvark.Dom.Giraffe\Aardvark.Dom.Giraffe.fsproj", "{B7E2D4FE-AE42-4854-8221-591AFF18A2A0}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom.Elm", "src\Aardvark.Dom.Elm\Aardvark.Dom.Elm.fsproj", "{6D049923-19A4-4C94-8227-53EDBE0DDA86}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Aardvark.Dom.Remote.Core", "src\Aardvark.Dom.Remote.Core\Aardvark.Dom.Remote.Core.fsproj", "{003C9BBF-798E-4682-9BB4-2163F6B7A0D8}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Aardvark.Dom.Remote", "src\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj", "{003C9BBF-798E-4682-9BB4-2163F6B7A0D8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
