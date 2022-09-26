@@ -4,7 +4,7 @@ source https://nuget.pkg.github.com/aardworx/index.json
 storage: none
 
 nuget FSharp.Core >= 5.0.0 lowest_matching: true
-nuget Aardvark.Build ~> 1.0.0-prerelease0011
+nuget Aardvark.Build ~> 1.0.13
 nuget Aardvark.Base ~> 5.2.5
 nuget Giraffe ~> 6.0.0
 nuget Aardvark.SceneGraph ~> 5.2.14
