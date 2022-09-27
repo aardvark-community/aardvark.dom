@@ -411,8 +411,12 @@ type AbstractRemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Di
                 let var = code.GetOrCreateVar element
                 let body =
                     String.concat "" [
+                        "if(e.bubbles) {"
+                        "  if(e.seenByAardvark) return;"
+                        "  e.seenByAardvark = true;"
+                        "}"
                         $"const flags = aardvark.getListenerFlags({var}, \"{name}\");"
-                        "if(e.bubbles) e.stopPropagation();"
+                        //"if(e.bubbles) e.stopPropagation();"
                         "if(flags.preventDefault) { e.preventDefault(); }"
                             
                         match name.ToLower() with

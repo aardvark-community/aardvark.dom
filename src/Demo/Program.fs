@@ -92,7 +92,7 @@ let testApp (_runtime : IRuntime) =
 
                 
 
-                OnContextMenu(click, useCapture = true)
+                OnContextMenu(click, useCapture = true, preventDefault = true)
                 Dom.OnClick(click, true)
 
                 Dom.OnPointerDown (fun e ->
