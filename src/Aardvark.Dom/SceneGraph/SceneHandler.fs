@@ -17,18 +17,18 @@ module internal Normal32 =
             (if v.Y < -1.0 then -1.0 elif v.Y > 1.0 then 1.0 else v.Y)
         )
 
-    let decode (v : uint32) : V3d =
-        if v = 0u then
+    let decode (v : int) : V3d =
+        if v = 0 then
             V3d.Zero
         else
-            let e = V2d(float (v >>> 16) / 65535.0, float (v &&& 0xFFFFu) / 65535.0) * 2.0 - V2d.II
+            let e = V2d(float (uint32 v >>> 16) / 65535.0, float (v &&& 0xFFFF) / 65535.0) * 2.0 - V2d.II
             let v = V3d(e, 1.0 - abs e.X - abs e.Y)
             if v.Z < 0.0 then V3d(V2d(1.0 - abs v.Y, 1.0 - abs v.X) * sgn v.XY, v.Z) |> Vec.normalize
             else v |> Vec.normalize
 
-    let encode (v : V3d) : uint32 =
+    let encode (v : V3d) : int =
         if v.X = 0.0 && v.Y = 0.0 && v.Z = 0.0 then
-            0u
+            0
         else
             let p = v.XY * (1.0 / (abs v.X + abs v.Y + abs v.Z))
             let p = 
@@ -37,13 +37,13 @@ module internal Normal32 =
         
             let x0 = floor ((p.X * 0.5 + 0.5) * 65535.0) |> int
             let y0 = floor ((p.Y * 0.5 + 0.5) * 65535.0) |> int
-
+            
             let mutable bestDot = 0.0
-            let mutable best = 0u
+            let mutable best = 0
 
             for dx in 0 .. 1 do
                 for dy in 0 .. 1 do
-                    let e = uint32 (((x0 + dx) <<< 16) ||| (y0 + dy))
+                    let e = (((x0 + dx) <<< 16) ||| (y0 + dy))
                     let vv = decode e
                     let d = Vec.dot vv v
                     if d > bestDot then
@@ -637,7 +637,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             let id = value.X
             transact (fun () -> hoverId.Value <- id)
             if id >= 0 then
-                let n = value.Y |> uint32 |> Normal32.decode
+                let n = value.Y |> Normal32.decode
                 let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
                     
                 match scopes.TryGetValue id with
