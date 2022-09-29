@@ -190,6 +190,10 @@ type TextPickInfo =
             
 [<AbstractClass; Sealed; AutoOpen>]
 type Sg private() =
+
+    static member Active (v : aval<bool>) =
+        SceneAttribute.Active v
+
     static member Effect (e : FShade.Effect) =
         SceneAttribute.Shader e
 

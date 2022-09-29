@@ -671,19 +671,49 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | :? RenderObject as o ->
                     let pickId = getId(t)
                     match o.Surface with
-                    | Surface.FShadeSimple e ->
+                    | Surface.FShadeSimple eff ->
+                        let hasAllInputs (effect : FShade.Effect) =
+                            let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
+                            let m = FShade.Effect.toModule cfg effect
+                            let vertex = 
+                                m.entries |> List.find (fun e -> 
+                                    e.decorations |> List.exists (function 
+                                        | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
+                                        | _ -> false
+                                    )
+                                )
+                        
+                            let hasVertexInputs = 
+                                vertex.inputs |> List.forall (fun p -> 
+                                    Option.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
+                                    Option.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
+                                )
+                            
+                            //let hasUniforms = 
+                            //    m.entries |> List.collect (fun e -> e.uniforms) |> List.forall (fun u -> 
+                            //        let has = 
+                            //            u.uniformName = "PickId" ||
+                            //            Option.isSome (Uniforms.tryGetDerivedUniform u.uniformName o.Uniforms) ||
+                            //            Option.isSome (o.Uniforms.TryGetUniform(Ag.Scope.Root, u.uniformName))
+                            //        if not has then Log.warn "missing: %A" u
+                            //        has
+                            //    )
+                            hasVertexInputs
+
+                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; eff; PickShader.pickEffect]
+                            
                         let newSurface =
-                            if Option.isSome (o.VertexAttributes.TryGetAttribute DefaultSemantic.Normals) then
-                                Surface.FShadeSimple (FShade.Effect.compose [PickShader.vertexPickEffect; e; PickShader.pickEffect])
+                            if hasAllInputs withNormal then
+                                Surface.FShadeSimple withNormal
                             else
-                                Log.warn "no normal"
-                                Surface.FShadeSimple (FShade.Effect.compose [e; PickShader.pickEffectNoNormal])
+                                Surface.FShadeSimple (FShade.Effect.compose [eff; PickShader.pickEffectNoNormal])
                                     
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
                         r.Surface <- newSurface
                         r :> IRenderObject, true
-                    | _ ->
+                    | s ->
+                        Log.warn "cannot change surface: %A" s
                         o :> IRenderObject, true
               
                 | :? MultiRenderObject as o ->
@@ -694,6 +724,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     else
                         o :> IRenderObject, false
                 | o ->
+                    Log.warn "cannot wrap object: %A" o
                     o, false
             else
                 o, false
@@ -827,7 +858,6 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 clear.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
-                
                 let pickBuffer = outputInfo.PickTexture
                 if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved, ImageTrafo.Identity)
                 else runtime.Copy(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])

@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0004
+* Improved normal-detection
+
 ### 1.0.0-prerelease0003
 * Normal32 int encoding
 
