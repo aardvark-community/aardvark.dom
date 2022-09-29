@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0005
+* respecting depth-writes
+
 ### 1.0.0-prerelease0004
 * Improved normal-detection
 

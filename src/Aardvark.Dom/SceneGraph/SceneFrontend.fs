@@ -1292,7 +1292,26 @@ type Primitives private() =
                 DirectDrawNode(DrawCallInfo(FaceVertexCount = idx.Length, InstanceCount = 1))
             }
         )
-       
+ 
+ 
+    static member FullscreenQuad =
+        sg {
+                
+            let pos = ArrayBuffer [| V3f.NNN; V3f.PNN; V3f.PPN; V3f.NPN |] :> IBuffer
+            let tc = ArrayBuffer [| V2f.OO; V2f.IO; V2f.II; V2f.OI |] :> IBuffer
+            let ns = ArrayBuffer [| V3f.OOI; V3f.OOI; V3f.OOI; V3f.OOI |] :> IBuffer
+            let index = [| 0; 1; 3; 3; 1; 2|]
+                
+            SceneAttribute.Index (Some (BufferView.ofArray index))
+            SceneAttribute.VertexAttributes (HashMap.ofList [
+                string DefaultSemantic.Positions, BufferView(pos, typeof<V3f>)
+                string DefaultSemantic.Normals, BufferView(ns, typeof<V3f>)
+                string DefaultSemantic.DiffuseColorCoordinates, BufferView(tc, typeof<V2f>)
+            ])
+            SceneAttribute.Mode IndexedGeometryMode.TriangleList
+            Sg.Render(index.Length)
+        }
+
        
     static member Tetrahedron(color : aval<C4b>) =
         sg {

@@ -71,6 +71,7 @@ module internal PickShader =
             [<Color>] c : V4d
             [<Position>] pos : V4d
             [<Semantic("ViewSpaceNormal")>] vn : V3d
+            [<Depth>] d : float
             [<FragCoord>] fc : V4d
         }
     
@@ -87,6 +88,7 @@ module internal PickShader =
                 c = v.c
                 pos = v.pos
                 vn = vn
+                d = 0.0
                 fc = V4d.Zero
             }
         }
@@ -94,21 +96,28 @@ module internal PickShader =
     [<GLSLIntrinsic("gl_FragCoord")>]
     let fragCoord() : V4d = onlyInShaderCode "fragcoord"
     
+    let pickIdBefore(v : Vertex) =
+        fragment {
+            let d = fragCoord().Z
+            return { v with d = d }
+        }
+        
     let pickId(v : Vertex) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let d = (2.0 * fragCoord().Z - 1.0) |> Bitwise.FloatBitsToInt
+            let d = (2.0 * v.d - 1.0) |> Bitwise.FloatBitsToInt
             return { c = v.c; id = V4i(uniform.PickId, n32, d, 0) }
         }
         
     let pickIdNoNormal(v : Vertex) =
         fragment {
-            let n32 = Normal32.encode V3d.Zero |> int
-            let d = (2.0 * fragCoord().Z - 1.0) |> Bitwise.FloatBitsToInt
+            let n32 = 0
+            let d = (2.0 * v.d - 1.0) |> Bitwise.FloatBitsToInt
             return { c = v.c; id = V4i(uniform.PickId, n32, d, 0) }
         }
 
     let vertexPickEffect = Effect.ofFunction pickVertex
+    let pickEffectBefore = Effect.ofFunction pickIdBefore
     let pickEffect = Effect.ofFunction pickId
     let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
 
@@ -700,13 +709,13 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                             //    )
                             hasVertexInputs
 
-                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; eff; PickShader.pickEffect]
+                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
                             
                         let newSurface =
                             if hasAllInputs withNormal then
                                 Surface.FShadeSimple withNormal
                             else
-                                Surface.FShadeSimple (FShade.Effect.compose [eff; PickShader.pickEffectNoNormal])
+                                Surface.FShadeSimple (FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal])
                                     
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
