@@ -1,3 +1,8 @@
+### 1.0.0-prerelease0007
+* Sg.Delay
+* Dom.OnBeforeInput
+* delayed loading of FontSquirrel.Hack and exposed Text-RenderStyle
+
 ### 1.0.0-prerelease0006
 * OnChange/OnInput
 

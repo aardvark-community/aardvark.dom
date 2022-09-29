@@ -657,6 +657,20 @@ type Dom private() =
             callback, 
             ?preventDefault = preventDefault
         )
+        
+    static member OnBeforeInput(callback : InputEvent -> bool, ?preventDefault : bool) =
+        Dom.On(
+            "beforeinput", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
+            
+    static member OnBeforeInput(callback : InputEvent -> unit, ?preventDefault : bool) =
+        Dom.On(
+            "beforeinput", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
 
 [<AbstractClass; Sealed; AutoOpen>]
 type RenderControl private() =

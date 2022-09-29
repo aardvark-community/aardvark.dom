@@ -307,6 +307,17 @@ module SgAdapter =
             
 
 
+type DelayedSceneNode(create : TraversalState -> ISceneNode) =
+    interface ISceneNode with
+        member x.GetObjects(state) =
+            let node = create state
+            node.GetObjects(state)
+                
+        member x.GetRenderObjects(state) =
+            let node = create state
+            node.GetRenderObjects(state)
+          
+
 type ShaderAttributeBuilder() =
     member x.Zero() = []
     member x.Yield (shader : 'a -> Microsoft.FSharp.Quotations.Expr<'b>) =

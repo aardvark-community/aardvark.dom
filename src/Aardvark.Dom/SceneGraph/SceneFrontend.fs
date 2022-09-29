@@ -360,15 +360,15 @@ type Sg private() =
             ASet.single (Render geometry.FaceVertexCount)
         ) :> ISceneNode
 
-    static member Text(text : aval<string>, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment) =
+    static member Text(text : aval<string>, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?renderStyle : RenderStyle) =
         // let color = defaultArg color (AVal.constant C4b.White)
         let config =
             {
-                font = defaultArg font FontSquirrel.Hack.Regular
+                font = match font with | Some f -> f | None -> FontSquirrel.Hack.Regular
                 color = match color with | Some c -> AVal.force c | None -> C4b.White
                 align = defaultArg align TextAlignment.Left
                 flipViewDependent = true
-                renderStyle = RenderStyle.Normal
+                renderStyle = defaultArg renderStyle RenderStyle.Normal
             }
                     
         let renderBounds =
@@ -436,8 +436,11 @@ type Sg private() =
 
         }
             
-    static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment) =
-        Sg.Text(AVal.constant text, ?font = font, ?color = color, ?align = align)
+    static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?renderStyle : RenderStyle) =
+        Sg.Text(AVal.constant text, ?font = font, ?color = color, ?align = align, ?renderStyle = renderStyle)
+        
+    static member Delay(creator : TraversalState -> ISceneNode) =
+        DelayedSceneNode(creator) :> ISceneNode
 
 
 module private PrimitiveHelpers = 
