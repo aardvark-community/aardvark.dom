@@ -35,6 +35,19 @@ let testApp (_runtime : IRuntime) =
                 FontFamily "monospace"
             ]
 
+            input {
+                Type "checkbox"
+                Checked true
+                OnChange (fun e -> printfn "%A" e.Checked)
+            }   
+            
+            input {
+                Type "text"
+                Value "hans"
+                OnChange (fun e -> printfn "%A" e.Value)
+                OnInput (fun e -> printfn "%A %A %A" e.InputType e.Data e.Value)
+            }   
+            
             h1 {
                 Id "foo"
                 Class "bar"

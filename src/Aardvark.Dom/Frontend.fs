@@ -393,7 +393,9 @@ type Dom private() =
 
     /// For <button> elements, the type attribute specifies the type of button.
     static member inline Type(typ : string) = Attribute("type", AttributeValue.String typ)
-
+    
+    static member inline Role(role : string) = Attribute("role", AttributeValue.String role)
+    
     /// The usemap attribute specifies an image (or an object) as an image map (an image map is an image with clickable areas).
     static member inline UseMap(name : string) = Attribute("useMap", AttributeValue.String name)
 
@@ -628,7 +630,33 @@ type Dom private() =
 
     static member inline OnShutdown(code : #seq<string>) =
         Attribute("shutdown", AttributeValue.Execute([||], fun _ -> [String.concat "\n" code]))
-
+        
+    static member OnChange(callback : ChangeEvent -> bool, ?preventDefault : bool) =
+        Dom.On(
+            "change", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
+            
+    static member OnChange(callback : ChangeEvent -> unit, ?preventDefault : bool) =
+        Dom.On(
+            "change", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
+    static member OnInput(callback : InputEvent -> bool, ?preventDefault : bool) =
+        Dom.On(
+            "input", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
+            
+    static member OnInput(callback : InputEvent -> unit, ?preventDefault : bool) =
+        Dom.On(
+            "input", 
+            callback, 
+            ?preventDefault = preventDefault
+        )
 
 [<AbstractClass; Sealed; AutoOpen>]
 type RenderControl private() =

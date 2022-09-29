@@ -253,7 +253,15 @@
             }
 
             return JSON.stringify(e, (k, v) => {
-                if (v instanceof Node) return v.id;
+                if (v instanceof Node) {
+                    
+                    return {
+                        id: v.id,
+                        type: v.type,
+                        value: v.value,
+                        checked: v.checked
+                    };
+                }
                 if (v instanceof Window) return 'Window';
                 if (v instanceof Event) {
                     const obj = {};

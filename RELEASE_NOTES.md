@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0006
+* OnChange/OnInput
+
 ### 1.0.0-prerelease0005
 * respecting depth-writes
 

@@ -109,7 +109,7 @@ type Event(target : string, timeStamp : float, isTrusted : bool, typ : string, c
             let! (isTrusted : bool) = str?isTrusted
             let! (typ : string) = str?``type``
             let! (timeStamp : float) = str?timeStamp
-            let! (target : string) = str?target
+            let! (target : string) = str?target?id
 
             let! (rect : System.Text.Json.JsonElement) = str?clientRect
             let! (x : float) = rect?x
@@ -158,7 +158,7 @@ type MouseEvent(
             let! (isTrusted : bool) = str?isTrusted
             let! (typ : string) = str?``type``
             let! (timeStamp : float) = str?timeStamp
-            let! (target : string) = str?target
+            let! (target : string) = str?target?id
 
             let! (screenX : float) = str?screenX
             let! (screenY : float) = str?screenY
@@ -242,7 +242,7 @@ type WheelEvent(
             let! (isTrusted : bool) = str?isTrusted
             let! (typ : string) = str?``type``
             let! (timeStamp : float) = str?timeStamp
-            let! (target : string) = str?target
+            let! (target : string) = str?target?id
 
             let! (screenX : float) = str?screenX
             let! (screenY : float) = str?screenY
@@ -367,7 +367,7 @@ type PointerEvent(
             let! (isTrusted : bool) = str?isTrusted
             let! (typ : string) = str?``type``
             let! (timeStamp : float) = str?timeStamp
-            let! (target : string) = str?target
+            let! (target : string) = str?target?id
 
             let! (screenX : float) = str?screenX
             let! (screenY : float) = str?screenY
@@ -411,5 +411,92 @@ type PointerEvent(
                     unbox button, unbox buttons,
                     pointerId, defaultArg width 1.0, defaultArg height 1.0, defaultArg pressure 0.0,
                     defaultArg tiltX 0.0, defaultArg tiltY 0.0, defaultArg pointerType ""
+                )
+        }
+        
+type ChangeEvent(  
+        target : string, timeStamp : float, 
+        isTrusted : bool, typ : string, clientRect : Box2d, nodeType : string, value : string, isChecked : bool) =
+    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+
+    member x.Value = value
+    member x.Checked = isChecked
+    member x.NodeType = nodeType
+    static member TryParse(str : System.Text.Json.JsonElement) =
+
+        opt {
+            let targetObj = str?target
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = targetObj?id
+
+            let! (nodeType : string) = targetObj?``type``
+            
+            let isChecked =
+                match targetObj.TryGetProperty "checked" with
+                | (true, v) -> v.GetBoolean()
+                | _ -> false
+            let value =
+                match targetObj.TryGetProperty "value" with
+                | (true, v) -> v.GetString()
+                | _ -> ""
+
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+            
+            return
+                ChangeEvent(
+                    target, timeStamp, isTrusted, typ, clientRect,
+                    nodeType, value, isChecked
+                )
+        }
+
+type InputEvent(  
+        target : string, timeStamp : float, 
+        isTrusted : bool, typ : string, clientRect : Box2d, nodeType : string, value : string, isChecked : bool, data : string, inputType : string) =
+    inherit ChangeEvent(target, timeStamp, isTrusted, typ, clientRect, nodeType, value, isChecked)
+    
+    member x.Data = data
+    member x.InputType = inputType
+
+    static member TryParse(str : System.Text.Json.JsonElement) =
+
+        opt {
+            let targetObj = str?target
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = targetObj?id
+
+            let! (nodeType : string) = targetObj?``type``
+            
+            let isChecked =
+                match targetObj.TryGetProperty "checked" with
+                | (true, v) -> v.GetBoolean()
+                | _ -> false
+            let value =
+                match targetObj.TryGetProperty "value" with
+                | (true, v) -> v.GetString()
+                | _ -> ""
+
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+            
+            let! data = str?data
+            let! inputType = str?inputType
+
+            return
+                InputEvent(
+                    target, timeStamp, isTrusted, typ, clientRect,
+                    nodeType, value, isChecked, data, inputType
                 )
         }
