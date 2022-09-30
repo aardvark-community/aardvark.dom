@@ -2,6 +2,7 @@
 * Sg PointerEvents get Button instead of int
 * Sg.Text no longer uses Aardvark.SceneGraph
 * added Sg.Shape
+* Sg.Text now includes `pickBounds : bool` option
 
 ### 1.0.0-prerelease0008
 * Sg.Cursor now takes a string

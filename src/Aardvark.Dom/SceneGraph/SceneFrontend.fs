@@ -3,12 +3,22 @@
 open Aardvark.Base
 open Aardvark.Geometry
 open Aardvark.Rendering
-open Aardvark.Rendering.Text
 open FSharp.Data.Adaptive
 open Aardvark.Application
 open System.Runtime.CompilerServices
 
+type Font = Aardvark.Rendering.Text.Font
+type ShapeList = Aardvark.Rendering.Text.ShapeList
+type CodePoint = Aardvark.Rendering.Text.CodePoint
+type Glyph = Aardvark.Rendering.Text.Glyph
+type TextAlignment = Aardvark.Rendering.Text.TextAlignment
+type ConcreteShape = Aardvark.Rendering.Text.ConcreteShape
+type TextConfig = Aardvark.Rendering.Text.TextConfig
+module Font = Aardvark.Rendering.Text.Font
+module FontSquirrel = Aardvark.Rendering.Text.FontSquirrel
+module ShapeList = Aardvark.Rendering.Text.ShapeList
 module private SceneGraphShapeUtilities =
+    open Aardvark.Rendering.Text
     let private defaultDepthBias = 1.0 / float (1 <<< 21)
        
     let adjustRenderObjectNoBoundary (runtime : IRuntime) (content : aval<ShapeList>) (template : RenderObject) =
@@ -201,7 +211,7 @@ type FontExtensions() =
             [||]
     
     [<Extension>]
-    static member LayoutWithCharacterBounds(font : Font, color : C4b, align : TextAlignment, bounds : Box2d, content : string, renderStyle : RenderStyle) =
+    static member LayoutWithCharacterBounds(font : Font, color : C4b, align : TextAlignment, bounds : Box2d, content : string) =
         let chars = System.Collections.Generic.List<float * Glyph>()
         let concrete = System.Collections.Generic.List<ConcreteShape>()
         
@@ -314,13 +324,13 @@ type FontExtensions() =
 
         CSharpList.toArray boundsList,
         {
-            bounds              = renderBounds
-            textBounds          = textBounds
-            concreteShapes      = concrete
-            renderTrafo         = Trafo3d.Translation(realCenter, 0.0, 0.0)
-            flipViewDependent   = true
-            zRange = Range1i(0,0)
-            renderStyle = renderStyle
+            ShapeList.bounds                = renderBounds
+            ShapeList.textBounds            = textBounds
+            ShapeList.concreteShapes        = concrete
+            ShapeList.renderTrafo           = Trafo3d.Translation(realCenter, 0.0, 0.0)
+            ShapeList.flipViewDependent     = true
+            ShapeList.zRange                = Range1i(0,0)
+            ShapeList.renderStyle           = Aardvark.Rendering.Text.RenderStyle.NoBoundary
         }
 
 
@@ -512,11 +522,11 @@ type Sg private() =
         
         let config =
             {
-                font = match font with | Some f -> f | None -> FontSquirrel.Hack.Regular
-                color = match color with | Some c -> AVal.force c | None -> C4b.White
-                align = defaultArg align TextAlignment.Left
-                flipViewDependent = true
-                renderStyle = RenderStyle.NoBoundary
+                TextConfig.font = match font with | Some f -> f | None -> FontSquirrel.Hack.Regular
+                TextConfig.color = match color with | Some c -> AVal.force c | None -> C4b.White
+                TextConfig.align = defaultArg align TextAlignment.Left
+                TextConfig.flipViewDependent = true
+                TextConfig.renderStyle = Aardvark.Rendering.Text.RenderStyle.NoBoundary
             }
                     
         let renderBounds =
@@ -526,13 +536,13 @@ type Sg private() =
                 | _ -> Box2d(V2d(-1.0, 0.0), V2d(0.0, 0.0))
 
         let shape = 
-            text |> AVal.map (fun str -> config.font.LayoutWithCharacterBounds(config.color, config.align, renderBounds, str, config.renderStyle))
+            text |> AVal.map (fun str -> config.font.LayoutWithCharacterBounds(config.color, config.align, renderBounds, str))
 
 
         let coloredShape =
             match color with
             | Some v when not v.IsConstant ->
-                (shape, v) ||> AVal.map2 (fun (_, s) col -> { s with concreteShapes = s.concreteShapes |> List.map (fun c -> { c with color = col }) })
+                (shape, v) ||> AVal.map2 (fun (_, s) col -> { s with ShapeList.concreteShapes = s.concreteShapes |> List.map (fun c -> { c with color = col }) })
             | _ ->
                 shape |> AVal.map snd
 
@@ -570,18 +580,19 @@ type Sg private() =
             }
 
         info, sg {
-            match pickBounds with
-            | Some true ->
+            if pickBounds then
                 shape 
                 |> AVal.map (fun (_,s) -> 
                     s.bounds.EnlargedBy 0.2
                     |> Intersectable.planeXY
                 )
                 |> Intersectable
-            | _ ->
-                ()
+                
             
-            sg { NoEvents; SceneGraphShapeUtilities.ShapeNode(coloredShape) }
+            sg { 
+                if not pickBounds then NoEvents
+                SceneGraphShapeUtilities.ShapeNode(coloredShape) 
+            }
         }
             
     static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?pickBounds : bool) =
@@ -608,7 +619,7 @@ type Sg private() =
         Sg.Shape(AVal.constant shape, ?pickBounds = pickBounds)
         
     static member Shape(shapes : list<ConcreteShape>, ?pickBounds : bool) =
-        let shape = ShapeList.ofList shapes
+        let shape = Aardvark.Rendering.Text.ShapeList.ofList shapes
         Sg.Shape(AVal.constant shape, ?pickBounds = pickBounds)
         
     static member Delay(creator : TraversalState -> ISceneNode) =
