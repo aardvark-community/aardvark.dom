@@ -12,6 +12,8 @@ open System.Reflection
 open System
 open System.Threading.Tasks
 
+
+
 type UpdateState<'a> =
     {
         token : AdaptiveToken
@@ -466,7 +468,7 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             Time = time
         }
 
-    let cursor : cval<option<Aardvark.Application.Cursor>> = cval None
+    let cursor : cval<option<string>> = cval None
     
     let samples = 
         let att = AMap.force attributes.Content 
@@ -492,7 +494,17 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
         match handler with
         | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d(e.DeltaX, e.DeltaY), int e.Button)
         | None -> true
-
+        
+    let handleKeyEvent (kind : SceneEventKind) (e : KeyboardEvent) =
+        match handler with
+        | Some h -> h.HandleKeyEvent(kind, e.Ctrl, e.Shift, e.Alt, e.Meta, e.Code, e.Key, e.KeyLocation, "", e.Repeat)
+        | None -> true
+        
+    let handleInputEvent (kind : SceneEventKind) (e : InputEvent) =
+        match handler with
+        | Some h -> h.HandleKeyEvent(kind, false, false, false, false, "", "", KeyLocation.Standard, e.Data, false)
+        | None -> true
+        
     let additionalAttributesBefore =
         att {
             OnMouseLeave(handleMouseEvent SceneEventKind.PointerMove >> ignore)
@@ -501,18 +513,11 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
     let additionalAttributes =
         att {
             cursor |> AVal.map (function
-                | Some Cursor.None -> Some (Style [Css.Cursor "none"])
-                | Some Cursor.Default ->None
-                | Some Cursor.Arrow -> Some (Style [Css.Cursor "default"])
-                | Some Cursor.Hand -> Some (Style [Css.Cursor "grab"])
-                | Some Cursor.HorizontalResize -> Some (Style [Css.Cursor "ew-resize"])
-                | Some Cursor.VerticalResize -> Some (Style [Css.Cursor "ns-resize"])
-                | Some Cursor.Text -> Some (Style [Css.Cursor "text"])
-                | Some Cursor.Crosshair -> Some (Style [Css.Cursor "crosshair"])
-                | Some c -> Log.warn "unhandled cursor: %A" c; None
+                | Some c -> Some (Style [Css.Cursor c])
                 | _ -> None
             )
-
+            
+            TabIndex 0
             OnPointerDown(handlePointerEvent SceneEventKind.PointerDown, true)
             OnPointerUp(handlePointerEvent SceneEventKind.PointerUp, true)
             OnPointerMove(handlePointerEvent SceneEventKind.PointerMove, true)
@@ -520,13 +525,15 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             OnDoubleClick(handleMouseEvent SceneEventKind.DoubleClick, true)
             OnMouseWheel(handleWheelEvent SceneEventKind.Scroll, true)
             OnMouseEnter(handleMouseEvent SceneEventKind.PointerMove >> ignore)
-
+            OnKeyDown(handleKeyEvent SceneEventKind.KeyDown, true)
+            OnKeyUp(handleKeyEvent SceneEventKind.KeyUp, true)
+            OnInput(handleInputEvent SceneEventKind.KeyInput, true)
         }
 
     let att = 
         new AttributeUpdater<'a>(id, AttributeMap.union additionalAttributesBefore (AttributeMap.union attributes additionalAttributes))
     
-    let setCursor (c : option<Cursor>) =
+    let setCursor (c : option<string>) =
         transact (fun () -> cursor.Value <- c)
 
     let handleSceneEvent (e : RenderControlEvent) =

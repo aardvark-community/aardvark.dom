@@ -5,6 +5,12 @@ open Aardvark.Application
 open FSharp.Data.Adaptive
 open Aardvark.Rendering
 
+type KeyLocation =
+    | Standard = 0
+    | Left = 1
+    | Right = 2
+    | Numpad = 3
+    
 [<RequireQualifiedAccess>]
 type SceneEventKind =
     | PointerDown
@@ -70,8 +76,8 @@ type IEventHandler =
     abstract ReleasePointerCapture : state : obj * pointerId : int -> unit
     abstract SetFocus : option<obj> -> unit
     abstract HandlePointerEvent : SceneEventKind * pixel : V2i * ctrl : bool * shift : bool * alt : bool * meta : bool * scrollDelta : V2d * pointerId : int * button : int -> bool 
-    abstract HandleKeyEvent : SceneEventKind * ctrl : bool * shift : bool * alt : bool * meta : bool * key : Keys * text : string * isRepeat : bool -> bool 
-    abstract Cursor : aval<option<Cursor>>
+    abstract HandleKeyEvent : SceneEventKind * ctrl : bool * shift : bool * alt : bool * meta : bool * code : string * key : string * keyLocation : KeyLocation * text : string * isRepeat : bool -> bool 
+    abstract Cursor : aval<option<string>>
     
 [<AbstractClass>]
 type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation) =
@@ -102,7 +108,8 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
 
     abstract WithKind : SceneEventKind -> SceneEvent
     abstract WithLocation : SceneEventLocation -> SceneEvent
-    
+ 
+
 type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : int) =
     inherit SceneEvent(context, self, target, kind, location)
     member x.PointerId = pointerId
@@ -120,7 +127,11 @@ type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind :
     override x.WithLocation(location : SceneEventLocation) =
         ScenePointerEvent(context, self, target, kind, location, ctrl, shift, alt, meta, scrollDelta, pointerId, button) :> SceneEvent
 
-type SceneKeyboardEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, key : Keys, text : string, isRepeat : bool) =
+type SceneKeyboardEvent(
+        context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, 
+        ctrl : bool, shift : bool, alt : bool, meta : bool, 
+        code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool
+    ) =
     inherit SceneEvent(context, self, target, kind, location)
     
     
@@ -128,15 +139,17 @@ type SceneKeyboardEvent(context : IEventHandler, self : obj, target : obj, kind 
     member x.Shift = shift
     member x.Alt = alt
     member x.Meta = meta
+    member x.Code = code
     member x.Key = key
+    member x.KeyLocation = keyLocation
     member x.Text = text
     member x.IsRepeat = isRepeat
 
     override x.WithKind(kind : SceneEventKind) =
-        SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, key, text, isRepeat) :> SceneEvent
+        SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat) :> SceneEvent
         
     override x.WithLocation(location : SceneEventLocation) =
-        SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, key, text, isRepeat) :> SceneEvent
+        SceneKeyboardEvent(context, self, target, kind, location, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat) :> SceneEvent
         
 
 

@@ -28,8 +28,8 @@ type TraversalState =
         Stencil             : StencilState
         Active              : aval<bool>
         CanFocus            : bool
-
-        Cursor              : aval<option<Cursor>>
+        
+        Cursor              : aval<option<string>>
         EventHandlers       : amap<SceneEventKind, SceneEventHandler>
         PixelPick           : bool
     }
@@ -263,7 +263,7 @@ type SceneAttribute =
     | Active of aval<bool>
     | Intersectable of aval<IIntersectable>
     | NoEvents
-    | Cursor of aval<option<Cursor>>
+    | Cursor of aval<option<string>>
     | CanFocus of bool
 
     | CullMode of aval<CullMode>

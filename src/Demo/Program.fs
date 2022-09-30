@@ -230,6 +230,15 @@ let testApp (_runtime : IRuntime) =
                 Style [Width "100%"; Height "600px"; Background "#202124"] 
                 Samples 4
                 Quality 50
+                TabIndex 0
+                
+                Dom.OnKeyDown((fun e ->
+                    printfn "Down %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
+                ), preventDefault = true)
+                
+                Dom.OnKeyUp((fun e ->
+                    printfn "Up %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
+                ), preventDefault = true)
 
 
                 Dom.OnMouseEnter(fun e ->
@@ -268,7 +277,7 @@ let testApp (_runtime : IRuntime) =
 
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
                 Dom.Style [Css.Cursor "crosshair"]
-                Sg.Cursor Aardvark.Application.Cursor.None
+                Sg.Cursor "none"
                 
 
                 // setup transformation and shaders

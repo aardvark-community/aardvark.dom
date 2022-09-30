@@ -500,3 +500,58 @@ type InputEvent(
                     nodeType, value, isChecked, data, inputType
                 )
         }
+
+
+type KeyboardEvent(
+        target : string, timeStamp : float, isTrusted : bool, typ : string, clientRect : Box2d,
+        code : string, isComposing : bool, key : string, location : KeyLocation, repeat : bool, 
+        ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool
+    ) =
+    inherit  Event(target, timeStamp, isTrusted, typ, clientRect)
+    
+    member x.Code = code
+    member x.IsComposing = isComposing
+    member x.Key = key
+    member x.KeyLocation = location
+    member x.Repeat = repeat
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
+    
+
+    static member TryParse(str : System.Text.Json.JsonElement) =
+
+        opt {
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = str?target?id
+            
+            let! (ctrlKey : bool) = str?ctrlKey
+            let! (shiftKey : bool) = str?shiftKey
+            let! (altKey : bool) = str?altKey
+            let! (metaKey : bool) = str?metaKey
+            
+            let! (code : string) = str?code
+            let! (isComposing : bool) = str?isComposing
+            let! (key : string) = str?key
+            let! (location : int) = str?location
+            let! (repeat : bool) = str?repeat
+            
+
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+
+            return
+                KeyboardEvent(
+                    target, timeStamp, isTrusted, typ, clientRect,
+                    code, isComposing, key, unbox<KeyLocation> location, repeat,
+                    ctrlKey, shiftKey, altKey, metaKey
+                )
+        }
+        

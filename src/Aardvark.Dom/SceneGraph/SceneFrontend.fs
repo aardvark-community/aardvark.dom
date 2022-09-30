@@ -249,16 +249,16 @@ type Sg private() =
     static member Intersectable (i : IIntersectable) =
         SceneAttribute.Intersectable(AVal.constant i)
             
-    static member Cursor (c : Cursor) =
+    static member Cursor (c : string) =
         SceneAttribute.Cursor(AVal.constant (Some c))
 
-    static member Cursor (c : aval<Cursor>) =
+    static member Cursor (c : aval<string>) =
         SceneAttribute.Cursor(AVal.map Some c)
             
-    static member Cursor (c : aval<option<Cursor>>) =
+    static member Cursor (c : aval<option<string>>) =
         SceneAttribute.Cursor(c)
-
-    static member Cursor (c : option<Cursor>) =
+        
+    static member Cursor (c : option<string>) =
         SceneAttribute.Cursor(AVal.constant c)
 
 

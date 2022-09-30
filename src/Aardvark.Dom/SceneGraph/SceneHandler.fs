@@ -599,7 +599,7 @@ type private Stats(maxCnt : int) =
             0.0
 
 
-type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<Cursor> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
+type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<string> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
     static let pickBuffer = Symbol.Create "PickId"
     
     let runtime = signature.Runtime :?> IRuntime
@@ -1124,7 +1124,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             let evt = ScenePointerEvent(x, target, target, SceneEventKind.FocusLeave, evtLocation, false, false, false, false, V2d.Zero, -1, -1)
             TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt newTarget
                 
-    member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, key : Keys, text : string, isRepeat : bool) : bool =
+    member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool) : bool =
         let s = viewportSize
 
         match lastFocus.Value with
@@ -1140,7 +1140,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
                     | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
                 
-            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, ctrl, shift, alt, meta, key, text, isRepeat)
+            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
             TraversalState.handleEvent true evt best
 
         | None ->
@@ -1155,8 +1155,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         member x.HandlePointerEvent(kind : SceneEventKind, pixel : V2i, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : int) =
             x.HandlePointerEvent(kind, pixel, ctrl, shift, alt, meta, pointerId, scrollDelta, button)
               
-        member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, key : Keys, text : string, isRepeat : bool) =
-            x.HandleKeyEvent(kind, ctrl, shift, alt, meta, key, text, isRepeat)
+        member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool) =
+            x.HandleKeyEvent(kind, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
    
         member x.HasPointerCapture(state : obj, pointerId : int) =
             match capturedScopes.TryGetValue pointerId with

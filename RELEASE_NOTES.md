@@ -1,3 +1,8 @@
+### 1.0.0-prerelease0008
+* Sg.Cursor now takes a string
+* Dom KeyboardEvents and InputEvents
+* Sg KeyboardEvents now take HTML `Key`, `KeyLocation` and `Code` directly
+
 ### 1.0.0-prerelease0007
 * Sg.Delay
 * Dom.OnBeforeInput

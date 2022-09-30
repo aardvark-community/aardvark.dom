@@ -610,6 +610,40 @@ type Dom private() =
             ?preventDefault = preventDefault
         )
 
+           
+    static member inline OnKeyDown(callback : KeyboardEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "keydown", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+            
+    static member inline OnKeyDown(callback : KeyboardEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "keydown", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+           
+    static member inline OnKeyUp(callback : KeyboardEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "keyup", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+            
+    static member inline OnKeyUp(callback : KeyboardEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "keyup", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+
     static member inline Require(url : string) = 
         Attribute("require", AttributeValue.Set (Set.singleton url))
 
