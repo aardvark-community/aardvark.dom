@@ -10,7 +10,15 @@ type KeyLocation =
     | Left = 1
     | Right = 2
     | Numpad = 3
-    
+  
+type Button =
+    | None = -1
+    | Left = 0
+    | Middle = 1
+    | Right = 2
+    | Button4 = 3
+    | Button5 = 4
+  
 [<RequireQualifiedAccess>]
 type SceneEventKind =
     | PointerDown
@@ -75,7 +83,7 @@ type IEventHandler =
     abstract SetPointerCapture : state : obj * pointerId : int -> unit
     abstract ReleasePointerCapture : state : obj * pointerId : int -> unit
     abstract SetFocus : option<obj> -> unit
-    abstract HandlePointerEvent : SceneEventKind * pixel : V2i * ctrl : bool * shift : bool * alt : bool * meta : bool * scrollDelta : V2d * pointerId : int * button : int -> bool 
+    abstract HandlePointerEvent : SceneEventKind * pixel : V2i * ctrl : bool * shift : bool * alt : bool * meta : bool * scrollDelta : V2d * pointerId : int * button : Button -> bool 
     abstract HandleKeyEvent : SceneEventKind * ctrl : bool * shift : bool * alt : bool * meta : bool * code : string * key : string * keyLocation : KeyLocation * text : string * isRepeat : bool -> bool 
     abstract Cursor : aval<option<string>>
     
@@ -110,7 +118,7 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     abstract WithLocation : SceneEventLocation -> SceneEvent
  
 
-type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : int) =
+type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : Button) =
     inherit SceneEvent(context, self, target, kind, location)
     member x.PointerId = pointerId
     member x.Button = button

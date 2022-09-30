@@ -124,13 +124,6 @@ type Event(target : string, timeStamp : float, isTrusted : bool, typ : string, c
                 )
         }
 
-type Button =
-    | Left = 0
-    | Middle = 1
-    | Right = 2
-    | Button4 = 3
-    | Button5 = 4
-
 [<Flags>]
 type Buttons =
     | None = 0

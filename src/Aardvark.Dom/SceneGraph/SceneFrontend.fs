@@ -8,6 +8,152 @@ open FSharp.Data.Adaptive
 open Aardvark.Application
 open System.Runtime.CompilerServices
 
+module private SceneGraphShapeUtilities =
+    let private defaultDepthBias = 1.0 / float (1 <<< 21)
+       
+    let adjustRenderObjectNoBoundary (runtime : IRuntime) (content : aval<ShapeList>) (template : RenderObject) =
+        let shapes = template
+        let cache = ShapeCache.GetOrCreateCache(runtime)
+        let content =
+            content |> AVal.map (fun c ->
+                let shapes =
+                    c.concreteShapes 
+                    |> List.groupBy (fun c -> c.z)
+                    |> List.sortBy fst
+                    |> List.collect (fun (z,g) -> g)
+
+                { c with concreteShapes = shapes }
+            )
+
+        let indirectAndOffsets =
+            content |> AVal.map (fun renderText ->
+                let indirectBuffer = 
+                    renderText.concreteShapes 
+                        |> List.toArray
+                        |> Array.map (ConcreteShape.shape >> cache.GetBufferRange)
+                        |> Array.mapi (fun i r ->
+                            DrawCallInfo(
+                                FirstIndex = r.Min,
+                                FaceVertexCount = r.Size + 1,
+                                FirstInstance = i,
+                                InstanceCount = 1,
+                                BaseVertex = 0
+                            )
+                            )
+                        |> IndirectBuffer.ofArray false
+
+                let trafoR0, trafoR1 =
+                    let r0, r1 = 
+                        let w = if renderText.flipViewDependent then -1.0f else 1.0f
+
+                        renderText.concreteShapes 
+                        |> List.toArray
+                        |> Array.map (fun shape ->
+                            let r0 = V4f(V3f shape.trafo.R0, w)
+                            let r1 = V4f shape.trafo.R1.XYZO
+                            r0, r1
+                        )
+                        |> Array.unzip
+
+
+                    ArrayBuffer r0 :> IBuffer,
+                    ArrayBuffer r1 :> IBuffer
+
+                let colors = 
+                    renderText.concreteShapes 
+                        |> List.toArray
+                        |> Array.map (fun s -> s.color)
+                        |> ArrayBuffer
+                        :> IBuffer
+
+                indirectBuffer, trafoR0, trafoR1, colors
+            )
+
+        let trafoR0 = BufferView(AVal.map (fun (_,r0,_,_) -> r0) indirectAndOffsets, typeof<V4f>)
+        let trafoR1 = BufferView(AVal.map (fun (_,_,r1,_) -> r1) indirectAndOffsets, typeof<V4f>)
+        let colors = BufferView(AVal.map (fun (_,_,_,c) -> c) indirectAndOffsets, typeof<C4b>)
+
+        let instanceAttributes =
+            let old = shapes.InstanceAttributes
+            { new IAttributeProvider with
+                member x.TryGetAttribute sem =
+                    if sem = Path.Attributes.ShapeTrafoR0 then trafoR0 |> Some
+                    elif sem = Path.Attributes.ShapeTrafoR1 then trafoR1 |> Some
+                    elif sem = Path.Attributes.PathColor then colors |> Some
+                    else old.TryGetAttribute sem
+                member x.All = old.All
+                member x.Dispose() = old.Dispose()
+            }
+
+
+        let aa =
+            match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "Antialias") with
+                | Some (:? aval<bool> as aa) -> aa
+                | _ -> AVal.constant false
+
+        let fill =
+            match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "FillGlyphs") with
+                | Some (:? aval<bool> as aa) -> aa
+                | _ -> AVal.constant true
+                    
+        let bias =
+            match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "DepthBias") with
+                | Some (:? aval<float> as bias) -> bias
+                | _ -> AVal.constant defaultDepthBias
+                    
+        shapes.Uniforms <-
+            let old = shapes.Uniforms
+            let ownTrafo = content |> AVal.map (fun c -> c.renderTrafo)
+            { new IUniformProvider with
+                member x.TryGetUniform(scope, sem) =
+                    match string sem with
+                        | "Antialias" -> aa :> IAdaptiveValue |> Some
+                        | "FillGlyphs" -> fill :> IAdaptiveValue |> Some
+                        | "DepthBias" -> bias :> IAdaptiveValue |> Some
+                        | "ModelTrafo" -> 
+                            match old.TryGetUniform(scope, sem) with
+                                | Some (:? aval<Trafo3d> as m) ->
+                                    AVal.map2 (*) ownTrafo m :> IAdaptiveValue |> Some
+                                | _ ->
+                                    ownTrafo :> IAdaptiveValue |> Some
+
+                        | _ -> 
+                            old.TryGetUniform(scope, sem)
+
+                member x.Dispose() =
+                    old.Dispose()
+            }
+
+        let pass = shapes.RenderPass
+        let pass = if pass = RenderPass.main then RenderPass.shapes else pass
+
+            
+        let multisample = 
+            (aa, fill) ||> AVal.map2 (fun a f -> 
+                // @krauthaufen - why always multisampling when outline only?
+                not f || a
+            )
+
+        shapes.RasterizerState <- { shapes.RasterizerState with Multisample = multisample }
+        shapes.RenderPass <- pass
+        shapes.BlendState <- { shapes.BlendState with Mode = AVal.constant BlendMode.Blend }
+        shapes.VertexAttributes <- cache.VertexBuffers
+        shapes.DrawCalls <- indirectAndOffsets |> AVal.map (fun (i,_,_,_) -> i) |> Indirect
+        shapes.InstanceAttributes <- instanceAttributes
+        shapes.Mode <- IndexedGeometryMode.TriangleList
+        
+        shapes.DepthState <- { shapes.DepthState with Bias = AVal.constant DepthBias.None }
+        shapes.Surface <- Surface.FShadeSimple cache.Effect
+        shapes :> IRenderObject |> ASet.single
+
+    type ShapeNode(content : aval<ShapeList>) =
+        member x.GetRenderObjects(state : TraversalState) =
+            let o = RenderObject.ofTraversalState state
+            adjustRenderObjectNoBoundary state.Runtime content o
+
+        interface ISceneNode with
+            member x.GetRenderObjects s = x.GetRenderObjects s
+            member x.GetObjects s = x.GetRenderObjects s, ASet.empty
 
 [<AutoOpen>]
 module SceneBuilder =
@@ -186,6 +332,7 @@ type TextPickInfo =
         Bounds : aval<Box2d>
         TextBounds : aval<Box2d>
     }
+    interface ISceneNodeMetaInfo
 
             
 [<AbstractClass; Sealed; AutoOpen>]
@@ -360,15 +507,16 @@ type Sg private() =
             ASet.single (Render geometry.FaceVertexCount)
         ) :> ISceneNode
 
-    static member Text(text : aval<string>, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?renderStyle : RenderStyle) =
-        // let color = defaultArg color (AVal.constant C4b.White)
+    static member Text(text : aval<string>, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?pickBounds : bool) =
+        let pickBounds = defaultArg pickBounds false
+        
         let config =
             {
                 font = match font with | Some f -> f | None -> FontSquirrel.Hack.Regular
                 color = match color with | Some c -> AVal.force c | None -> C4b.White
                 align = defaultArg align TextAlignment.Left
                 flipViewDependent = true
-                renderStyle = defaultArg renderStyle RenderStyle.Normal
+                renderStyle = RenderStyle.NoBoundary
             }
                     
         let renderBounds =
@@ -422,26 +570,51 @@ type Sg private() =
             }
 
         info, sg {
-            shape 
-            |> AVal.map (fun (_,s) -> 
-                s.bounds.EnlargedBy 0.2
-                |> Intersectable.planeXY
-            )
-            |> Intersectable
-
-
-            sg { NoEvents; Sg.shape coloredShape }
-
+            match pickBounds with
+            | Some true ->
+                shape 
+                |> AVal.map (fun (_,s) -> 
+                    s.bounds.EnlargedBy 0.2
+                    |> Intersectable.planeXY
+                )
+                |> Intersectable
+            | _ ->
+                ()
             
-
+            sg { NoEvents; SceneGraphShapeUtilities.ShapeNode(coloredShape) }
         }
             
-    static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?renderStyle : RenderStyle) =
-        Sg.Text(AVal.constant text, ?font = font, ?color = color, ?align = align, ?renderStyle = renderStyle)
+    static member Text(text : string, ?font : Font, ?color : aval<C4b>, ?align : TextAlignment, ?pickBounds : bool) =
+        Sg.Text(AVal.constant text, ?font = font, ?color = color, ?align = align, ?pickBounds = pickBounds)
+        
+    static member Shape(shape : aval<ShapeList>, ?pickBounds : bool) =
+        sg {
+            match pickBounds with
+            | Some true ->
+                shape 
+                |> AVal.map (fun s -> 
+                    s.bounds.EnlargedBy 0.2
+                    |> Intersectable.planeXY
+                )
+                |> Intersectable
+                
+            | _ ->
+                ()
+            
+            sg { NoEvents; SceneGraphShapeUtilities.ShapeNode(shape) }
+        }
+              
+    static member Shape(shape : ShapeList, ?pickBounds : bool) =
+        Sg.Shape(AVal.constant shape, ?pickBounds = pickBounds)
+        
+    static member Shape(shapes : list<ConcreteShape>, ?pickBounds : bool) =
+        let shape = ShapeList.ofList shapes
+        Sg.Shape(AVal.constant shape, ?pickBounds = pickBounds)
         
     static member Delay(creator : TraversalState -> ISceneNode) =
         DelayedSceneNode(creator) :> ISceneNode
 
+        
 
 module private PrimitiveHelpers = 
     let decode<'a when 'a : unmanaged and 'a : struct and 'a : (new : unit -> 'a) and 'a :> System.ValueType> (v : string) =

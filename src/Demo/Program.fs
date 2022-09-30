@@ -327,7 +327,11 @@ let testApp (_runtime : IRuntime) =
                         Primitives.Tetrahedron()
                     }
                 }
-
+                sg {
+                    Sg.Scale 0.2
+                    Sg.Text(AVal.constant "Hi There")
+                }
+                
                 // render the arrow
                 sg {
                     Sg.NoEvents

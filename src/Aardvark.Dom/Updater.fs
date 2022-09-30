@@ -482,17 +482,17 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
 
     let handlePointerEvent (kind : SceneEventKind) (e : PointerEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, e.Button)
         | None -> true
         
     let handleMouseEvent (kind : SceneEventKind) (e : MouseEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, e.Button)
         | None -> true
         
     let handleWheelEvent (kind : SceneEventKind) (e : WheelEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d(e.DeltaX, e.DeltaY), int e.Button)
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d(e.DeltaX, e.DeltaY), e.Button)
         | None -> true
         
     let handleKeyEvent (kind : SceneEventKind) (e : KeyboardEvent) =

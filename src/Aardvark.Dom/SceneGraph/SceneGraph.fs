@@ -429,6 +429,8 @@ type SceneNodeBuilderState() =
 
 type private SceneBuilder<'a> = SceneNodeBuilderState -> 'a
 
+type ISceneNodeMetaInfo = interface end
+
 type SceneNodeBuilder() =
 
     static let wrap (sg : Aardvark.SceneGraph.ISg) =
@@ -458,6 +460,9 @@ type SceneNodeBuilder() =
     member x.Yield(node : ISceneNode) : SceneBuilder<unit> =
         x.Yield(ASet.single node)
         
+    member x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : SceneBuilder<unit> =
+        x.Yield(ASet.single node)
+
     member x.Bind((info : 'a, node : ISceneNode), action : 'a -> SceneBuilder<'b>) : SceneBuilder<'b> =
         x.Combine(x.Yield(node), action info)
 
