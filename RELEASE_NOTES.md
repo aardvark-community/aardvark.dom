@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0011
+* fixed getting `TouchList` type in aardvark-dom.js (breaks on safari)
+
 ### 1.0.0-prerelease0010
 * Dom.OnTouchStart/Move/End/Cancel
 

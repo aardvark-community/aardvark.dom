@@ -242,6 +242,8 @@
         run(urls, 0, cont)
     };
 
+    const hasTouchList = window.TouchList !== undefined;
+    
     aardvark.stringify = (e) => {
         if (typeof e === "object") {
             if (e instanceof Event) {
@@ -252,6 +254,8 @@
                 e = obj;
             }
 
+
+            
             return JSON.stringify(e, (k, v) => {
                 if (v instanceof Node) {
                     
@@ -262,7 +266,7 @@
                         checked: v.checked
                     };
                 }
-                if (v instanceof TouchList) {
+                if (hasTouchList && v instanceof window.TouchList) {
                     let res = [];
                     for (var i = 0; i < v.length; i++) {
                         res.push(v.item(i));
@@ -271,7 +275,7 @@
                     return res;
                 }
                 if (v instanceof Window) return 'Window';
-                if (v instanceof Event || v instanceof Touch) {
+                if (v instanceof Event || (hasTouchList && v instanceof window.Touch)) {
                     const obj = {};
                     for (let k in v) {
                         obj[k] = v[k];
