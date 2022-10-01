@@ -610,7 +610,71 @@ type Dom private() =
             ?preventDefault = preventDefault
         )
 
-           
+    static member inline OnTouchStart(callback : TouchEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchstart", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchStart(callback : TouchEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchstart", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+    
+
+    static member inline OnTouchEnd(callback : TouchEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchend", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchEnd(callback : TouchEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchend", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchCancel(callback : TouchEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchcancel", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchCancel(callback : TouchEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchcancel", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchMove(callback : TouchEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchmove", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTouchMove(callback : TouchEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "touchmove", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+    
     static member inline OnKeyDown(callback : KeyboardEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "keydown", 

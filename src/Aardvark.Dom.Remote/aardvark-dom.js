@@ -262,8 +262,16 @@
                         checked: v.checked
                     };
                 }
+                if (v instanceof TouchList) {
+                    let res = [];
+                    for (var i = 0; i < v.length; i++) {
+                        res.push(v.item(i));
+                    }
+                    let e = document.createElement("pre");
+                    return res;
+                }
                 if (v instanceof Window) return 'Window';
-                if (v instanceof Event) {
+                if (v instanceof Event || v instanceof Touch) {
                     const obj = {};
                     for (let k in v) {
                         obj[k] = v[k];

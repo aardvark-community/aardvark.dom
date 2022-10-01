@@ -53,6 +53,19 @@ let testApp (_runtime : IRuntime) =
                 Class "bar"
                 Dom.OnClick(click, true)
                 content |> AVal.map string
+
+
+                Dom.OnTouchStart(fun evt -> 
+                    transact (fun () -> 
+                        text.Value <- JsonSerializer.Serialize(evt, JsonSerializerOptions(WriteIndented = true))
+                    )
+                )
+
+                Dom.OnTouchMove(fun evt -> 
+                    transact (fun () -> 
+                        text.Value <- JsonSerializer.Serialize(evt, JsonSerializerOptions(WriteIndented = true))
+                    )
+                )
             }
 
             ul {

@@ -3,6 +3,7 @@ namespace Aardvark.Dom
 open System
 open Aardvark.Base
 open Aardvark.Rendering
+open FSharp.Data.Adaptive
 
 [<AutoOpen>]
 module private EventParserUtilities =
@@ -45,6 +46,10 @@ module private EventParserUtilities =
             match o.TryGetProperty name with
             | (true, prop) -> prop :> obj :?> 'a
             | _ -> JsonElement() :> obj :?> 'a
+        elif typeof<'a> = typeof<option<JsonElement>> then
+            match o.TryGetProperty name with
+            | (true, prop) -> Some prop :> obj :?> 'a
+            | _ -> Option<JsonElement>.None :> obj :?> 'a
         elif typedefof<'a> = typedefof<option<_>> then
             let t = typeof<'a>.GetGenericArguments().[0]
             match o.TryGetProperty name with
@@ -305,6 +310,145 @@ type WheelEvent(
     member x.DeltaY = deltaY
     member x.DeltaZ = deltaZ
     member x.DeltaMode = deltaMode
+
+type Touch(
+        identifier : int,
+        clientX : float, clientY : float,
+        screenX : float, screenY : float,
+        pageX : float, pageY : float,
+        offsetX : float, offsetY : float,
+        radiusX : float, radiusY : float,
+        rotationAngle : float,
+        force : float
+    ) =
+        member x.Identifier = identifier
+    
+        member x.ClientX = clientX
+        member x.ClientY = clientY
+        member x.ScreenX = screenX
+        member x.ScreenY = screenY
+        member x.PageX = pageX
+        member x.PageY = pageY
+        member x.OffsetX = offsetX
+        member x.OffsetY = offsetY
+        member x.ClientPosition = V2i(clientX, clientY)
+        member x.PagePosition = V2i(pageX, pageY)
+        member x.OffsetPosition = V2i(offsetX, offsetY)
+        member x.RadiusX = radiusX
+        member x.RadiusY = radiusY
+        member x.Radius = V2d(radiusX, radiusY)
+        member x.RotationAngle = rotationAngle
+        member x.Force = force
+        
+
+type TouchEvent(
+        target : string, timeStamp : float, 
+        isTrusted : bool, typ : string, clientRect : Box2d,
+        
+        ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool,
+        changedTouches : HashMap<int, Touch>,
+        targetTouches : HashMap<int, Touch>,
+        touches : HashMap<int, Touch>
+    ) =
+    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+    
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
+    member x.ChangedTouches = changedTouches
+    member x.TargetTouches = targetTouches
+    member x.Touches = touches
+    
+    static member TryParse(str : System.Text.Json.JsonElement) =
+        printfn "%s" (str.ToString())
+        let inline tryParseTouch (clientRect : Box2d) (e : System.Text.Json.JsonElement) =
+            opt {
+                let! (identifier : int) = e?identifier
+                let! (screenX : float) = e?screenX
+                let! (screenY : float) = e?screenY
+                let! (clientX : float) = e?clientX
+                let! (clientY : float) = e?clientY
+                let! (pageX : float) = e?pageX
+                let! (pageY : float) = e?pageY
+                let! (radiusX : float) = e?radiusX
+                let! (radiusY : float) = e?radiusY
+                let! (rotationAngle : float) = e?rotationAngle
+                let! (force : float) = e?force
+                let offsetX = clientX - clientRect.Min.X
+                let offsetY = clientY - clientRect.Min.Y
+
+                let touch = 
+                    Touch(identifier, clientX, clientY,
+                        screenX, screenY, pageX, pageY,
+                        offsetX, offsetY,
+                        radiusX, radiusY, rotationAngle, force
+                    )
+                return touch
+            }
+        opt {
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = str?target?id
+            
+            let! (ctrlKey : bool) = str?ctrlKey
+            let! (shiftKey : bool) = str?shiftKey
+            let! (altKey : bool) = str?altKey
+            let! (metaKey : bool) = str?metaKey
+          
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+
+            let changedTouches =
+                match str?changedTouches with
+                | Some (e : System.Text.Json.JsonElement) ->
+                    e.EnumerateArray() |> Seq.choose (fun e ->
+                        match tryParseTouch clientRect e with
+                        | Some t -> Some (t.Identifier, t)
+                        | None -> None
+                    )
+                    |> HashMap.ofSeq
+                | _ ->
+                    HashMap.empty
+                    
+            let touches =
+                match str?touches with
+                | Some (e : System.Text.Json.JsonElement) ->
+                    e.EnumerateArray() |> Seq.choose (fun e ->
+                        match tryParseTouch clientRect e with
+                        | Some t -> Some (t.Identifier, t)
+                        | None -> None
+                    )
+                    |> HashMap.ofSeq
+                | _ ->
+                    HashMap.empty
+              
+            let targetTouches =
+                match str?targetTouches with
+                | Some (e : System.Text.Json.JsonElement) ->
+                    e.EnumerateArray() |> Seq.choose (fun e ->
+                        match tryParseTouch clientRect e with
+                        | Some t -> Some (t.Identifier, t)
+                        | None -> None
+                    )
+                    |> HashMap.ofSeq
+                | _ ->
+                    HashMap.empty
+            
+            return
+                TouchEvent(
+                    target, timeStamp, isTrusted, typ, clientRect,
+                    ctrlKey, shiftKey, altKey, metaKey,
+                    changedTouches, targetTouches, touches
+                )
+        }
+        
+    
 
 type PointerEvent(  
         target : string, timeStamp : float, 
