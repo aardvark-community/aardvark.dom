@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0013
+* RenderControl now uses mouse and touch events instead of PointerEvents (experimental)
+
 ### 1.0.0-prerelease0012
 * removed accidental print of TouchEvents
 
