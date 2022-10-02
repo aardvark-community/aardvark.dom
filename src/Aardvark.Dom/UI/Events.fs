@@ -361,7 +361,6 @@ type TouchEvent(
     member x.Touches = touches
     
     static member TryParse(str : System.Text.Json.JsonElement) =
-        printfn "%s" (str.ToString())
         let inline tryParseTouch (clientRect : Box2d) (e : System.Text.Json.JsonElement) =
             opt {
                 let! (identifier : int) = e?identifier

@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0012
+* removed accidental print of TouchEvents
+
 ### 1.0.0-prerelease0011
 * fixed getting `TouchList` type in aardvark-dom.js (breaks on safari)
 

@@ -271,7 +271,6 @@
                     for (var i = 0; i < v.length; i++) {
                         res.push(v.item(i));
                     }
-                    let e = document.createElement("pre");
                     return res;
                 }
                 if (v instanceof Window) return 'Window';
