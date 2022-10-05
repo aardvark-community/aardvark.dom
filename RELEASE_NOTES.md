@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0014
+* added Tap, DoubleTap and LongPress events
+
 ### 1.0.0-prerelease0013
 * RenderControl now uses mouse and touch events instead of PointerEvents (experimental)
 

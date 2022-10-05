@@ -707,6 +707,56 @@ type Dom private() =
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
+        
+    static member inline OnTap(callback : TapEvent -> bool, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "tap", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnTap(callback : TapEvent -> unit, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "tap", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+
+        
+    static member inline OnDoubleTap(callback : TapEvent -> unit, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "dbltap", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+        
+    static member inline OnDoubleTap(callback : TapEvent -> bool, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "dbltap", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnLongPress(callback : PointerEvent -> unit, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "longpress", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnLongPress(callback : PointerEvent -> bool, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "longpress", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
 
     static member inline Require(url : string) = 
         Attribute("require", AttributeValue.Set (Set.singleton url))

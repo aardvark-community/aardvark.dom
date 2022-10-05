@@ -524,6 +524,9 @@ type RenderControlBuilder() =
 
     member inline x.Yield(att : SceneAttribute) : RenderControlBuilder<unit> =
         fun (s : RenderControlBuilderState) -> s.Append [att]
+        
+    member inline x.Yield(att : list<SceneAttribute>) : RenderControlBuilder<unit> =
+        fun (s : RenderControlBuilderState) -> s.Append att
 
     member inline x.Yield(node : aset<ISceneNode>) : RenderControlBuilder<unit> =
         fun (s : RenderControlBuilderState) -> s.Append node
@@ -560,6 +563,9 @@ type RenderControlBuilder() =
         
     member inline x.Yield(att : Attribute) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.single att)
+        
+    member inline x.Yield(att : list<Attribute>) =
+        fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofList att)
         
     member inline x.Yield(att : aval<Attribute>) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.ofAVal att)
@@ -619,6 +625,9 @@ type NodeBuilder =
 
     member inline x.Yield(att : Attribute) =
         { children = NodeList.Empty; attributes = AttributeTable [att] }
+        
+    member inline x.Yield(att : list<Attribute>) =
+        { children = NodeList.Empty; attributes = AttributeTable att }
 
     member inline x.Yield(att : AttributeMap) =
         { children = NodeList.Empty; attributes = AttributeTable att }
@@ -685,6 +694,9 @@ type VoidNodeBuilder =
     member inline x.Yield(att : Attribute) =
         AttributeMap.single att
 
+    member inline x.Yield(att : list<Attribute>) =
+        AttributeMap.ofList att
+
     member inline x.Zero() =
         AttributeMap.empty
 
@@ -703,6 +715,9 @@ type AttributeMapBuilder =
 
     member inline x.Yield(att : Attribute) =
         AttributeTable [att]
+        
+    member inline x.Yield(att : list<Attribute>) =
+        AttributeTable att
 
     member inline x.Yield(att : AttributeMap) =
         AttributeTable att

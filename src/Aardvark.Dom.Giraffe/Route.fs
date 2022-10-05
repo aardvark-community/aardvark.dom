@@ -20,7 +20,7 @@ module DomNode =
     module private Utilities = 
         let mainPage =
             String.concat "\n" [
-                "<html>"
+                "<html style=\"touch-action: none\">"
                 "   <head>"
                 "       <script src='./aardvark-dom.js'></script>"
                 "       <script>aardvark.connect(aardvark.connectWebSocket, aardvark.relativePath(\"ws\", \"/socket\"));</script>"

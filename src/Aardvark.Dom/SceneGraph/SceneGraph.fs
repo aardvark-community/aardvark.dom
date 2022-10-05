@@ -438,6 +438,9 @@ type SceneNodeBuilder() =
 
     member x.Yield(att : SceneAttribute) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append [att]
+        
+    member x.Yield(att : list<SceneAttribute>) : SceneBuilder<unit> =
+        fun (s : SceneNodeBuilderState) -> s.Append att
 
     member x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append node

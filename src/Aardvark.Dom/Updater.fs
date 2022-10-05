@@ -485,6 +485,11 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
         | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, e.Button)
         | None -> true
         
+    let handleTapEvent (kind : SceneEventKind) (e : TapEvent) =
+        match handler with
+        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, e.Button)
+        | None -> true
+        
     let handleMouseEvent (kind : SceneEventKind) (e : MouseEvent) =
         match handler with
         | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, e.Button)
@@ -529,9 +534,9 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             )
             
             TabIndex 0
-            OnMouseDown(handleMouseEvent SceneEventKind.PointerDown, true)
-            OnMouseUp(handleMouseEvent SceneEventKind.PointerUp, true)
-            OnMouseMove(handleMouseEvent SceneEventKind.PointerMove, true)
+            OnPointerDown(handlePointerEvent SceneEventKind.PointerDown, true)
+            OnPointerUp(handlePointerEvent SceneEventKind.PointerUp, true)
+            OnPointerMove(handlePointerEvent SceneEventKind.PointerMove, true)
             OnClick(handleMouseEvent SceneEventKind.Click, true)
             OnDoubleClick(handleMouseEvent SceneEventKind.DoubleClick, true)
             OnMouseWheel(handleWheelEvent SceneEventKind.Scroll, true)
@@ -539,10 +544,9 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             OnKeyDown(handleKeyEvent SceneEventKind.KeyDown, true)
             OnKeyUp(handleKeyEvent SceneEventKind.KeyUp, true)
             OnInput(handleInputEvent SceneEventKind.KeyInput, true)
-            OnTouchStart(handleTouchEvent SceneEventKind.PointerDown, true)
-            OnTouchEnd(handleTouchEvent SceneEventKind.PointerUp, true)
-            OnTouchCancel(handleTouchEvent SceneEventKind.PointerUp, true)
-            OnTouchMove(handleTouchEvent SceneEventKind.PointerMove, true)
+            OnTap(handleTapEvent SceneEventKind.Tap, true)
+            OnDoubleTap(handleTapEvent SceneEventKind.DoubleTap, true)
+            OnLongPress(handlePointerEvent SceneEventKind.LongPress, true)
         }
 
     let att = 

@@ -933,6 +933,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     let capturedScopes = Dict<int, TraversalState>()
     let mutable lastMouseInfo = None
     let mutable lastRealMouseInfo = None
+    let sw = System.Diagnostics.Stopwatch.StartNew()
     
     member private x.Dispose(disposing : bool) =
         printfn "SceneHandler died: %A" disposing
@@ -1055,7 +1056,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let model = TraversalState.modelTrafo best
                 let button = defaultArg button Button.None
                 let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
-                let evt = ScenePointerEvent(x, best, target, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                let evt = ScenePointerEvent(x, best, target, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
 
                 TraversalState.handleMove lastOver evt (Some best)
 
@@ -1082,7 +1083,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | SceneEventKind.Click when Option.isSome lastFocus.Value -> 
                     let button = defaultArg button Button.None
                     let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
-                    let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                    let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
                     TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt None
                 | _ -> ()
                     
@@ -1090,7 +1091,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 if Option.isSome lastOver.Value then
                     let button = defaultArg button Button.None
                     let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
-                    let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                    let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
                     TraversalState.handleMove lastOver evt None
 
                 true
@@ -1121,7 +1122,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some s -> s :> obj
                 | None -> null
 
-            let evt = ScenePointerEvent(x, target, target, SceneEventKind.FocusLeave, evtLocation, false, false, false, false, V2d.Zero, -1, Button.None)
+            let evt = ScenePointerEvent(x, target, target, SceneEventKind.FocusLeave, evtLocation, sw.Elapsed.TotalMilliseconds, false, false, false, false, V2d.Zero, -1, Button.None)
             TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt newTarget
                 
     member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool) : bool =
@@ -1140,7 +1141,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
                     | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
                 
-            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
+            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
             TraversalState.handleEvent true evt best
 
         | None ->
@@ -1183,7 +1184,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Some t -> t :> obj
                     | None -> null
 
-                let evt = ScenePointerEvent(x, eventTarget, eventTarget, SceneEventKind.PointerMove, loc, false, false, false, false, V2d.Zero, pointerId, Button.None)
+                let evt = ScenePointerEvent(x, eventTarget, eventTarget, SceneEventKind.PointerMove, loc, sw.Elapsed.TotalMilliseconds, false, false, false, false, V2d.Zero, pointerId, Button.None)
                 TraversalState.handleMove lastOver evt target
                 match target with
                 | Some t -> TraversalState.handleEvent true evt t |> ignore

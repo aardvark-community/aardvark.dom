@@ -578,7 +578,118 @@
         });
     }
 
-    
+    aardvark.onReady(function () {
+        let down = new Map();
+        window.addEventListener("pointerdown", (e) => {
+            down.set(e.pointerId, e);
+        }, true);
+        
+        window.addEventListener("pointerup", (e) => {
+            let downEvt = down.get(e.pointerId);
+            if (downEvt) {
+                down.delete(e.pointerId);
+                if (downEvt.target == e.target) {
+                    let dt = e.timeStamp - downEvt.timeStamp;
+                    let dx = e.clientX - downEvt.clientX;
+                    let dy = e.clientY - downEvt.clientY;
+                    let dp = Math.sqrt(dx * dx + dy * dy);
+                    if (dt <= 400 && dp <= 20) {
+
+                        const obj = {};
+                        for (let k in downEvt) {
+                            obj[k] = downEvt[k];
+                        }
+                        obj.bubbles = true;
+
+                        let tapEvt = new PointerEvent("tap", obj);
+                        tapEvt.movementX = dx;
+                        tapEvt.movementY = dy;
+                        tapEvt.deltaTime = dt;
+                        tapEvt.bubbles = true;
+                        e.target.dispatchEvent(tapEvt);
+                    }
+                }
+            }
+        }, true);
+
+        let lastTap = null;
+        window.addEventListener("tap", (e) => {
+            if (lastTap) {
+                let dt = e.timeStamp - lastTap.timeStamp;
+                let dx = e.clientX - lastTap.clientX;
+                let dy = e.clientY - lastTap.clientY;
+                let dp = Math.sqrt(dx * dx + dy * dy);
+
+                if (dt < 600 && dp < 30) {
+
+                    const obj = {};
+                    for (let k in lastTap) {
+                        obj[k] = lastTap[k];
+                    }
+                    obj.bubbles = true;
+
+                    let tapEvt = new PointerEvent("dbltap", obj);
+                    tapEvt.movementX = dx;
+                    tapEvt.movementY = dy;
+                    tapEvt.deltaTime = dt;
+                    tapEvt.bubbles = true;
+                    e.target.dispatchEvent(tapEvt);
+                    lastTap = null;
+                }
+                else {
+                    lastTap = e;
+                }
+                
+            }
+            else {
+                lastTap = e;
+            }
+        });
+
+        let pressTimeouts = new Map();
+        function triggerLongPress(e) {
+
+            const obj = {};
+            for (let k in e) {
+                obj[k] = e[k];
+            }
+            obj.bubbles = true;
+
+            let pressEvt = new PointerEvent("longpress", obj);
+            e.target.dispatchEvent(pressEvt);
+        }
+
+
+        
+        window.addEventListener("pointerdown", (e) => {
+            let timeout = setTimeout(() => triggerLongPress(e), 500);
+            pressTimeouts.set(e.pointerId, [e, timeout]);
+        }, true);
+
+        window.addEventListener("pointerup", (e) => {
+            let t = pressTimeouts.get(e.pointerId);
+            if (t) {
+                clearTimeout(t[1]);
+                pressTimeouts.delete(e.pointerId);
+            }
+        }, true);
+        
+        window.addEventListener("pointermove", (e) => {
+            let t = pressTimeouts.get(e.pointerId);
+            if (t) {
+                let downEvt = t[0];
+                let dx = e.clientX - downEvt.clientX;
+                let dy = e.clientY - downEvt.clientY;
+                let dp = Math.sqrt(dx * dx + dy * dy);
+                if (dp > 10) {
+                    clearTimeout(t[1]);
+                    pressTimeouts.delete(e.pointerId);
+                }
+            }
+        }, true);
+
+
+    })
 
 }) ();
 

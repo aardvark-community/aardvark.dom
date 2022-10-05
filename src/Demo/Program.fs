@@ -17,11 +17,11 @@ open Demo
 let testApp (_runtime : IRuntime) =
     let content = cval 0
     let text = cval ""
-    let click (evt : MouseEvent) =
-        transact (fun () -> 
-            content.Value <- int (round evt.ClientX)
-            text.Value <- JsonSerializer.Serialize(evt, JsonSerializerOptions(WriteIndented = true))
-        )
+    //let click (evt : MouseEvent) =
+    //    transact (fun () -> 
+    //        content.Value <- int (round evt.ClientX)
+    //        text.Value <- JsonSerializer.Serialize(evt, JsonSerializerOptions(WriteIndented = true))
+    //    )
 
     let down = cset[]
     let pos = cval V2d.Zero
@@ -51,7 +51,7 @@ let testApp (_runtime : IRuntime) =
             h1 {
                 Id "foo"
                 Class "bar"
-                Dom.OnClick(click, true)
+                //Dom.OnClick(click, true)
                 content |> AVal.map string
 
 
@@ -69,17 +69,21 @@ let testApp (_runtime : IRuntime) =
             }
 
             ul {
-                OnMouseEnter(fun e -> printfn "enter 0")
-                OnMouseLeave(fun e -> printfn "leave 0")
-                Dom.OnClick((fun e -> printfn "capture 0"; true), true)
-                Dom.OnClick((fun e -> printfn "bubble 0"; true), false)
+                Dom.OnTap((fun e -> printfn "capture tap 0 %A %A" e.DeltaTime e.Movement), true)
+                Dom.OnTap((fun e -> printfn "bubble tap 0 %A %A" e.DeltaTime e.Movement), false)
+                Dom.OnDoubleTap((fun e -> printfn "capture doubletap 0 %A %A" e.DeltaTime e.Movement), true)
+                Dom.OnDoubleTap((fun e -> printfn "bubble doubletap 0 %A %A" e.DeltaTime e.Movement), false)
+                Dom.OnLongPress((fun e -> printfn "capture longpress 0"), true)
+                Dom.OnLongPress((fun e -> printfn "bubble longpress 0"), false)
                 li { "Hans" }
                 li {
                     frameTime
-                    OnMouseEnter(fun e -> printfn "enter 1")
-                    OnMouseLeave(fun e -> printfn "leave 1")
-                    Dom.OnClick((fun e -> printfn "capture 1"; true), true)
-                    Dom.OnClick((fun e -> printfn "bubble 1"; false), false)
+                    Dom.OnTap((fun e -> printfn "capture tap 1 %A %A" e.DeltaTime e.Movement), true)
+                    Dom.OnTap((fun e -> printfn "bubble tap 1 %A %A" e.DeltaTime e.Movement), false)
+                    Dom.OnDoubleTap((fun e -> printfn "capture doubletap 1 %A %A" e.DeltaTime e.Movement), true)
+                    Dom.OnDoubleTap((fun e -> printfn "bubble doubletap 1 %A %A" e.DeltaTime e.Movement), false)
+                    Dom.OnLongPress((fun e -> printfn "capture longpress 1"), true)
+                    Dom.OnLongPress((fun e -> printfn "bubble longpress 1"), false)
                     ul {
                         li { 
                             "Sepp" 
@@ -113,23 +117,51 @@ let testApp (_runtime : IRuntime) =
                     | false -> Some (Style [FontWeight "bold"])
                 )
 
-                OnBoot "console.log('hi there');"
-                OnShutdown "console.log('bye');"
+
+                Dom.OnPointerDown(fun e ->
+                    transact (fun () -> 
+                        text.Value <- "POINTER DOWN"
+                    )
+
+                )
+                
+                Dom.OnPointerMove(fun e ->
+                    transact (fun () -> 
+                        text.Value <- string e.ClientX
+                    )
+
+                )
+                
+                //Dom.OnTouchStart(fun e ->
+                //    transact (fun () -> 
+                //        text.Value <- "TOUCH DOWN"
+                //    )
+
+                //)
+                
+                //Dom.OnMouseMove(fun e ->
+                //    transact (fun () -> 
+                //        text.Value <- "MOUSE MOVE"
+                //    )
+
+                //)
+                //OnBoot "console.log('hi there');"
+                //OnShutdown "console.log('bye');"
 
                 
 
-                OnContextMenu(click, useCapture = true, preventDefault = true)
-                Dom.OnClick(click, true)
+                //OnContextMenu(click, useCapture = true, preventDefault = true)
+                //Dom.OnClick(click, true)
 
-                Dom.OnPointerDown (fun e ->
-                    transact (fun () -> down.Add e.PointerId |> ignore)
-                    printfn "down\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
-                )
+                //Dom.OnPointerDown (fun e ->
+                //    transact (fun () -> down.Add e.PointerId |> ignore)
+                //    printfn "down\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
+                //)
                 
-                Dom.OnPointerUp (fun e ->
-                    transact (fun () -> down.Remove e.PointerId |> ignore)
-                    printfn "up\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
-                )
+                //Dom.OnPointerUp (fun e ->
+                //    transact (fun () -> down.Remove e.PointerId |> ignore)
+                //    printfn "up\n%s" (System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
+                //)
 
                 down |> ASet.isEmpty |> AVal.map (function
                     | true -> []
@@ -244,6 +276,12 @@ let testApp (_runtime : IRuntime) =
                 Samples 4
                 Quality 50
                 TabIndex 0
+                
+                //Sg.OnTap (fun e ->
+                //    transact (fun () ->
+                //        text.Value <- (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
+                //    )
+                //)
                 
                 Dom.OnKeyDown((fun e ->
                     printfn "Down %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
@@ -362,6 +400,41 @@ let testApp (_runtime : IRuntime) =
         
     view
 
+
+    
+let testApp2 (_runtime : IRuntime) =
+    body {
+        Style [ Position "fixed"; Overflow "hidden"; StyleProperty("touch-action", "none")]
+        let content = cval "asdasd"
+        div {
+            Style [Width "400px"; Height "400px"; Background "green"; StyleProperty("-webkit-user-select", "none"); Position "fixed"; Overflow "hidden"]
+            //Dom.OnPointerDown((fun e ->
+            //    transact (fun () ->
+            //        content.Value <- System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+            //    )
+            //), pointerCapture = false, preventDefault = true)
+            //Dom.OnPointerMove((fun e ->
+            //    transact (fun () ->
+            //        content.Value <- System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+            //    )
+            //), preventDefault = true)
+            
+            Dom.OnTap(fun e ->
+                transact (fun () ->
+                    content.Value <- "TAP"
+                    //content.Value <- System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+                )
+            )
+            Dom.OnDoubleTap(fun e ->
+                transact (fun () ->
+                    content.Value <- "DOUBLETAP"
+                    //content.Value <- System.Text.Json.JsonSerializer.Serialize(e, System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+                )
+            )
+
+            content
+        }
+    }
 
 module Elm =
     open Adaptify

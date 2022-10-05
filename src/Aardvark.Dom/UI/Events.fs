@@ -168,8 +168,8 @@ type MouseEvent(
             let! (offsetY : float) = str?offsetY
             // let! (x : float) = str?x
             // let! (y : float) = str?y
-            let! (movementX : float) = str?movementX
-            let! (movementY : float) = str?movementY
+            let (movementX : float) = defaultArg str?movementX 0.0
+            let (movementY : float) = defaultArg str?movementY 0.0
             let! (ctrlKey : bool) = str?ctrlKey
             let! (shiftKey : bool) = str?shiftKey
             let! (altKey : bool) = str?altKey
@@ -496,7 +496,6 @@ type PointerEvent(
     member x.TiltY = tiltY
     member x.PointerType = pointerType
     
-
     static member TryParse(str : System.Text.Json.JsonElement) =
 
         opt {
@@ -513,8 +512,8 @@ type PointerEvent(
             let! (pageY : float) = str?pageY
             let! (offsetX : float) = str?offsetX
             let! (offsetY : float) = str?offsetY
-            let! (movementX : float) = str?movementX
-            let! (movementY : float) = str?movementY
+            let (movementX : float) = defaultArg str?movementX 0.0
+            let (movementY : float) = defaultArg str?movementY 0.0
             let! (ctrlKey : bool) = str?ctrlKey
             let! (shiftKey : bool) = str?shiftKey
             let! (altKey : bool) = str?altKey
@@ -544,6 +543,111 @@ type PointerEvent(
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
                     movementX, movementY, ctrlKey, shiftKey, altKey, metaKey,
+                    unbox button, unbox buttons,
+                    pointerId, defaultArg width 1.0, defaultArg height 1.0, defaultArg pressure 0.0,
+                    defaultArg tiltX 0.0, defaultArg tiltY 0.0, defaultArg pointerType ""
+                )
+        }
+           
+
+type TapEvent(  
+        target : string, timeStamp : float, 
+        isTrusted : bool, typ : string, clientRect : Box2d,
+        clientX : float, clientY : float,
+        screenX : float, screenY : float,
+        pageX : float, pageY : float,
+        offsetX : float, offsetY : float,
+        movementX : float, movementY : float, deltaTime : float,
+        ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool,
+        button : Button, buttons : Buttons,
+
+        pointerId : int, width : float, height : float, pressure : float,
+        tiltX : float, tiltY : float, pointerType : string
+    ) =
+    inherit Event(
+        target, timeStamp, isTrusted, typ, clientRect
+    )
+    
+    member x.ClientPosition = V2i(clientX, clientY)
+    member x.PagePosition = V2i(pageX, pageY)
+    member x.OffsetPosition = V2i(offsetX, offsetY)
+    member x.Movement = V2i(movementX, movementY)
+
+    member x.ClientX = clientX
+    member x.ClientY = clientY
+    member x.ScreenX = screenX
+    member x.ScreenY = screenY
+    member x.PageX = pageX
+    member x.PageY = pageY
+    member x.OffsetX = offsetX
+    member x.OffsetY = offsetY
+    member x.MovementX = movementX
+    member x.MovementY = movementY
+    member x.DeltaTime = deltaTime
+    member x.Ctrl = ctrlKey
+    member x.Shift = shiftKey
+    member x.Alt = altKey
+    member x.Meta = metaKey
+    member x.Button = button
+    member x.Buttons = buttons
+    member x.PointerId = pointerId
+    member x.Width = width
+    member x.Height = height
+    member x.Pressure = pressure
+    member x.TiltX = tiltX
+    member x.TiltY = tiltY
+    member x.PointerType = pointerType
+    
+
+
+    static member TryParse(str : System.Text.Json.JsonElement) =
+
+        opt {
+            let! (isTrusted : bool) = str?isTrusted
+            let! (typ : string) = str?``type``
+            let! (timeStamp : float) = str?timeStamp
+            let! (target : string) = str?target?id
+
+            let! (screenX : float) = str?screenX
+            let! (screenY : float) = str?screenY
+            let! (clientX : float) = str?clientX
+            let! (clientY : float) = str?clientY
+            let! (pageX : float) = str?pageX
+            let! (pageY : float) = str?pageY
+            let! (offsetX : float) = str?offsetX
+            let! (offsetY : float) = str?offsetY
+            let (movementX : float) = defaultArg str?movementX 0.0
+            let (movementY : float) = defaultArg str?movementY 0.0
+            let (deltaTime : float) = defaultArg str?deltaTime 0.0
+            let! (ctrlKey : bool) = str?ctrlKey
+            let! (shiftKey : bool) = str?shiftKey
+            let! (altKey : bool) = str?altKey
+            let! (metaKey : bool) = str?metaKey
+            let! (button : int) = str?button
+            let! (buttons : int) = str?buttons
+
+
+            let! (pointerId : int) = str?pointerId
+            let (width : option<float>) = str?width
+            let (height : option<float>) = str?height
+            let (pressure : option<float>) = str?pressure
+            let (tiltX : option<float>) = str?tiltX
+            let (tiltY : option<float>) = str?tiltY
+            let (pointerType : option<string>) = str?pointerType
+            
+            let! (rect : System.Text.Json.JsonElement) = str?clientRect
+            let! (x : float) = rect?x
+            let! (y : float) = rect?y
+            let! (w : float) = rect?width
+            let! (h : float) = rect?height
+            let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
+
+            return
+                TapEvent(
+                    target, timeStamp, isTrusted, typ, clientRect,
+                    clientX, clientY, screenX, screenY,
+                    pageX, pageY, offsetX, offsetY,
+                    movementX, movementY, deltaTime, ctrlKey, shiftKey, altKey, metaKey,
                     unbox button, unbox buttons,
                     pointerId, defaultArg width 1.0, defaultArg height 1.0, defaultArg pressure 0.0,
                     defaultArg tiltX 0.0, defaultArg tiltY 0.0, defaultArg pointerType ""
