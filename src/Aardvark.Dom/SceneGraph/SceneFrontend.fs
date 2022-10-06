@@ -456,13 +456,13 @@ type Sg private() =
     static member inline OnPointerLeave (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerLeave, false, action)
     static member inline OnPointerEnter (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerEnter, false, action)
         
-    static member inline OnScroll(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Scroll, capture, action)
-    static member inline OnScroll(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Scroll, false, action)
-    static member inline OnScroll(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Scroll, capture, action)
-    static member inline OnScroll(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Scroll, false, action)
+    static member inline OnScroll(capture : bool, action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, capture, action)
+    static member inline OnScroll(action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, false, action)
+    static member inline OnScroll(capture : bool, action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, capture, action)
+    static member inline OnScroll(action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, false, action)
         
-    static member inline OnFocusLeave (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.FocusLeave, false, action)
-    static member inline OnFocusEnter (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.FocusEnter, false, action)
+    static member inline OnFocusLeave (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusLeave, false, action)
+    static member inline OnFocusEnter (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusEnter, false, action)
         
         
     static member inline OnKeyDown(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyDown, capture, action)
@@ -475,21 +475,21 @@ type Sg private() =
     static member inline OnKeyUp(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, capture, action)
     static member inline OnKeyUp(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, false, action)
         
-    static member inline OnKeyInput(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyInput, capture, action)
-    static member inline OnKeyInput(action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyInput, false, action)
-    static member inline OnKeyInput(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyInput, capture, action)
-    static member inline OnKeyInput(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyInput, false, action)
+    static member inline OnKeyInput(capture : bool, action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, capture, action)
+    static member inline OnKeyInput(action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, false, action)
+    static member inline OnKeyInput(capture : bool, action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, capture, action)
+    static member inline OnKeyInput(action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, false, action)
    
    
-    static member inline OnTap(capture : bool, callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Tap, capture, callback)
-    static member inline OnTap(callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Tap, false, callback)
-    static member inline OnTap(capture : bool, callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Tap, capture, callback)
-    static member inline OnTap(callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Tap, false, callback)
+    static member inline OnTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, capture, callback)
+    static member inline OnTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, false, callback)
+    static member inline OnTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, capture, callback)
+    static member inline OnTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, false, callback)
 
-    static member inline OnDoubleTap(capture : bool, callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
-    static member inline OnDoubleTap(callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, false, callback)
-    static member inline OnDoubleTap(capture : bool, callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
-    static member inline OnDoubleTap(callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, false, callback)
+    static member inline OnDoubleTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
+    static member inline OnDoubleTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, false, callback)
+    static member inline OnDoubleTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
+    static member inline OnDoubleTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, false, callback)
 
     static member inline OnLongPress(capture : bool, callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, capture, callback)
     static member inline OnLongPress(callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, false, callback)

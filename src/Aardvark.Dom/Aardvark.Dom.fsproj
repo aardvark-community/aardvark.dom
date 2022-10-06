@@ -6,6 +6,7 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Events.fs" />
     <Compile Include="SceneGraph\BVH.fs" />
     <Compile Include="SceneGraph\Intersectable.fs" />
     <Compile Include="SceneGraph\SceneEvent.fs" />
@@ -13,7 +14,6 @@
     <Compile Include="SceneGraph\SceneGraph.fs" />
     <Compile Include="SceneGraph\SceneHandler.fs" />
     <Compile Include="SceneGraph\SceneFrontend.fs" />
-    <Compile Include="UI\Events.fs" />
     <Compile Include="UI\Attribute.fs" />
     <Compile Include="UI\AttributeMap.fs" />
     <Compile Include="UI\DomNode.fs" />

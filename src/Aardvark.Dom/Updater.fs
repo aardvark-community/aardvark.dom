@@ -482,43 +482,32 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
 
     let handlePointerEvent (kind : SceneEventKind) (e : PointerEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, e.Button)
-        | None -> true
-        
-    let handleTapEvent (kind : SceneEventKind) (e : TapEvent) =
-        match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, e.PointerId, V2d.Zero, e.Button)
+        | Some h -> h.HandlePointerEvent(kind, e)
         | None -> true
         
     let handleMouseEvent (kind : SceneEventKind) (e : MouseEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, e.Button)
+        | Some h -> h.HandlePointerEvent(kind, PointerEvent e)
         | None -> true
         
-    let handleTouchEvent (kind : SceneEventKind) (e : TouchEvent) =
+    let handleTapEvent (kind : SceneEventKind) (e : TapEvent) =
         match handler with
-        | Some h -> 
-            let mutable all = true
-            for (_, t) in e.ChangedTouches do
-                let v = h.HandlePointerEvent(kind, V2i(t.OffsetX, t.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d.Zero, Button.None)
-                if not v then all <- false
-            all
-        | None -> 
-            true
+        | Some h -> h.HandleTapEvent(kind, e)
+        | None -> true
         
     let handleWheelEvent (kind : SceneEventKind) (e : WheelEvent) =
         match handler with
-        | Some h -> h.HandlePointerEvent(kind, V2i(e.OffsetX, e.OffsetY), e.Ctrl, e.Shift, e.Alt, e.Meta, 1, V2d(e.DeltaX, e.DeltaY), e.Button)
+        | Some h -> h.HandleWheelEvent(kind, e)
         | None -> true
         
     let handleKeyEvent (kind : SceneEventKind) (e : KeyboardEvent) =
         match handler with
-        | Some h -> h.HandleKeyEvent(kind, e.Ctrl, e.Shift, e.Alt, e.Meta, e.Code, e.Key, e.KeyLocation, "", e.Repeat)
+        | Some h -> h.HandleKeyEvent(kind, e)
         | None -> true
         
     let handleInputEvent (kind : SceneEventKind) (e : InputEvent) =
         match handler with
-        | Some h -> h.HandleKeyEvent(kind, false, false, false, false, "", "", KeyLocation.Standard, e.Data, false)
+        | Some h -> h.HandleInputEvent(kind, e)
         | None -> true
         
     let additionalAttributesBefore =

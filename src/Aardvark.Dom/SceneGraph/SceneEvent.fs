@@ -5,20 +5,6 @@ open Aardvark.Application
 open FSharp.Data.Adaptive
 open Aardvark.Rendering
 
-type KeyLocation =
-    | Standard = 0
-    | Left = 1
-    | Right = 2
-    | Numpad = 3
-  
-type Button =
-    | None = -1
-    | Left = 0
-    | Middle = 1
-    | Right = 2
-    | Button4 = 3
-    | Button5 = 4
-  
 [<RequireQualifiedAccess>]
 type SceneEventKind =
     | PointerDown
@@ -87,19 +73,27 @@ type IEventHandler =
     abstract SetPointerCapture : state : obj * pointerId : int -> unit
     abstract ReleasePointerCapture : state : obj * pointerId : int -> unit
     abstract SetFocus : option<obj> -> unit
-    abstract HandlePointerEvent : SceneEventKind * pixel : V2i * ctrl : bool * shift : bool * alt : bool * meta : bool * scrollDelta : V2d * pointerId : int * button : Button -> bool 
-    abstract HandleKeyEvent : SceneEventKind * ctrl : bool * shift : bool * alt : bool * meta : bool * code : string * key : string * keyLocation : KeyLocation * text : string * isRepeat : bool -> bool 
+    abstract HandlePointerEvent : SceneEventKind * PointerEvent -> bool 
+    abstract HandleWheelEvent : SceneEventKind * WheelEvent -> bool 
+    abstract HandleKeyEvent : SceneEventKind * KeyboardEvent -> bool 
+    abstract HandleInputEvent : SceneEventKind * InputEvent -> bool 
+    abstract HandleTapEvent : SceneEventKind * TapEvent -> bool 
     abstract Cursor : aval<option<string>>
     
 [<AbstractClass>]
-type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, time : float) =
+type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : Event) =
     member x.Context = context
     member x.This = self
     member x.Target = target
     member x.Kind = kind
     member x.Location = location
     
-    member x.TimeStamp = time
+    member x.Original = original
+    member x.TimeStamp = original.TimeStamp
+    member x.IsTrusted = original.IsTrusted
+    member x.Type = original.Type
+    member x.ClientRect = original.ClientRect
+    
     member x.ModelTrafo = location.ModelTrafo
     member x.ViewTrafo = location.ViewTrafo
     member x.ProjTrafo = location.ProjTrafo
@@ -120,48 +114,127 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
 
     abstract WithKind : SceneEventKind -> SceneEvent
     abstract WithLocation : SceneEventLocation -> SceneEvent
- 
 
-type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, time : float, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : Button) =
-    inherit SceneEvent(context, self, target, kind, location, time)
-    member x.PointerId = pointerId
-    member x.Button = button
+type SceneWheelEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : WheelEvent) =
+    inherit SceneEvent(context, self, target, kind, location, original)
     
-    member x.Ctrl = ctrl
-    member x.Shift = shift
-    member x.Alt = alt
-    member x.Meta = meta
-    member x.ScrollDelta = scrollDelta
+    member x.Original = original
+    member x.Ctrl = original.Ctrl
+    member x.Shift = original.Shift
+    member x.Alt = original.Alt
+    member x.Meta = original.Meta
+    member x.Button = original.Button
+    member x.Buttons = original.Buttons
+    member x.DeltaX = original.DeltaX
+    member x.DeltaY = original.DeltaY
+    member x.DeltaZ = original.DeltaZ
+    member x.DeltaMode = original.DeltaMode
+    member x.Delta = original.Delta
     
     override x.WithKind(kind : SceneEventKind) =
-        ScenePointerEvent(context, self, target, kind, location, time, ctrl, shift, alt, meta, scrollDelta, pointerId, button) :> SceneEvent
+        SceneWheelEvent(context, self, target, kind, location, original) :> SceneEvent
         
     override x.WithLocation(location : SceneEventLocation) =
-        ScenePointerEvent(context, self, target, kind, location, time, ctrl, shift, alt, meta, scrollDelta, pointerId, button) :> SceneEvent
+        SceneWheelEvent(context, self, target, kind, location, original) :> SceneEvent
 
-type SceneKeyboardEvent(
-        context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, time : float,
-        ctrl : bool, shift : bool, alt : bool, meta : bool, 
-        code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool
+type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : PointerEvent) =
+    inherit SceneEvent(context, self, target, kind, location, original)
+    
+    member x.Original = original
+    member x.Ctrl = original.Ctrl
+    member x.Shift = original.Shift
+    member x.Alt = original.Alt
+    member x.Meta = original.Meta
+    member x.Button = original.Button
+    member x.Buttons = original.Buttons
+    member x.PointerId = original.PointerId
+    member x.Width = original.Width
+    member x.Height = original.Height
+    member x.Pressure = original.Pressure
+    member x.TiltX = original.TiltX
+    member x.TiltY = original.TiltY
+    member x.PointerType = original.PointerType
+    
+    override x.WithKind(kind : SceneEventKind) =
+        ScenePointerEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
+        ScenePointerEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+type SceneTapEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : TapEvent) =
+    inherit SceneEvent(context, self, target, kind, location, original)
+    
+    member x.Original = original
+    member x.Ctrl = original.Ctrl
+    member x.Shift = original.Shift
+    member x.Alt = original.Alt
+    member x.Meta = original.Meta
+    member x.Button = original.Button
+    member x.Buttons = original.Buttons
+    member x.PointerId = original.PointerId
+    member x.Width = original.Width
+    member x.Height = original.Height
+    member x.Pressure = original.Pressure
+    member x.TiltX = original.TiltX
+    member x.TiltY = original.TiltY
+    member x.PointerType = original.PointerType
+    member x.DeltaTime = original.DeltaTime
+    member x.Movement = original.Movement
+    
+    override x.WithKind(kind : SceneEventKind) =
+        SceneTapEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
+        SceneTapEvent(context, self, target, kind, location, original) :> SceneEvent
+
+type internal PlainSceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : Event) =
+    inherit SceneEvent(context, self, target, kind, location, original)
+    
+    override x.WithKind(kind : SceneEventKind) =
+        PlainSceneEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
+        PlainSceneEvent(context, self, target, kind, location, original) :> SceneEvent
+
+type SceneInputEvent(
+        context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : InputEvent
     ) =
-    inherit SceneEvent(context, self, target, kind, location, time)
+    inherit SceneEvent(context, self, target, kind, location, original)
     
-    
-    member x.Ctrl = ctrl
-    member x.Shift = shift
-    member x.Alt = alt
-    member x.Meta = meta
-    member x.Code = code
-    member x.Key = key
-    member x.KeyLocation = keyLocation
-    member x.Text = text
-    member x.IsRepeat = isRepeat
+    member x.Original = original
+    member x.Checked = original.Checked
+    member x.Value = original.Value
+    member x.NodeType = original.NodeType
+    member x.Data = original.Data
+    member x.InputType = original.InputType
 
     override x.WithKind(kind : SceneEventKind) =
-        SceneKeyboardEvent(context, self, target, kind, location, time, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat) :> SceneEvent
+        SceneInputEvent(context, self, target, kind, location, original) :> SceneEvent
         
     override x.WithLocation(location : SceneEventLocation) =
-        SceneKeyboardEvent(context, self, target, kind, location, time, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat) :> SceneEvent
+        SceneInputEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+type SceneKeyboardEvent(
+        context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : KeyboardEvent
+    ) =
+    inherit SceneEvent(context, self, target, kind, location, original)
+    
+    member x.Original = original
+    member x.Code = original.Code
+    member x.IsComposing = original.IsComposing
+    member x.Key = original.Key
+    member x.KeyLocation = original.KeyLocation
+    member x.Repeat = original.Repeat
+    member x.Ctrl = original.Ctrl
+    member x.Shift = original.Shift
+    member x.Alt = original.Alt
+    member x.Meta = original.Meta
+
+    override x.WithKind(kind : SceneEventKind) =
+        SceneKeyboardEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
+        SceneKeyboardEvent(context, self, target, kind, location, original) :> SceneEvent
         
 
 

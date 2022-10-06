@@ -5,6 +5,21 @@ open Aardvark.Base
 open Aardvark.Rendering
 open FSharp.Data.Adaptive
 
+type KeyLocation =
+    | Standard = 0
+    | Left = 1
+    | Right = 2
+    | Numpad = 3
+  
+type Button =
+    | None = -1
+    | Left = 0
+    | Middle = 1
+    | Right = 2
+    | Button4 = 3
+    | Button5 = 4
+  
+  
 [<AutoOpen>]
 module private EventParserUtilities =
     open System.Text.Json
@@ -102,7 +117,8 @@ module private EventParserUtilities =
         else
             Unchecked.defaultof<'a>
 
-type Event(target : string, timeStamp : float, isTrusted : bool, typ : string, clientRect : Box2d) =
+type Event(json : option<System.Text.Json.JsonElement>, target : string, timeStamp : float, isTrusted : bool, typ : string, clientRect : Box2d) =
+    member x.Json = json
     member x.Target = target
     member x.TimeStamp = timeStamp
     member x.IsTrusted = isTrusted
@@ -125,7 +141,7 @@ type Event(target : string, timeStamp : float, isTrusted : bool, typ : string, c
 
             return
                 Event(
-                    target, timeStamp, isTrusted, typ, clientRect
+                    Some str, target, timeStamp, isTrusted, typ, clientRect
                 )
         }
 
@@ -139,6 +155,7 @@ type Buttons =
     | Button5 = 16
 
 type MouseEvent(    
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
@@ -149,7 +166,7 @@ type MouseEvent(
         ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool,
         button : Button, buttons : Buttons
     ) =
-    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+    inherit Event(json, target, timeStamp, isTrusted, typ, clientRect)
 
     static member TryParse(str : System.Text.Json.JsonElement) =
         opt {
@@ -186,6 +203,7 @@ type MouseEvent(
 
             return
                 MouseEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
@@ -222,6 +240,7 @@ type WheelDeltaMode =
     | Page = 2
 
 type WheelEvent(
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
@@ -233,7 +252,7 @@ type WheelEvent(
         button : Button, buttons : Buttons,
         deltaX : float, deltaY : float, deltaZ : float, deltaMode : WheelDeltaMode
     ) =
-    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+    inherit Event(json, target, timeStamp, isTrusted, typ, clientRect)
 
     static member TryParse(str : System.Text.Json.JsonElement) =
         opt {
@@ -275,6 +294,7 @@ type WheelEvent(
 
             return
                 WheelEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
@@ -342,6 +362,7 @@ type Touch(
         
 
 type TouchEvent(
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d,
         
@@ -350,7 +371,7 @@ type TouchEvent(
         targetTouches : HashMap<int, Touch>,
         touches : HashMap<int, Touch>
     ) =
-    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+    inherit Event(json, target, timeStamp, isTrusted, typ, clientRect)
     
     member x.Ctrl = ctrlKey
     member x.Shift = shiftKey
@@ -378,7 +399,8 @@ type TouchEvent(
                 let offsetY = clientY - clientRect.Min.Y
 
                 let touch = 
-                    Touch(identifier, clientX, clientY,
+                    Touch(
+                        identifier, clientX, clientY,
                         screenX, screenY, pageX, pageY,
                         offsetX, offsetY,
                         radiusX, radiusY, rotationAngle, force
@@ -441,6 +463,7 @@ type TouchEvent(
             
             return
                 TouchEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     ctrlKey, shiftKey, altKey, metaKey,
                     changedTouches, targetTouches, touches
@@ -450,6 +473,7 @@ type TouchEvent(
     
 
 type PointerEvent(  
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
@@ -464,9 +488,22 @@ type PointerEvent(
         tiltX : float, tiltY : float, pointerType : string
     ) =
     inherit Event(
-        target, timeStamp, isTrusted, typ, clientRect
+        json, target, timeStamp, isTrusted, typ, clientRect
     )
     
+    new(e : MouseEvent) =   
+        PointerEvent(
+            e.Json,
+            e.Target, e.TimeStamp,
+            e.IsTrusted, e.Type, e.ClientRect,
+            e.ClientX, e.ClientY, e.ScreenX, e.ScreenY,
+            e.PageX, e.PageY, e.OffsetX, e.OffsetY,
+            e.MovementX, e.MovementY,
+            e.Ctrl, e.Shift, e.Alt, e.Meta,
+            e.Button, e.Buttons,
+            0, 0.0, 0.0, 0.0, 0.0, 0.0, "mouse"
+        )
+
     member x.ClientPosition = V2i(clientX, clientY)
     member x.PagePosition = V2i(pageX, pageY)
     member x.OffsetPosition = V2i(offsetX, offsetY)
@@ -539,6 +576,7 @@ type PointerEvent(
 
             return
                 PointerEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
@@ -551,6 +589,7 @@ type PointerEvent(
            
 
 type TapEvent(  
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d,
         clientX : float, clientY : float,
@@ -565,7 +604,7 @@ type TapEvent(
         tiltX : float, tiltY : float, pointerType : string
     ) =
     inherit Event(
-        target, timeStamp, isTrusted, typ, clientRect
+        json, target, timeStamp, isTrusted, typ, clientRect
     )
     
     member x.ClientPosition = V2i(clientX, clientY)
@@ -644,6 +683,7 @@ type TapEvent(
 
             return
                 TapEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     clientX, clientY, screenX, screenY,
                     pageX, pageY, offsetX, offsetY,
@@ -655,9 +695,10 @@ type TapEvent(
         }
         
 type ChangeEvent(  
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d, nodeType : string, value : string, isChecked : bool) =
-    inherit Event(target, timeStamp, isTrusted, typ, clientRect)
+    inherit Event(json, target, timeStamp, isTrusted, typ, clientRect)
 
     member x.Value = value
     member x.Checked = isChecked
@@ -691,15 +732,17 @@ type ChangeEvent(
             
             return
                 ChangeEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     nodeType, value, isChecked
                 )
         }
 
 type InputEvent(  
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, 
         isTrusted : bool, typ : string, clientRect : Box2d, nodeType : string, value : string, isChecked : bool, data : string, inputType : string) =
-    inherit ChangeEvent(target, timeStamp, isTrusted, typ, clientRect, nodeType, value, isChecked)
+    inherit ChangeEvent(json, target, timeStamp, isTrusted, typ, clientRect, nodeType, value, isChecked)
     
     member x.Data = data
     member x.InputType = inputType
@@ -736,6 +779,7 @@ type InputEvent(
 
             return
                 InputEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     nodeType, value, isChecked, data, inputType
                 )
@@ -743,11 +787,12 @@ type InputEvent(
 
 
 type KeyboardEvent(
+        json : option<System.Text.Json.JsonElement>, 
         target : string, timeStamp : float, isTrusted : bool, typ : string, clientRect : Box2d,
         code : string, isComposing : bool, key : string, location : KeyLocation, repeat : bool, 
         ctrlKey : bool, shiftKey : bool, altKey : bool, metaKey : bool
     ) =
-    inherit  Event(target, timeStamp, isTrusted, typ, clientRect)
+    inherit  Event(json, target, timeStamp, isTrusted, typ, clientRect)
     
     member x.Code = code
     member x.IsComposing = isComposing
@@ -789,6 +834,7 @@ type KeyboardEvent(
 
             return
                 KeyboardEvent(
+                    Some str,
                     target, timeStamp, isTrusted, typ, clientRect,
                     code, isComposing, key, unbox<KeyLocation> location, repeat,
                     ctrlKey, shiftKey, altKey, metaKey

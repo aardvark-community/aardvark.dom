@@ -964,7 +964,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     member x.RenderTask = renderTask
   
 
-    member x.Read(pixel : V2i, pointerId : int) =
+    member x.Read(pixel : V2i, pointerId : int, ?evt : PointerEvent) =
 
         let capturedScope =
             match capturedScopes.TryGetValue pointerId with
@@ -1040,23 +1040,24 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | None -> Some (c, null, 1.0, V3d.Zero)
 
         lastMouseInfo <- Some (pixel, capturedResult)
-        lastRealMouseInfo <- Some (pixel, result)
+        lastRealMouseInfo <- Some (pixel, result, evt)
 
         capturedResult
 
-    member x.HandlePointerEvent(kind : SceneEventKind, pixel : V2i, ctrl : bool, shift : bool, alt : bool, meta : bool, pointerId : int, ?scrollDelta : V2d, ?button : Button) : bool =
+    member x.HandlePointerEvent(kind : SceneEventKind, original : PointerEvent) : bool =
         let s = viewportSize
         if s.AllGreater 0 then
             let view = AVal.force view 
             let proj = AVal.force proj
-            let scrollDelta = defaultArg scrollDelta V2d.Zero
+            let scrollDelta = V2d.Zero
 
-            match x.Read(pixel, pointerId) with
+            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+
+            match x.Read(pixel, original.PointerId, original) with
             | Some (best, target, depth, viewNormal) ->
                 let model = TraversalState.modelTrafo best
-                let button = defaultArg button Button.None
                 let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
-                let evt = ScenePointerEvent(x, best, target, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                let evt = ScenePointerEvent(x, best, target, kind, loc, original)
 
                 TraversalState.handleMove lastOver evt (Some best)
 
@@ -1081,23 +1082,103 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | None ->
                 match kind with
                 | SceneEventKind.Click when Option.isSome lastFocus.Value -> 
-                    let button = defaultArg button Button.None
                     let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
-                    let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                    let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, original)
                     TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt None
                 | _ -> ()
                     
 
                 if Option.isSome lastOver.Value then
-                    let button = defaultArg button Button.None
                     let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
-                    let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, scrollDelta, pointerId, button)
+                    let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, original)
                     TraversalState.handleMove lastOver evt None
 
                 true
         else
             true
         
+    member x.HandleTapEvent(kind : SceneEventKind, original : TapEvent) : bool =
+        let s = viewportSize
+        if s.AllGreater 0 then
+            let view = AVal.force view 
+            let proj = AVal.force proj
+
+            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+
+            match x.Read(pixel, original.PointerId) with
+            | Some (best, target, depth, viewNormal) ->
+                let model = TraversalState.modelTrafo best
+                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
+                let evt = SceneTapEvent(x, best, target, kind, loc, original)
+                TraversalState.handleEvent true evt best
+            | None ->
+                true
+        else
+            true
+        
+    member x.HandleWheelEvent(kind : SceneEventKind, original : WheelEvent) : bool =
+        let s = viewportSize
+        if s.AllGreater 0 then
+            let view = AVal.force view 
+            let proj = AVal.force proj
+
+            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+
+            match x.Read(pixel, -1) with
+            | Some (best, target, depth, viewNormal) ->
+                let model = TraversalState.modelTrafo best
+                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
+                let evt = SceneWheelEvent(x, best, target, kind, loc, original)
+                TraversalState.handleEvent true evt best
+            | None ->
+                true
+        else
+            true
+        
+    member x.HandleKeyEvent(kind : SceneEventKind, original : KeyboardEvent) : bool =
+        let s = viewportSize
+
+        match lastFocus.Value with
+        | Some best ->
+            let model = TraversalState.modelTrafo best
+            let view = AVal.force view 
+            let proj = AVal.force proj
+            let evtLocation =
+                match lastMouseInfo with
+                | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, s, depth, viewNormal)
+                | _ ->
+                    match lastMousePosition with
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
+                
+            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, original)
+            TraversalState.handleEvent true evt best
+
+        | None ->
+            true
+                
+    member x.HandleInputEvent(kind : SceneEventKind, original : InputEvent) : bool =
+        let s = viewportSize
+
+        match lastFocus.Value with
+        | Some best ->
+            let model = TraversalState.modelTrafo best
+            let view = AVal.force view 
+            let proj = AVal.force proj
+            let evtLocation =
+                match lastMouseInfo with
+                | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, s, depth, viewNormal)
+                | _ ->
+                    match lastMousePosition with
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
+                
+            let evt = SceneInputEvent(x, best, best, kind, evtLocation, original)
+            TraversalState.handleEvent true evt best
+
+        | None ->
+            true
+
     member x.SetFocus(newTarget : option<TraversalState>) =
         if lastFocus.Value <> newTarget then
             let view = AVal.force view 
@@ -1122,42 +1203,30 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some s -> s :> obj
                 | None -> null
 
-            let evt = ScenePointerEvent(x, target, target, SceneEventKind.FocusLeave, evtLocation, sw.Elapsed.TotalMilliseconds, false, false, false, false, V2d.Zero, -1, Button.None)
+            let original = Event(None, "", 0.0, true, "focusout", Box2d.Invalid)
+            let evt = PlainSceneEvent(x, target, target, SceneEventKind.FocusLeave, evtLocation, original)
             TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt newTarget
                 
-    member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool) : bool =
-        let s = viewportSize
-
-        match lastFocus.Value with
-        | Some best ->
-            let model = TraversalState.modelTrafo best
-            let view = AVal.force view 
-            let proj = AVal.force proj
-            let evtLocation =
-                match lastMouseInfo with
-                | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, s, depth, viewNormal)
-                | _ ->
-                    match lastMousePosition with
-                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
-                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
-                
-            let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, sw.Elapsed.TotalMilliseconds, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
-            TraversalState.handleEvent true evt best
-
-        | None ->
-            true
-
     interface IEventHandler with
         member x.SetFocus(dst : option<obj>) =
             match dst with
             | Some (:? TraversalState as s) -> x.SetFocus(Some s)
             | _ -> x.SetFocus None
             
-        member x.HandlePointerEvent(kind : SceneEventKind, pixel : V2i, ctrl : bool, shift : bool, alt : bool, meta : bool, scrollDelta : V2d, pointerId : int, button : Button) =
-            x.HandlePointerEvent(kind, pixel, ctrl, shift, alt, meta, pointerId, scrollDelta, button)
+        member x.HandlePointerEvent(kind : SceneEventKind, original : PointerEvent) =
+            x.HandlePointerEvent(kind, original)
               
-        member x.HandleKeyEvent(kind : SceneEventKind, ctrl : bool, shift : bool, alt : bool, meta : bool, code : string, key : string, keyLocation : KeyLocation, text : string, isRepeat : bool) =
-            x.HandleKeyEvent(kind, ctrl, shift, alt, meta, code, key, keyLocation, text, isRepeat)
+        member x.HandleKeyEvent(kind : SceneEventKind, original : KeyboardEvent) =
+            x.HandleKeyEvent(kind, original)
+   
+        member x.HandleInputEvent(kind : SceneEventKind, original : InputEvent) =
+            x.HandleInputEvent(kind, original)
+   
+        member x.HandleTapEvent(kind : SceneEventKind, original : TapEvent) =
+            x.HandleTapEvent(kind, original)
+            
+        member x.HandleWheelEvent(kind : SceneEventKind, original : WheelEvent) =
+            x.HandleWheelEvent(kind, original)
    
         member x.HasPointerCapture(state : obj, pointerId : int) =
             match capturedScopes.TryGetValue pointerId with
@@ -1171,7 +1240,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         member x.ReleasePointerCapture(state : obj, pointerId : int) =
             capturedScopes.Remove pointerId |> ignore
             match lastRealMouseInfo with
-            | Some (px, scope) ->
+            | Some (px, scope, originalEvt) ->
                 let view = AVal.force view 
                 let proj = AVal.force proj
                 let loc, target = 
@@ -1184,7 +1253,12 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Some t -> t :> obj
                     | None -> null
 
-                let evt = ScenePointerEvent(x, eventTarget, eventTarget, SceneEventKind.PointerMove, loc, sw.Elapsed.TotalMilliseconds, false, false, false, false, V2d.Zero, pointerId, Button.None)
+                let original = 
+                    match originalEvt with
+                    | Some e -> e
+                    | None -> PointerEvent(None, "", 0.0, true, "pointermove", Box2d.Invalid, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, false, false, false, Button.None, Buttons.None, -1, 0.0, 0.0, 0.0, 0.0, 0.0, "")
+
+                let evt = ScenePointerEvent(x, eventTarget, eventTarget, SceneEventKind.PointerMove, loc, original)
                 TraversalState.handleMove lastOver evt target
                 match target with
                 | Some t -> TraversalState.handleEvent true evt t |> ignore
