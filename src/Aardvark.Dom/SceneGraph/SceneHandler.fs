@@ -1256,7 +1256,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let original = 
                     match originalEvt with
                     | Some e -> e
-                    | None -> PointerEvent(None, "", 0.0, true, "pointermove", Box2d.Invalid, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, false, false, false, Button.None, Buttons.None, -1, 0.0, 0.0, 0.0, 0.0, 0.0, "")
+                    | None -> PointerEvent(None, "", 0.0, true, "pointermove", Box2d.Invalid, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false, false, false, false, Button.None, Buttons.None, -1, 0.0, 0.0, 0.0, 0.0, 0.0, PointerType.Mouse)
 
                 let evt = ScenePointerEvent(x, eventTarget, eventTarget, SceneEventKind.PointerMove, loc, original)
                 TraversalState.handleMove lastOver evt target

@@ -5,6 +5,12 @@ open Aardvark.Base
 open Aardvark.Rendering
 open FSharp.Data.Adaptive
 
+type PointerType =
+    | Mouse 
+    | Pen
+    | Touch
+    | Unknown of string
+
 type KeyLocation =
     | Standard = 0
     | Left = 1
@@ -485,7 +491,7 @@ type PointerEvent(
         button : Button, buttons : Buttons,
 
         pointerId : int, width : float, height : float, pressure : float,
-        tiltX : float, tiltY : float, pointerType : string
+        tiltX : float, tiltY : float, pointerType : PointerType
     ) =
     inherit Event(
         json, target, timeStamp, isTrusted, typ, clientRect
@@ -501,7 +507,7 @@ type PointerEvent(
             e.MovementX, e.MovementY,
             e.Ctrl, e.Shift, e.Alt, e.Meta,
             e.Button, e.Buttons,
-            0, 0.0, 0.0, 0.0, 0.0, 0.0, "mouse"
+            0, 0.0, 0.0, 0.0, 0.0, 0.0, PointerType.Mouse
         )
 
     member x.ClientPosition = V2i(clientX, clientY)
@@ -574,6 +580,17 @@ type PointerEvent(
             let! (h : float) = rect?height
             let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
 
+            let pointerType =
+                match pointerType with
+                | Some str ->
+                    match str with
+                    | "mouse" -> PointerType.Mouse
+                    | "touch" -> PointerType.Touch
+                    | "pen" -> PointerType.Pen
+                    | v -> PointerType.Unknown v
+                | None ->
+                    PointerType.Mouse
+            
             return
                 PointerEvent(
                     Some str,
@@ -583,7 +600,7 @@ type PointerEvent(
                     movementX, movementY, ctrlKey, shiftKey, altKey, metaKey,
                     unbox button, unbox buttons,
                     pointerId, defaultArg width 1.0, defaultArg height 1.0, defaultArg pressure 0.0,
-                    defaultArg tiltX 0.0, defaultArg tiltY 0.0, defaultArg pointerType ""
+                    defaultArg tiltX 0.0, defaultArg tiltY 0.0, pointerType
                 )
         }
            
