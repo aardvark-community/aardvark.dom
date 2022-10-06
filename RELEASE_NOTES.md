@@ -1,4 +1,7 @@
 ### 1.0.0-prerelease0015
+* added strongly typed PointerType
+
+### 1.0.0-prerelease0015
 * SceneEvents are now wrapping real HTML events and therefore include all their properties
 * Events now include the (optional) source JSON data (allowing for access to missing properties)
 
