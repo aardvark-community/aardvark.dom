@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0017
+* DisableImplicitFSharpCoreReference for all projects
+
 ### 1.0.0-prerelease0016
 * added strongly typed PointerType
 * Event inheritance now reflects the one in HTML/JS
