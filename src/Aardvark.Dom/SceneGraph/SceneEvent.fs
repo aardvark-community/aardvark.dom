@@ -115,16 +115,25 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     abstract WithKind : SceneEventKind -> SceneEvent
     abstract WithLocation : SceneEventLocation -> SceneEvent
 
-type SceneWheelEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : WheelEvent) =
+type SceneMouseEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : MouseEvent) =
     inherit SceneEvent(context, self, target, kind, location, original)
     
-    member x.Original = original
     member x.Ctrl = original.Ctrl
     member x.Shift = original.Shift
     member x.Alt = original.Alt
     member x.Meta = original.Meta
     member x.Button = original.Button
-    member x.Buttons = original.Buttons
+    
+    override x.WithKind(kind : SceneEventKind) =
+        SceneMouseEvent(context, self, target, kind, location, original) :> SceneEvent
+        
+    override x.WithLocation(location : SceneEventLocation) =
+        SceneMouseEvent(context, self, target, kind, location, original) :> SceneEvent
+    
+type SceneWheelEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : WheelEvent) =
+    inherit SceneMouseEvent(context, self, target, kind, location, original)
+    
+    member x.Original = original
     member x.DeltaX = original.DeltaX
     member x.DeltaY = original.DeltaY
     member x.DeltaZ = original.DeltaZ
@@ -138,15 +147,9 @@ type SceneWheelEvent(context : IEventHandler, self : obj, target : obj, kind : S
         SceneWheelEvent(context, self, target, kind, location, original) :> SceneEvent
 
 type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : PointerEvent) =
-    inherit SceneEvent(context, self, target, kind, location, original)
+    inherit SceneMouseEvent(context, self, target, kind, location, original)
     
     member x.Original = original
-    member x.Ctrl = original.Ctrl
-    member x.Shift = original.Shift
-    member x.Alt = original.Alt
-    member x.Meta = original.Meta
-    member x.Button = original.Button
-    member x.Buttons = original.Buttons
     member x.PointerId = original.PointerId
     member x.Width = original.Width
     member x.Height = original.Height
@@ -162,22 +165,9 @@ type ScenePointerEvent(context : IEventHandler, self : obj, target : obj, kind :
         ScenePointerEvent(context, self, target, kind, location, original) :> SceneEvent
         
 type SceneTapEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : TapEvent) =
-    inherit SceneEvent(context, self, target, kind, location, original)
+    inherit ScenePointerEvent(context, self, target, kind, location, original)
     
     member x.Original = original
-    member x.Ctrl = original.Ctrl
-    member x.Shift = original.Shift
-    member x.Alt = original.Alt
-    member x.Meta = original.Meta
-    member x.Button = original.Button
-    member x.Buttons = original.Buttons
-    member x.PointerId = original.PointerId
-    member x.Width = original.Width
-    member x.Height = original.Height
-    member x.Pressure = original.Pressure
-    member x.TiltX = original.TiltX
-    member x.TiltY = original.TiltY
-    member x.PointerType = original.PointerType
     member x.DeltaTime = original.DeltaTime
     member x.Movement = original.Movement
     

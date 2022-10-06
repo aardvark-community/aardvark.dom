@@ -1,5 +1,6 @@
-### 1.0.0-prerelease0015
+### 1.0.0-prerelease0016
 * added strongly typed PointerType
+* Event inheritance now reflects the one in HTML/JS
 
 ### 1.0.0-prerelease0015
 * SceneEvents are now wrapping real HTML events and therefore include all their properties
