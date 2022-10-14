@@ -537,7 +537,7 @@ type RenderControlBuilder() =
     member inline x.Bind((info : 'a, node : ISceneNode), action : 'a -> RenderControlBuilder<'b>) : RenderControlBuilder<'b> =
         x.Combine(x.Yield(node), action info)
         
-    member x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : RenderControlBuilder<unit> =
+    member inline x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : RenderControlBuilder<unit> =
         x.Yield(ASet.single node)
 
     member inline x.Yield(node : Aardvark.SceneGraph.ISg) : RenderControlBuilder<unit> =

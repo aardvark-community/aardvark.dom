@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0019
+* inlined all builder methods
+
 ### 1.0.0-prerelease0018
 * several Sg mode helpers (BlendMode, DepthBias, etc.)
 * attachment-states (WriteMask & BlendMode) are now additive (can be set separately per attachment)

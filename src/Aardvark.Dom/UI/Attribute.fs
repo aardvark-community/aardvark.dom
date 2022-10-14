@@ -125,39 +125,39 @@ type Attribute(name : string, value : AttributeValue) =
 open FSharp.Data.Adaptive
 
 type StyleBuilder() =   
-    member x.Yield(prop : StyleProperty) =
+    member inline x.Yield(prop : StyleProperty) =
         [prop]
 
 
-    member x.Yield(prop : aval<StyleProperty>) =
+    member inline x.Yield(prop : aval<StyleProperty>) =
         [AVal.map Some prop]
 
 
-    member x.Yield(prop : aval<option<StyleProperty>>) =
+    member inline x.Yield(prop : aval<option<StyleProperty>>) =
         [prop]
 
-    member x.Combine(l : list<StyleProperty>, r : unit -> list<StyleProperty>) =
+    member inline x.Combine(l : list<StyleProperty>, [<InlineIfLambda>] r : unit -> list<StyleProperty>) =
         l @ r()
 
-    member x.Combine(l : list<aval<option<StyleProperty>>>, r : unit -> list<StyleProperty>) =
+    member inline x.Combine(l : list<aval<option<StyleProperty>>>, [<InlineIfLambda>] r : unit -> list<StyleProperty>) =
         l @ (r() |> List.map (Some >> AVal.constant))
 
-    member x.Combine(l : list<aval<option<StyleProperty>>>, r : unit -> list<aval<option<StyleProperty>>>) =
+    member inline x.Combine(l : list<aval<option<StyleProperty>>>, [<InlineIfLambda>] r : unit -> list<aval<option<StyleProperty>>>) =
         l @ r()
 
-    member x.Combine(l : list<StyleProperty>, r : unit -> list<aval<option<StyleProperty>>>) =
+    member inline x.Combine(l : list<StyleProperty>, [<InlineIfLambda>] r : unit -> list<aval<option<StyleProperty>>>) =
         (l |> List.map (Some >> AVal.constant)) @ r()
 
-    member x.Zero() : list<StyleProperty> =
+    member inline x.Zero() : list<StyleProperty> =
         []
 
-    member x.Delay(action : unit -> 'a) = action
+    member inline x.Delay([<InlineIfLambda>] action : unit -> 'a) = action
 
-    member x.Run(action : unit -> list<StyleProperty>) =
+    member inline x.Run([<InlineIfLambda>] action : unit -> list<StyleProperty>) =
         let props = action() |> List.map (fun s -> $"{s.Name}: {s.Value}") |> String.concat "; "
         Attribute("style", AttributeValue.String props)
 
-    member x.Run(action : unit -> list<aval<option<StyleProperty>>>) =
+    member inline x.Run([<InlineIfLambda>] action : unit -> list<aval<option<StyleProperty>>>) =
         let l = action()
         if l |> List.forall (fun c -> c.IsConstant) then
             let props = l |> List.choose AVal.force |> List.map (fun s -> $"{s.Name}: {s.Value}") |> String.concat "; "

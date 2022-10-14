@@ -324,26 +324,26 @@ type ShaderAttributeBuilder() =
         [FShade.Effect.ofFunction shader]
     member x.Yield (effect : FShade.Effect) =
         [effect]
-    member x.Delay (action : unit -> list<FShade.Effect>) = action
-    member x.Combine(l : list<FShade.Effect>, r : unit -> list<FShade.Effect>) =
+    member inline x.Delay ([<InlineIfLambda>] action : unit -> list<FShade.Effect>) = action
+    member inline x.Combine(l : list<FShade.Effect>, [<InlineIfLambda>] r : unit -> list<FShade.Effect>) =
         l @ r()
-    member x.Run(l : unit -> list<FShade.Effect>) =
+    member inline x.Run([<InlineIfLambda>] l : unit -> list<FShade.Effect>) =
         FShade.Effect.compose (l()) |> SceneAttribute.Shader
 
 type UniformsBuilder() =
-    member x.Zero() = HashMap.empty
-    member x.Yield((name : string, value : aval<'a>)) =
+    member inline x.Zero() = HashMap.empty
+    member inline x.Yield((name : string, value : aval<'a>)) =
         HashMap.single name (value :> IAdaptiveValue)
     
-    member x.Yield<'a when 'a : unmanaged>((name : string, value : 'a)) =
+    member inline x.Yield<'a when 'a : unmanaged>((name : string, value : 'a)) =
         HashMap.single name (AVal.constant value :> IAdaptiveValue)
 
-    member x.Delay (action : unit -> HashMap<string, IAdaptiveValue>) = action
+    member inline x.Delay ([<InlineIfLambda>] action : unit -> HashMap<string, IAdaptiveValue>) = action
 
-    member x.Combine(l : HashMap<string, IAdaptiveValue>, r : unit -> HashMap<string, IAdaptiveValue>) =
+    member inline x.Combine(l : HashMap<string, IAdaptiveValue>, [<InlineIfLambda>] r : unit -> HashMap<string, IAdaptiveValue>) =
         HashMap.union l (r())
 
-    member x.Run(l : unit -> HashMap<string, IAdaptiveValue>) =
+    member inline x.Run([<InlineIfLambda>] l : unit -> HashMap<string, IAdaptiveValue>) =
         SceneAttribute.Uniforms (l())
 
 type SceneNodeBuilderState() =
@@ -429,66 +429,66 @@ type SceneNodeBuilderState() =
             stack <- []
             attributes.Clear()
 
-type private SceneBuilder<'a> = SceneNodeBuilderState -> 'a
+type SceneBuilder<'a> = SceneNodeBuilderState -> 'a
 
 type ISceneNodeMetaInfo = interface end
 
 type SceneNodeBuilder() =
 
-    static let wrap (sg : Aardvark.SceneGraph.ISg) =
+    static member Wrap (sg : Aardvark.SceneGraph.ISg) =
         SgAdapter.Node(sg) :> ISceneNode
 
-    member x.Yield(att : SceneAttribute) : SceneBuilder<unit> =
+    member inline x.Yield(att : SceneAttribute) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append [att]
         
-    member x.Yield(att : list<SceneAttribute>) : SceneBuilder<unit> =
+    member inline x.Yield(att : list<SceneAttribute>) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append att
 
-    member x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
+    member inline x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append node
         
-    member x.Zero() : SceneBuilder<unit> =
+    member inline x.Zero() : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> ()
         
-    member x.Delay(action : unit -> SceneBuilder<'a>) : SceneBuilder<'a> =
+    member inline x.Delay([<InlineIfLambda>] action : unit -> SceneBuilder<'a>) : SceneBuilder<'a> =
         action()
         
-    member x.Combine(l : SceneBuilder<unit>, r : SceneBuilder<'a>) : SceneBuilder<'a> =
+    member inline x.Combine(l : SceneBuilder<unit>, [<InlineIfLambda>] r : SceneBuilder<'a>) : SceneBuilder<'a> =
         fun s -> l s; r s
 
-    member x.Run(action : SceneBuilder<unit>) : ISceneNode =
+    member inline x.Run([<InlineIfLambda>] action : SceneBuilder<unit>) : ISceneNode =
         let s = SceneNodeBuilderState()
         action s
         s.Build()
      
         
-    member x.Yield(node : ISceneNode) : SceneBuilder<unit> =
+    member inline x.Yield(node : ISceneNode) : SceneBuilder<unit> =
         x.Yield(ASet.single node)
         
-    member x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : SceneBuilder<unit> =
+    member inline x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : SceneBuilder<unit> =
         x.Yield(ASet.single node)
 
-    member x.Bind((info : 'a, node : ISceneNode), action : 'a -> SceneBuilder<'b>) : SceneBuilder<'b> =
+    member inline x.Bind((info : 'a, node : ISceneNode), action : 'a -> SceneBuilder<'b>) : SceneBuilder<'b> =
         x.Combine(x.Yield(node), action info)
 
-    member x.Yield(node : Aardvark.SceneGraph.ISg) : SceneBuilder<unit> =
-        x.Yield(ASet.single (wrap node))
+    member inline x.Yield(node : Aardvark.SceneGraph.ISg) : SceneBuilder<unit> =
+        x.Yield(ASet.single (SceneNodeBuilder.Wrap node))
 
-    member x.Yield(node : aval<#seq<ISceneNode>>) : SceneBuilder<unit> =
+    member inline x.Yield(node : aval<#seq<ISceneNode>>) : SceneBuilder<unit> =
         x.Yield(ASet.ofAVal node)
         
-    member x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
-        x.Yield(ASet.ofAVal node |> ASet.map wrap)
+    member inline x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
+        x.Yield(ASet.ofAVal node |> ASet.map SceneNodeBuilder.Wrap)
 
-    member x.Yield(node : aval<ISceneNode>) : SceneBuilder<unit> =
+    member inline x.Yield(node : aval<ISceneNode>) : SceneBuilder<unit> =
         x.Yield(node |> ASet.bind ASet.single)
         
-    member x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : SceneBuilder<unit>=
-        x.Yield(node |> ASet.bind (wrap >> ASet.single))
+    member inline x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : SceneBuilder<unit>=
+        x.Yield(node |> ASet.bind (SceneNodeBuilder.Wrap >> ASet.single))
         
-    member x.Yield(node : aval<option<ISceneNode>>) : SceneBuilder<unit> =
+    member inline x.Yield(node : aval<option<ISceneNode>>) : SceneBuilder<unit> =
         x.Yield(node |> ASet.bind (function Some v -> ASet.single v | None -> ASet.empty))
         
-    member x.Yield(node : aval<option<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
-        x.Yield(node |> ASet.bind (function Some v -> ASet.single (wrap v) | None -> ASet.empty))
+    member inline x.Yield(node : aval<option<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
+        x.Yield(node |> ASet.bind (function Some v -> ASet.single (SceneNodeBuilder.Wrap v) | None -> ASet.empty))
         
