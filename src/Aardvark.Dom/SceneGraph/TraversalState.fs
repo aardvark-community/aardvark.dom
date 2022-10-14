@@ -288,12 +288,32 @@ type SceneAttribute =
 module SceneAttribute =
     let apply (att : SceneAttribute) (state : TraversalState) =
         match att with
-        | SceneAttribute.BlendMode v -> { state with Blend = { state.Blend with Mode = v } }
-        | SceneAttribute.ColorWriteMask v -> { state with Blend = { state.Blend with ColorWriteMask = v } }
-        | SceneAttribute.BlendConstant v -> { state with Blend = { state.Blend with ConstantColor = v } }
-        | SceneAttribute.AttachmentBlendMode v -> { state with Blend = { state.Blend with AttachmentMode = v } }
-        | SceneAttribute.AttachmentColorWriteMask v -> { state with Blend = { state.Blend with AttachmentWriteMask = v } }
-
+        | SceneAttribute.BlendMode v -> 
+            { state with Blend = { state.Blend with Mode = v; AttachmentMode = AVal.constant Map.empty } }
+        
+        | SceneAttribute.ColorWriteMask v -> 
+            { state with Blend = { state.Blend with ColorWriteMask = v; AttachmentWriteMask = AVal.constant Map.empty  } }
+        
+        | SceneAttribute.BlendConstant v -> 
+            { state with Blend = { state.Blend with ConstantColor = v } }
+        
+        | SceneAttribute.AttachmentBlendMode value -> 
+            let old = state.Blend.AttachmentMode
+            let newAttachmentModes = 
+                if old.IsConstant && Map.isEmpty (AVal.force old) then 
+                    value
+                else
+                    (old, value) ||> AVal.map2 Map.union
+            { state with Blend = { state.Blend with AttachmentMode = newAttachmentModes } }
+        
+        | SceneAttribute.AttachmentColorWriteMask value -> 
+            let old = state.Blend.AttachmentWriteMask
+            let newAttachmentMasks = 
+                if old.IsConstant && Map.isEmpty (AVal.force old) then 
+                    value
+                else
+                    (old, value) ||> AVal.map2 Map.union
+            { state with Blend = { state.Blend with AttachmentWriteMask = newAttachmentMasks } }
         
         | SceneAttribute.DepthTest v -> { state with Depth = { state.Depth with Test = v } }
         | SceneAttribute.DepthBias v -> { state with Depth = { state.Depth with Bias = v } }

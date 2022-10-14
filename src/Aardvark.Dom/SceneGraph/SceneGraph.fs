@@ -322,6 +322,8 @@ type ShaderAttributeBuilder() =
     member x.Zero() = []
     member x.Yield (shader : 'a -> Microsoft.FSharp.Quotations.Expr<'b>) =
         [FShade.Effect.ofFunction shader]
+    member x.Yield (effect : FShade.Effect) =
+        [effect]
     member x.Delay (action : unit -> list<FShade.Effect>) = action
     member x.Combine(l : list<FShade.Effect>, r : unit -> list<FShade.Effect>) =
         l @ r()

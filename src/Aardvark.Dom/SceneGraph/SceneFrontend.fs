@@ -397,6 +397,100 @@ type Sg private() =
     static member View (t : Trafo3d) = SceneAttribute.View (AVal.constant t)
     static member Proj (t : Trafo3d) = SceneAttribute.Proj (AVal.constant t)
 
+    static member DepthTest (mode : aval<DepthTest>) = SceneAttribute.DepthTest mode
+    static member DepthTest (mode : DepthTest) = SceneAttribute.DepthTest (AVal.constant mode)
+    
+    static member DepthBias (bias : aval<DepthBias>) = SceneAttribute.DepthBias bias
+    static member DepthBias (bias : DepthBias) = SceneAttribute.DepthBias (AVal.constant bias)
+    
+    static member DepthMask(mask : aval<bool>) = SceneAttribute.DepthWriteMask mask
+    static member DepthMask(mask : bool) = SceneAttribute.DepthWriteMask (AVal.constant mask)
+    
+    static member DepthClamp(clamp : aval<bool>) = SceneAttribute.DepthClamp clamp
+    static member DepthClamp(clamp : bool) = SceneAttribute.DepthClamp (AVal.constant clamp)
+    
+    static member CullMode (mode : aval<CullMode>) = SceneAttribute.CullMode mode
+    static member CullMode (mode : CullMode) = SceneAttribute.CullMode (AVal.constant mode)
+    
+    static member FrontFace (mode : aval<WindingOrder>) = SceneAttribute.FrontFace mode
+    static member FrontFace (mode : WindingOrder) = SceneAttribute.FrontFace (AVal.constant mode)
+    
+    static member FillMode (mode : aval<FillMode>) = SceneAttribute.FillMode mode
+    static member FillMode (mode : FillMode) = SceneAttribute.FillMode (AVal.constant mode)
+    
+    static member Multisample (mode : aval<bool>) = SceneAttribute.Multisample mode
+    static member Multisample (mode : bool) = SceneAttribute.Multisample (AVal.constant mode)
+    
+    static member BlendMode (mode : aval<BlendMode>) = SceneAttribute.BlendMode mode
+    static member BlendMode (mode : BlendMode) = SceneAttribute.BlendMode (AVal.constant mode)
+    static member BlendConstant (mode : aval<C4f>) = SceneAttribute.BlendConstant mode
+    static member BlendConstant (mode : C4f) = SceneAttribute.BlendConstant (AVal.constant mode)
+    
+    static member BlendMode (attachment : Symbol, mode : aval<BlendMode>) =
+        mode 
+        |> AVal.map (fun mode -> Map.ofList [attachment, mode])
+        |> SceneAttribute.AttachmentBlendMode
+        
+    static member BlendMode (attachment : Symbol, mode : BlendMode) =
+        Map.ofList [attachment, mode]
+        |> AVal.constant
+        |> SceneAttribute.AttachmentBlendMode
+    
+    static member BlendMode (attachmentModes : aval<Map<Symbol, BlendMode>>) =
+        attachmentModes 
+        |> SceneAttribute.AttachmentBlendMode
+       
+    static member BlendMode (attachmentModes : aval<#seq<Symbol * BlendMode>>) =
+        attachmentModes 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentBlendMode
+        
+    static member BlendMode (attachmentModes : #seq<Symbol * BlendMode>) =
+        attachmentModes 
+        |> Map.ofSeq
+        |> AVal.constant
+        |> SceneAttribute.AttachmentBlendMode
+       
+    static member BlendMode (attachmentModes : Map<Symbol, BlendMode>) =
+        attachmentModes 
+        |> AVal.constant
+        |> SceneAttribute.AttachmentBlendMode
+       
+    static member ColorMask (mask : aval<ColorMask>) = SceneAttribute.ColorWriteMask mask
+    
+    static member ColorMask (mask : ColorMask) = SceneAttribute.ColorWriteMask (AVal.constant mask)
+    
+    static member ColorMask(attachment : Symbol, mask : aval<ColorMask>) =
+        mask 
+        |> AVal.map (fun mask -> Map.ofList [attachment, mask])
+        |> SceneAttribute.AttachmentColorWriteMask
+        
+    static member ColorMask(attachment : Symbol, mask : ColorMask) =
+        Map.ofList [attachment, mask] 
+        |> AVal.constant
+        |> SceneAttribute.AttachmentColorWriteMask
+        
+    static member ColorMask (attachmentMasks : aval<Map<Symbol, ColorMask>>) =
+        attachmentMasks 
+        |> SceneAttribute.AttachmentColorWriteMask
+       
+    static member ColorMask (attachmentMasks : aval<#seq<Symbol * ColorMask>>) =
+        attachmentMasks 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentColorWriteMask
+        
+    static member ColorMask (attachmentMasks : #seq<Symbol * ColorMask>) =
+        attachmentMasks 
+        |> Map.ofSeq
+        |> AVal.constant
+        |> SceneAttribute.AttachmentColorWriteMask
+       
+    static member ColorMask (attachmentMasks : Map<Symbol, ColorMask>) =
+        attachmentMasks 
+        |> AVal.constant
+        |> SceneAttribute.AttachmentColorWriteMask
+       
+    
     static member NoEvents = SceneAttribute.NoEvents
         
         

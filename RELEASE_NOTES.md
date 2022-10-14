@@ -1,3 +1,8 @@
+### 1.0.0-prerelease0018
+* several Sg mode helpers (BlendMode, DepthBias, etc.)
+* attachment-states (WriteMask & BlendMode) are now additive (can be set separately per attachment)
+* Sg.Shader can now yield Effects directly
+
 ### 1.0.0-prerelease0017
 * DisableImplicitFSharpCoreReference for all projects
 
