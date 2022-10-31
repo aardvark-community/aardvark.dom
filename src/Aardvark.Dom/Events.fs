@@ -725,8 +725,15 @@ type InputEvent(
             let! (h : float) = rect?height
             let clientRect = Box2d.FromMinAndSize(V2d(x,y), V2d(w,h))
             
-            let! data = str?data
-            let! inputType = str?inputType
+            let data = 
+                match str?data with
+                | Some (d : string) -> d
+                | None -> ""
+                
+            let inputType = 
+                match str?inputType with
+                | Some (t : string) -> t
+                | None -> ""
 
             return
                 InputEvent(

@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0020
+* fixed InputEvent parser for non-text inputs
+
 ### 1.0.0-prerelease0019
 * inlined all builder methods
 
