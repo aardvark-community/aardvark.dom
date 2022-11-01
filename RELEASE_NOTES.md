@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0021
+* proper constant propagation for NodeList/AttributeTable
+
 ### 1.0.0-prerelease0020
 * fixed InputEvent parser for non-text inputs
 

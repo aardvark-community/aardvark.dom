@@ -106,8 +106,7 @@ module NodeBuilderHelpers =
                     mapping, value, maxIndex
                 )
                 |> IndexList.map(fun (m, v, i) -> ref None, m, v, i)
-
-
+                
             let alist =
                 content
                 |> IndexList.choose (function AList v -> Some v | _ -> None)
@@ -120,136 +119,146 @@ module NodeBuilderHelpers =
                     let mapping = IndexMapping(i, max)
                     mapping, value
                 )
-            AList.ofReader (fun () ->
-                let mutable initial = true
-                let readers = alist |> IndexList.map (fun (m, l) -> m, l.GetReader())
 
-
-                let indices =
-                    content
-                    |> IndexList.choosei (fun i o ->
-                        match o with 
-                        | AList o -> Some (snd readers.[i] :> IAdaptiveObject, i)
-                        | AValCustom(_, o) -> Some (o :> IAdaptiveObject, i)
-                        | Constant _ -> None
+            if IndexList.isEmpty avalCustom && IndexList.isEmpty alist then
+                let mutable res = IndexList.empty
+                constant |> IndexList.iter (fun part ->
+                    part |> IndexList.iteri (fun idx element ->
+                        res <- IndexList.set idx element res
                     )
-                    |> Seq.groupBy fst
-                    |> Seq.map (fun (o, l) -> o, l |> Seq.map snd |> Seq.toList)
-                    |> HashMap.ofSeq
-
-                let dirtyReader = ref <| IndexList.empty
-                let dirtyAValCustom = ref <| IndexList.empty
-                { new FSharp.Data.Traceable.AbstractReader<IndexListDelta<DomNode>>(IndexListDelta.empty) with
-
-                    override x.InputChangedObject(_, o) =
-                        match HashMap.tryFind o indices with
-                        | Some idx ->
-                            match o with
-                            | :? FSharp.Data.Traceable.IOpReader<IndexList<DomNode>, IndexListDelta<DomNode>> as o ->
-                                lock dirtyReader (fun () -> 
-                                    for i in idx do
-                                        dirtyReader.Value <- IndexList.set i readers.[i] dirtyReader.Value
-                                )
-                            | :? IAdaptiveValue as o ->
-                                lock dirtyAValCustom (fun () -> 
-                                    for i in idx do
-                                        dirtyAValCustom.Value <- IndexList.set i avalCustom.[i] dirtyAValCustom.Value
-                                )
-
-                            | _ ->
-                                ()
-                        | None ->
-                            ()
-            
-                    member x.Compute (token : AdaptiveToken) =
-                        let mutable delta = IndexList.empty
-
-                        let avalCustom, readers =
-                            if initial then 
-                                avalCustom, readers
-                            else 
-                                let readers = lock dirtyReader (fun () -> let d = dirtyReader.Value in dirtyReader.Value <- IndexList.empty; d)
-                                let avalCustom = lock dirtyAValCustom (fun () -> let d = dirtyAValCustom.Value in dirtyAValCustom.Value <- IndexList.empty; d)
-                                avalCustom, readers
-
-                        if initial then
-                            initial <- false
-                            constant |> IndexList.iter (fun part ->
-                                part |> IndexList.iteri (fun idx element ->
-                                    delta <- IndexList.set idx (Set element) delta
-                                )
-                            )
+                )
+                AList.ofIndexList res
+            else
+                AList.ofReader (fun () ->
+                    let mutable initial = true
+                    let readers = alist |> IndexList.map (fun (m, l) -> m, l.GetReader())
 
 
-                        avalCustom |> IndexList.iteri (fun idx (cache, mapping, value, maxIndex) ->
-                            let nodes = 
-                                value.Accept { 
-                                    new IAdaptiveValueVisitor<list<DomNode>> with
-                                        member x.Visit (value : aval<'a>) =
-                                            let mapping = unbox<'a -> list<DomNode>> mapping
-                                            value.GetValue token |> mapping
-                                }
+                    let indices =
+                        content
+                        |> IndexList.choosei (fun i o ->
+                            match o with 
+                            | AList o -> Some (snd readers.[i] :> IAdaptiveObject, i)
+                            | AValCustom(_, o) -> Some (o :> IAdaptiveObject, i)
+                            | Constant _ -> None
+                        )
+                        |> Seq.groupBy fst
+                        |> Seq.map (fun (o, l) -> o, l |> Seq.map snd |> Seq.toList)
+                        |> HashMap.ofSeq
 
-                            match cache.Value with
+                    let dirtyReader = ref <| IndexList.empty
+                    let dirtyAValCustom = ref <| IndexList.empty
+                    { new FSharp.Data.Traceable.AbstractReader<IndexListDelta<DomNode>>(IndexListDelta.empty) with
+
+                        override x.InputChangedObject(_, o) =
+                            match HashMap.tryFind o indices with
+                            | Some idx ->
+                                match o with
+                                | :? FSharp.Data.Traceable.IOpReader<IndexList<DomNode>, IndexListDelta<DomNode>> as o ->
+                                    lock dirtyReader (fun () -> 
+                                        for i in idx do
+                                            dirtyReader.Value <- IndexList.set i readers.[i] dirtyReader.Value
+                                    )
+                                | :? IAdaptiveValue as o ->
+                                    lock dirtyAValCustom (fun () -> 
+                                        for i in idx do
+                                            dirtyAValCustom.Value <- IndexList.set i avalCustom.[i] dirtyAValCustom.Value
+                                    )
+
+                                | _ ->
+                                    ()
                             | None ->
-                                let mutable i = idx
-                                let mutable state = IndexList.empty
-                                for n in nodes do
-                                    let id = 
-                                        match maxIndex with
-                                        | Some maxIndex -> Index.between i maxIndex
-                                        | None -> Index.after i
-                                    state <- IndexList.set id n state
-                                    delta <- IndexList.set id (Set n) delta
-                                    i <- id
+                                ()
+            
+                        member x.Compute (token : AdaptiveToken) =
+                            let mutable delta = IndexList.empty
 
-                                cache.Value <- Some state
-                            | Some o ->
-                                let mutable o = o
-                                let mutable i = idx
-                                let mutable state = IndexList.empty
-                                for n in nodes do
-                                    match IndexList.tryFirstIndex o with
-                                    | Some fi ->
-                                        state <- IndexList.set fi n state
-                                        delta <- IndexList.set fi (Set n) delta
-                                        i <- fi
-                                        o <- IndexList.remove fi o
-                                    | None ->
-                                        let fi =
+                            let avalCustom, readers =
+                                if initial then 
+                                    avalCustom, readers
+                                else 
+                                    let readers = lock dirtyReader (fun () -> let d = dirtyReader.Value in dirtyReader.Value <- IndexList.empty; d)
+                                    let avalCustom = lock dirtyAValCustom (fun () -> let d = dirtyAValCustom.Value in dirtyAValCustom.Value <- IndexList.empty; d)
+                                    avalCustom, readers
+
+                            if initial then
+                                initial <- false
+                                constant |> IndexList.iter (fun part ->
+                                    part |> IndexList.iteri (fun idx element ->
+                                        delta <- IndexList.set idx (Set element) delta
+                                    )
+                                )
+
+
+                            avalCustom |> IndexList.iteri (fun idx (cache, mapping, value, maxIndex) ->
+                                let nodes = 
+                                    value.Accept { 
+                                        new IAdaptiveValueVisitor<list<DomNode>> with
+                                            member x.Visit (value : aval<'a>) =
+                                                let mapping = unbox<'a -> list<DomNode>> mapping
+                                                value.GetValue token |> mapping
+                                    }
+
+                                match cache.Value with
+                                | None ->
+                                    let mutable i = idx
+                                    let mutable state = IndexList.empty
+                                    for n in nodes do
+                                        let id = 
                                             match maxIndex with
                                             | Some maxIndex -> Index.between i maxIndex
                                             | None -> Index.after i
-                                        state <- IndexList.set fi n state
-                                        delta <- IndexList.set fi (Set n) delta
-                                        i <- fi
+                                        state <- IndexList.set id n state
+                                        delta <- IndexList.set id (Set n) delta
+                                        i <- id
 
-                                o |> IndexList.iteri (fun i _ ->
-                                    delta <- IndexList.set i Remove delta
-                                )
+                                    cache.Value <- Some state
+                                | Some o ->
+                                    let mutable o = o
+                                    let mutable i = idx
+                                    let mutable state = IndexList.empty
+                                    for n in nodes do
+                                        match IndexList.tryFirstIndex o with
+                                        | Some fi ->
+                                            state <- IndexList.set fi n state
+                                            delta <- IndexList.set fi (Set n) delta
+                                            i <- fi
+                                            o <- IndexList.remove fi o
+                                        | None ->
+                                            let fi =
+                                                match maxIndex with
+                                                | Some maxIndex -> Index.between i maxIndex
+                                                | None -> Index.after i
+                                            state <- IndexList.set fi n state
+                                            delta <- IndexList.set fi (Set n) delta
+                                            i <- fi
 
-                                cache.Value <- Some state
+                                    o |> IndexList.iteri (fun i _ ->
+                                        delta <- IndexList.set i Remove delta
+                                    )
+
+                                    cache.Value <- Some state
 
 
 
 
-                            ()
-                        )
+                                ()
+                            )
 
-                        for (mapping, reader) in readers do
-                            let ops = reader.GetChanges token
-                            for index, op in ops do
-                                match op with
-                                | Set v -> 
-                                    delta <- IndexList.set (mapping.Invoke index) (Set v) delta
-                                | Remove -> 
-                                    match mapping.Revoke index with
-                                    | Some oi -> delta <- IndexList.set oi Remove delta
-                                    | None -> ()
+                            for (mapping, reader) in readers do
+                                let ops = reader.GetChanges token
+                                for index, op in ops do
+                                    match op with
+                                    | Set v -> 
+                                        delta <- IndexList.set (mapping.Invoke index) (Set v) delta
+                                    | Remove -> 
+                                        match mapping.Revoke index with
+                                        | Some oi -> delta <- IndexList.set oi Remove delta
+                                        | None -> ()
                     
-                        IndexListDelta.ofIndexList delta
-                }
-            )
+                            IndexListDelta.ofIndexList delta
+                    }
+                )
 
         member private x.Content = content
 
@@ -305,96 +314,106 @@ module NodeBuilderHelpers =
         member x.Store : IndexList<AttributeTableElement> = store
 
         member x.ToAMap() =
-            AMap.ofReader (fun () ->
-                let readers =
-                    store |> IndexList.choose (function AMap m -> Some (m.GetReader()) | _ -> None)
+            let adaptive = store |> IndexList.choose (function AMap m -> Some m | _ -> None)
+            if IndexList.isEmpty adaptive then
+                let mutable res = HashMap.empty
+                for s in store do
+                    match s with
+                    | Constant m -> res <- (res, m) ||> HashMap.unionWith (fun k a b -> Attribute.Merge(Attribute(k, a), Attribute(k, b)).Value)
+                    | AMap _ -> ()
+                    
+                AMap.ofHashMap res
+            else
+                AMap.ofReader (fun () ->
+                    let readers =
+                        adaptive |> IndexList.map (fun m -> m.GetReader())
 
-                let mutable state = HashMap.empty<string, IndexList<AttributeValue>>
+                    let mutable state = HashMap.empty<string, IndexList<AttributeValue>>
 
-                store |> IndexList.iteri (fun idx value ->
-                    match value with
-                    | Constant table ->
-                        for (k, v) in table do
-                            state <- 
-                                state |> HashMap.alter k (fun o ->
-                                    let o = 
-                                        match o with
-                                        | Some o -> o
-                                        | None -> IndexList.empty
-                                    Some (IndexList.set idx v o)
-                                )
-                    | _ ->
-                        ()
-                )
-                let mutable initial = true
-                { new AbstractReader<HashMapDelta<string, AttributeValue>>(HashMapDelta.empty) with
-                    override x.Compute(token : AdaptiveToken) = 
-                        let oldState = state
-                        let mutable touched = HashSet.empty
-                        readers |> IndexList.iteri (fun idx reader ->
-                            let ops = reader.GetChanges token
-                            for k, op in ops do
-                                touched <- HashSet.add k touched
-                                match op with
-                                | Set v -> 
-                                    state <- state |> HashMap.alter k (fun o ->
+                    store |> IndexList.iteri (fun idx value ->
+                        match value with
+                        | Constant table ->
+                            for (k, v) in table do
+                                state <- 
+                                    state |> HashMap.alter k (fun o ->
                                         let o = 
                                             match o with
                                             | Some o -> o
                                             | None -> IndexList.empty
                                         Some (IndexList.set idx v o)
                                     )
-                                | Remove -> 
-                                    state <- state |> HashMap.alter k (fun o ->
-                                        match o with
-                                        | Some o -> 
-                                            let n = IndexList.remove idx o
-                                            if n.IsEmpty then None
-                                            else Some n
-                                        | None -> 
-                                            None
-                                    )
-                        )
+                        | _ ->
+                            ()
+                    )
+                    let mutable initial = true
+                    { new AbstractReader<HashMapDelta<string, AttributeValue>>(HashMapDelta.empty) with
+                        override x.Compute(token : AdaptiveToken) = 
+                            let oldState = state
+                            let mutable touched = HashSet.empty
+                            readers |> IndexList.iteri (fun idx reader ->
+                                let ops = reader.GetChanges token
+                                for k, op in ops do
+                                    touched <- HashSet.add k touched
+                                    match op with
+                                    | Set v -> 
+                                        state <- state |> HashMap.alter k (fun o ->
+                                            let o = 
+                                                match o with
+                                                | Some o -> o
+                                                | None -> IndexList.empty
+                                            Some (IndexList.set idx v o)
+                                        )
+                                    | Remove -> 
+                                        state <- state |> HashMap.alter k (fun o ->
+                                            match o with
+                                            | Some o -> 
+                                                let n = IndexList.remove idx o
+                                                if n.IsEmpty then None
+                                                else Some n
+                                            | None -> 
+                                                None
+                                        )
+                            )
                         
-                        let tryReduce (name : string) (values : IndexList<AttributeValue>) =
-                            if values.Count < 1 then
-                                None
-                            elif values.Count = 1 then
-                                let v = IndexList.first values
-                                Some (Set v)
+                            let tryReduce (name : string) (values : IndexList<AttributeValue>) =
+                                if values.Count < 1 then
+                                    None
+                                elif values.Count = 1 then
+                                    let v = IndexList.first values
+                                    Some (Set v)
+                                else
+                                    let mutable res : option<AttributeValue> = None
+                                    for v in values do
+                                        match res with
+                                        | Some old -> 
+                                            let r = Attribute.Merge(Attribute(name, old), Attribute(name, v))
+                                            res <- Some r.Value
+                                        | None ->
+                                            res <- Some v
+                                    Some (Set res.Value)
+
+                            if initial then
+                                initial <- false
+
+                                state |> HashMap.choose tryReduce |> HashMapDelta.ofHashMap
                             else
-                                let mutable res : option<AttributeValue> = None
-                                for v in values do
-                                    match res with
-                                    | Some old -> 
-                                        let r = Attribute.Merge(Attribute(name, old), Attribute(name, v))
-                                        res <- Some r.Value
-                                    | None ->
-                                        res <- Some v
-                                Some (Set res.Value)
-
-                        if initial then
-                            initial <- false
-
-                            state |> HashMap.choose tryReduce |> HashMapDelta.ofHashMap
-                        else
-                            touched.MapToMap (fun k -> 
-                                match HashMap.tryFind k state with
-                                | Some n -> Set n
-                                | None -> Remove
-                            )
-                            |> HashMap.choose (fun name op ->
-                                match op with
-                                | Set values -> 
-                                    match tryReduce name values with
-                                    | Some res -> Some res
-                                    | None -> Some Remove
-                                | Remove ->
-                                    Some Remove
-                            )
-                            |> HashMapDelta.ofHashMap
-                }
-            )
+                                touched.MapToMap (fun k -> 
+                                    match HashMap.tryFind k state with
+                                    | Some n -> Set n
+                                    | None -> Remove
+                                )
+                                |> HashMap.choose (fun name op ->
+                                    match op with
+                                    | Set values -> 
+                                        match tryReduce name values with
+                                        | Some res -> Some res
+                                        | None -> Some Remove
+                                    | Remove ->
+                                        Some Remove
+                                )
+                                |> HashMapDelta.ofHashMap
+                    }
+                )
 
         new (att : seq<Attribute>) =
             AttributeTable(
