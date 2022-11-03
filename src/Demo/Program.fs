@@ -273,9 +273,13 @@ let testApp (_runtime : IRuntime) =
             renderControl  {
                 // HTML attributes
                 Style [Width "100%"; Height "600px"; Background "#202124"] 
-                Samples 4
+                Samples 1
                 Quality 50
                 TabIndex 0
+                let mutable myHandler = None
+                RenderControl.OnReady (fun handler ->
+                    myHandler <- Some handler
+                )
                 
                 //Sg.OnTap (fun e ->
                 //    transact (fun () ->
@@ -284,11 +288,17 @@ let testApp (_runtime : IRuntime) =
                 //)
                 
                 Dom.OnKeyDown((fun e ->
-                    printfn "Down %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
+                    match myHandler with
+                    | Some handler ->
+                        handler.Read(handler.Size / 2) |> printfn "%A"
+                    | None ->
+                        printfn "no handler"
+                    //printfn "Down %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
                 ), preventDefault = true)
                 
                 Dom.OnKeyUp((fun e ->
-                    printfn "Up %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
+                    ()
+                    //printfn "Up %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
                 ), preventDefault = true)
 
 

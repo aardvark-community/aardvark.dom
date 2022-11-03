@@ -1208,6 +1208,20 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt newTarget
                 
     interface IEventHandler with
+        member x.Read(pixel : V2i) =
+            let s = viewportSize
+            let view = AVal.force view 
+            let proj = AVal.force proj
+            match x.Read(pixel, -1) with
+            | Some (best,_,depth,viewNormal) ->
+                let model = TraversalState.modelTrafo best
+                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
+                Some loc
+            | None ->
+                None
+            
+        member x.Size = viewportSize
+            
         member x.SetFocus(dst : option<obj>) =
             match dst with
             | Some (:? TraversalState as s) -> x.SetFocus(Some s)

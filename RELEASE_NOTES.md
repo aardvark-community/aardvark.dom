@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0022
+* added RenderControl.OnReady event
+
 ### 1.0.0-prerelease0021
 * proper constant propagation for NodeList/AttributeTable
 

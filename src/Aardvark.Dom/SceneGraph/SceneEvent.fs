@@ -80,6 +80,9 @@ type IEventHandler =
     abstract HandleTapEvent : SceneEventKind * TapEvent -> bool 
     abstract Cursor : aval<option<string>>
     
+    abstract Size : V2i 
+    abstract Read : pixel : V2i -> option<SceneEventLocation>
+    
 [<AbstractClass>]
 type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : Event) =
     member x.Context = context

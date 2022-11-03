@@ -566,6 +566,7 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             let h = new SceneHandler(signature, handleSceneEvent, setCursor, scene.Scene, scene.View, scene.Proj, size, time) 
             handler <- Some h
             code.SetupRenderer(id, h)
+            scene.OnReady h
         | Some _ ->
             ()
 

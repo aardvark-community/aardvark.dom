@@ -24,6 +24,7 @@ type DomScene =
         View    : aval<Trafo3d>
         Proj    : aval<Trafo3d>
         Scene   : ISceneNode
+        OnReady : IEventHandler -> unit
     }
 
 type DomNode =
@@ -443,6 +444,8 @@ module NodeBuilderHelpers =
         let mutable view = None
         let mutable proj = None
         let scene = SceneNodeBuilderState()
+        
+        let mutable onReady : list<IEventHandler -> unit> = []
 
         member x.Info = info
 
@@ -465,6 +468,9 @@ module NodeBuilderHelpers =
         member x.Append(kind : RenderControlEventKind, action : RenderControlEventInfo -> unit) =
             actions <- AMap.unionWith (fun _ l r -> fun i -> l i; r i) actions (AMap.single kind action)
 
+        member x.Append(ready : IEventHandler -> unit) =
+            onReady <- ready :: onReady
+        
         member x.Build() =
             let scene = 
                 let view =
@@ -477,7 +483,12 @@ module NodeBuilderHelpers =
                     | Some v -> v
                     | None -> Log.warn "please apply a View-Transformation directly in your RenderControl for picking"; AVal.constant Trafo3d.Identity
                     
-                { Scene = scene.Build(); View = view; Proj = proj }
+                let ready =
+                    match onReady with
+                    | [] -> ignore
+                    | _ -> fun h -> onReady |> List.iter (fun a -> a h)
+                    
+                { Scene = scene.Build(); View = view; Proj = proj; OnReady = ready }
 
             AttributeMap (attributes.ToAMap()), actions, scene
 
@@ -494,6 +505,8 @@ module RenderControl =
     type Time = Time
     type Info = Info
 
+    type OnReady = OnReady of (IEventHandler -> unit)
+    
 
 type RenderControlBuilder() =
     static member wrap (sg : Aardvark.SceneGraph.ISg) =
@@ -525,6 +538,10 @@ type RenderControlBuilder() =
         fun (state : RenderControlBuilderState) ->
             action () state
 
+    
+    member inline x.Yield(RenderControl.OnReady onReady) =
+        fun (state : RenderControlBuilderState) ->
+            state.Append onReady
 
     member inline x.Bind(size : RenderControl.ViewportSize, [<InlineIfLambda>] action : aval<V2i> -> RenderControlBuilder<'a>) =
         fun (state : RenderControlBuilderState) ->
