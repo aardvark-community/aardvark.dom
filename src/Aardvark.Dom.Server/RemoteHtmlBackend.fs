@@ -362,7 +362,7 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                             $"var requestImage = function() {{"
                             $"    const r = __THIS__.getBoundingClientRect();"
                             $"    const data = aardvark.getDataAttributeDict(__THIS__);"
-                            $"    const bg = __THIS__.computedStyleMap().get(\"background-color\").toString();"
+                            $"    const bg = window.getComputedStyle(__THIS__).backgroundColor.toString();"
                             $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, background: bg, data: data }}));"
                             $"}};" 
                             $"let unsub = (() => {{}});"
