@@ -120,7 +120,9 @@ type Attribute(name : string, value : AttributeValue) =
         | _ ->
             Attribute(l.Name, AttributeValue.Merge(l.Value, r.Value))
 
-
+    new(name : string, value : string) = Attribute(name, AttributeValue.String value)
+    new(name : string, value : int) = Attribute(name, AttributeValue.Int value)
+    new(name : string, value : bool) = Attribute(name, AttributeValue.Bool value)
     
 open FSharp.Data.Adaptive
 

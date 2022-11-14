@@ -1608,7 +1608,24 @@ type Primitives private() =
             SceneAttribute.Mode IndexedGeometryMode.TriangleList
             Sg.Render(index.Length)
         }
+ 
+    static member ScreenQuad(z : float) =
+        sg {
+                
+            let pos = ArrayBuffer [| V3f(-1.0, -1.0, z); V3f(1.0, -1.0, z); V3f(-1.0, 1.0, z); V3f(1.0, 1.0, z) |] :> IBuffer
+            let tc = ArrayBuffer [| V2f.OO; V2f.IO; V2f.OI; V2f.II |] :> IBuffer
+            let ns = ArrayBuffer [| V3f.OOI; V3f.OOI; V3f.OOI; V3f.OOI |] :> IBuffer
 
+                
+            SceneAttribute.Index None
+            SceneAttribute.VertexAttributes (HashMap.ofList [
+                string DefaultSemantic.Positions, BufferView(pos, typeof<V3f>)
+                string DefaultSemantic.Normals, BufferView(ns, typeof<V3f>)
+                string DefaultSemantic.DiffuseColorCoordinates, BufferView(tc, typeof<V2f>)
+            ])
+            SceneAttribute.Mode IndexedGeometryMode.TriangleStrip
+            Sg.Render 4 
+        }
        
     static member Tetrahedron(color : aval<C4b>) =
         sg {

@@ -10,7 +10,7 @@ module AttributeMap =
 
     module private HashMap =
         let ofAttributes (attributes : #seq<Attribute>) =
-            let mutable res = HashMap.empty
+            let mutable res = HashMap.empty<string, AttributeValue>
             for att in attributes do
                 res <- 
                     res |> HashMap.alter att.Name (function 
@@ -29,7 +29,7 @@ module AttributeMap =
         AttributeMap (AMap.ofHashMap res)
 
     let ofList (attributes : list<Attribute>) =
-        let mutable res = HashMap.empty
+        let mutable res = HashMap.empty<string, AttributeValue>
         for att in attributes do
             res <- 
                 res |> HashMap.alter att.Name (function 
@@ -39,7 +39,7 @@ module AttributeMap =
         AttributeMap (AMap.ofHashMap res)
 
     let ofArray (attributes : Attribute[]) =
-        let mutable res = HashMap.empty
+        let mutable res = HashMap.empty<string, AttributeValue>
         for att in attributes do
             res <- 
                 res |> HashMap.alter att.Name (function 

@@ -97,7 +97,7 @@
                     const idx = l.indexOf(sub);
                     if (idx >= 0) {
                         l.splice(idx, 1);
-                        if (l.length == 0) {
+                        if (l.length === 0) {
                             subscriptions.delete(element);
                             o.unobserve(element);
                         }
@@ -219,17 +219,17 @@
                         return;
                     }
 
-                    s.addEventListener("load", (e) => {
+                    s.addEventListener("load", (_e) => {
                         aardvark.loadResults[u] = function (c) { c(true); };
                         console.log("loaded " + u);
-                        for (var c of conts) {
+                        for (const c of conts) {
                             c(true);
                         }
                     });
-                    s.addEventListener("error", (e) => {
+                    s.addEventListener("error", (_e) => {
                         aardvark.loadResults[u] = function (c) { c(false); };
                         console.warn("could not load " + u);
-                        for (var c of conts) {
+                        for (const c of conts) {
                             c(false);
                         }
                     });
@@ -268,7 +268,7 @@
                 }
                 if (hasTouchList && v instanceof window.TouchList) {
                     let res = [];
-                    for (var i = 0; i < v.length; i++) {
+                    for (let i = 0; i < v.length; i++) {
                         res.push(v.item(i));
                     }
                     return res;
@@ -312,7 +312,6 @@
             currentQuery.set(element[0], element[1]);
         }
         path = p.join('/');
-        let proto = protocol;
         if(document.location.protocol === 'https:') protocol = protocol + "s";
 
         let q = ""
@@ -435,20 +434,19 @@
 
         const listener = { handleEvent: realAction };
         node.addEventListener(type, listener, capture);
-        const thing =
+        node[fieldName] =
         {
             destroy: function () {
                 destroyCallback();
                 node.removeEventListener(type, listener, capture);
             }
         };
-        node[fieldName] = thing;
     };
 
     aardvark.getDataAttributeDict = function (node) {
         let dict = {}
         node.getAttributeNames().filter((n) => n.startsWith("data-")).forEach((n) => {
-            dict[n.substr(5)] = node.getAttribute(n);
+            dict[n.substring(5)] = node.getAttribute(n);
         });
         return dict;
     }
@@ -487,6 +485,8 @@
             return new WebSocket(aardvark.relativePath("ws", name));
         };
 
+        aardvark.logCode = false;
+        
         aardvark.onReady(() => {
 
             function receive(data) {
@@ -495,7 +495,7 @@
                     const msg = JSON.parse(data);
                     switch (msg.command) {
                         case "execute":
-                            console.debug(msg.code);
+                            if(aardvark.logCode) console.debug(msg.code);
                             try { new Function(msg.code)(); }
                             catch (e) { console.error("bad code", msg.code, e); }
                             break;
@@ -588,7 +588,7 @@
             let downEvt = down.get(e.pointerId);
             if (downEvt) {
                 down.delete(e.pointerId);
-                if (downEvt.target == e.target) {
+                if (downEvt.target === e.target) {
                     let dt = e.timeStamp - downEvt.timeStamp;
                     let dx = e.clientX - downEvt.clientX;
                     let dy = e.clientY - downEvt.clientY;

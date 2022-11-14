@@ -9,6 +9,13 @@ open System.Threading.Tasks
 [<AutoOpen>]
 module Dom =
 
+    let inline RandomElementId() =
+        let g = System.Guid.NewGuid()
+        let b = g.ToByteArray() |> System.Convert.ToBase64String
+        let b = b.Replace("/", "_").Replace("=", "").Replace("+", "Aa")
+        $"N{b}"
+        
+    
     let renderControl = RenderControlBuilder()
 
     let h1 = NodeBuilder "h1"
@@ -118,6 +125,10 @@ module Dom =
 
 [<AbstractClass; Sealed; AutoOpen>]
 type Dom private() =
+    
+    /// A Data-Attribute with name `data-{name}`
+    static member Data(name : string, value : string) =
+        Attribute($"data-{name}", AttributeValue.String value)
     
     /// The accept attribute specifies the types of files that the server accepts (that can be submitted through a file upload).
     /// Note: The accept attribute can only be used with <input type="file">.

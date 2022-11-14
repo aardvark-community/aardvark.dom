@@ -289,7 +289,7 @@ module NodeBuilderHelpers =
 
     module HashMap =
         let ofAttributes (attributes : #seq<Attribute>) =
-            let mutable res = HashMap.empty
+            let mutable res = HashMap.empty<string, AttributeValue>
             for att in attributes do
                 res <- 
                     res |> HashMap.alter att.Name (function 

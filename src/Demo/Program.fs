@@ -51,7 +51,6 @@ let testApp (_runtime : IRuntime) =
             h1 {
                 Id "foo"
                 Class "bar"
-                //Dom.OnClick(click, true)
                 content |> AVal.map string
 
 
@@ -200,7 +199,7 @@ let testApp (_runtime : IRuntime) =
                                         let sw = System.Diagnostics.Stopwatch.StartNew()
 
                                         let mutable t : System.Threading.Timer = null 
-                                        let tick(_) =
+                                        let tick _ =
                                             try c.Send(ChannelMessage.Text (string sw.Elapsed.TotalSeconds)).Result
                                             with _ -> ()
 
@@ -338,7 +337,7 @@ let testApp (_runtime : IRuntime) =
 
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
                 Dom.Style [Css.Cursor "crosshair"]
-                Sg.Cursor "none"
+                
                 
 
                 // setup transformation and shaders
@@ -349,6 +348,7 @@ let testApp (_runtime : IRuntime) =
   
                 // scene      
                 sg {
+                    Sg.Cursor "none"
                     // whenever something is hovered udpate the marker-arrow
                     Sg.OnPointerEnter(fun e ->
                         printfn "enter group"
@@ -391,6 +391,16 @@ let testApp (_runtime : IRuntime) =
                 sg {
                     Sg.Scale 0.2
                     Sg.Text(AVal.constant "Hi There")
+                }
+                
+                sg {
+                    Sg.Shader {
+                        DefaultSurfaces.trafo
+                        DefaultSurfaces.constantColor C4f.Red
+                        DefaultSurfaces.simpleLighting
+                    }
+                    Primitives.ScreenQuad -0.1
+                    
                 }
                 
                 // render the arrow
@@ -578,7 +588,7 @@ type ReaderExtensions private() =
         let mutable index = 0
         for idx, op in ops do
 
-            let (l, s, r) = IndexList.split idx old
+            let l, s, r = IndexList.split idx old
             match op with
             | Remove ->
                 if IndexList.isEmpty l then 
@@ -622,7 +632,7 @@ module List =
         
     let applySplices (ops : list<int * int * list<'a>>) (l : list<'a>) =
         let mutable res = l
-        for (o,c,r) in ops do
+        for o,c,r in ops do
             res <- applySplice o c r res
         res
 
