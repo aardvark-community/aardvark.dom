@@ -27,7 +27,7 @@ let testApp (_runtime : IRuntime) =
     let pos = cval V2d.Zero
     let frameTime = cval ""
 
-    let view = 
+    let view (env : Env<unit>) (_) = 
         body {
             Style [ 
                 Background "#36363A"
@@ -380,6 +380,18 @@ let testApp (_runtime : IRuntime) =
 
                     sg {
                         Primitives.WireSphere(V3d(-0.5, 0.0, 0.25), 0.25)
+                        Sg.OnClick (fun _ ->
+                            env.RunModal (fun destroy ->
+                                div {
+                                    Style [Top "0px"; Left "0px"; Width "100%"; Height "100%"; Position "fixed"; Background "red"]
+                                    Dom.OnClick (fun _ ->
+                                        destroy.Dispose()    
+                                    )
+                                    
+                                }
+                            )
+                            |> ignore
+                        )
                     }
                     
                     sg {
@@ -418,7 +430,17 @@ let testApp (_runtime : IRuntime) =
 
         }
         
-    view
+    {
+        initial = ()
+        update = fun _ () () -> ()
+        view = view
+        unpersist =
+            {
+                 init = fun () -> ()
+                 update = fun () () -> ()
+            }
+        
+    }
 
 
     
@@ -646,7 +668,7 @@ let main _ =
 
 
     let run (ctx : DomContext) = 
-        testApp ctx.Runtime, noDisposable
+        App.start ctx (testApp ctx.Runtime)
         //App.start ctx Elm.app
 
 

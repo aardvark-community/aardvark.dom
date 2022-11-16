@@ -13,6 +13,11 @@ type Env<'msg> =
     abstract Runtime : IRuntime
     abstract Emit : messages : seq<'msg> -> unit
     abstract Run : js : string * option<System.Text.Json.JsonElement -> unit> -> unit
+    
+    abstract RunModal : modal : (IDisposable -> DomNode) -> IDisposable
+    
+    
+    
     //abstract Start : IAsyncEnumerable<'msg> -> IDisposable
 
 module Env =
@@ -21,6 +26,7 @@ module Env =
             member x.Runtime = env.Runtime
             member x.Run(js, cb) = env.Run(js, cb)
             member x.Emit msg = env.Emit (Seq.map mapping msg)
+            member x.RunModal(modal) = env.RunModal(modal)
         }
 
 type App<'model, 'amodel, 'msg> =   
@@ -69,6 +75,8 @@ module App =
 
         let queue = new System.Collections.Concurrent.BlockingCollection<seq<'msg>>()
 
+        let customChildren = clist<DomNode>()
+        
         let env =
             { new Env<'msg> with
                 member x.Runtime = ctx.Runtime
@@ -78,6 +86,19 @@ module App =
                 member x.Run(js, cb) =
                     if not queue.IsAddingCompleted then
                         ctx.Execute js cb
+                member x.RunModal(modal) =
+                    let v = customChildren.Value
+                    let idx = v.NewIndexAfter v.MaxIndex
+                    
+                    let destroy =
+                        { new IDisposable with
+                            member x.Dispose() =
+                                transact (fun () -> customChildren.Remove idx |> ignore)
+                        }
+                    
+                    let ui = modal destroy
+                    transact(fun () -> customChildren.Perform(IndexListDelta.single idx (Set ui)))
+                    destroy
             }
 
         let updateThread = 
@@ -97,4 +118,11 @@ module App =
             }
 
         let view = app.view env amodel
+        
+        let view =
+            match view with
+            | DomNode.Element(tag, att, cs) ->
+                DomNode.Element(tag, att, AList.append cs customChildren)
+            | _ -> view
+        
         view, shutdown
