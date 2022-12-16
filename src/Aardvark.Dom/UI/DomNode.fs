@@ -668,6 +668,12 @@ type NodeBuilder =
     member inline x.Yield(att : AttributeMap) =
         { children = NodeList.Empty; attributes = AttributeTable att }
 
+    member inline x.Yield(att : amap<string, AttributeValue>) =
+        { children = NodeList.Empty; attributes = AttributeTable (AttributeMap att) }
+
+    member inline x.Yield(att : HashMap<string, AttributeValue>) =
+        { children = NodeList.Empty; attributes = AttributeTable (AttributeMap (AMap.ofHashMap att)) }
+
     member inline x.Yield(att : aval<#seq<Attribute>>) =
         { children = NodeList.Empty; attributes = AttributeTable (AttributeMap.ofSeqA att) }
         
@@ -699,7 +705,6 @@ type NodeBuilder =
                     attributes = AttributeTable.Combine(res.attributes, r.attributes)
                 }
         res
-
 
     member x.TryFinally(action : unit -> NodeBuilderState, comp : unit -> unit) =
         try action() 

@@ -31,6 +31,7 @@ type TraversalState =
         
         Cursor              : aval<option<string>>
         EventHandlers       : amap<SceneEventKind, SceneEventHandler>
+        ForcePixelPick      : bool
         PixelPick           : bool
     }
 
@@ -79,6 +80,7 @@ module TraversalState =
             Stencil = StencilState.Default
             Active = AVal.constant true
             EventHandlers = AMap.empty
+            ForcePixelPick = false
             PixelPick = true
             CanFocus = true
             Cursor = AVal.constant None
@@ -262,6 +264,7 @@ type SceneAttribute =
     | StencilState of StencilState
     | Active of aval<bool>
     | Intersectable of aval<IIntersectable>
+    | ForcePixelPicking of bool
     | NoEvents
     | Cursor of aval<option<string>>
     | CanFocus of bool
@@ -341,9 +344,19 @@ module SceneAttribute =
         | SceneAttribute.BlendState bs -> { state with Blend = bs }
         | SceneAttribute.DepthState ds -> { state with Depth = ds }
         | SceneAttribute.StencilState ss -> { state with Stencil = ss }
-        | SceneAttribute.Active a -> { state with Active = a }
+        | SceneAttribute.Active a ->
+            if a.IsConstant then
+                if AVal.force a then { state with Active = a }
+                else { state with Active = AVal.constant false }
+            else
+                { state with Active = AVal.logicalAnd [state.Active; a] }
         | SceneAttribute.On table -> { state with EventHandlers = (state.EventHandlers, table) ||> AMap.unionWith (fun _ a b -> SceneEventHandler.merge a b) }
-        | SceneAttribute.Intersectable _ -> { state with PixelPick = false }
+        | SceneAttribute.Intersectable _ ->
+            if not state.ForcePixelPick then { state with PixelPick = false }
+            else state
+        | SceneAttribute.ForcePixelPicking v ->
+            if v then { state with ForcePixelPick = true; PixelPick = true }
+            else { state with ForcePixelPick = false }
         | SceneAttribute.NoEvents -> { state with PixelPick = false }
         | SceneAttribute.CanFocus f -> { state with CanFocus = f }
         | SceneAttribute.Cursor c -> { state with Cursor = c }

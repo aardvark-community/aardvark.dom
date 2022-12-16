@@ -5,3 +5,4 @@ Aardvark.SceneGraph
 Aardvark.Rendering.Text
 Aardvark.Application
 Aardvark.Geometry
+Aardvark.FontProvider

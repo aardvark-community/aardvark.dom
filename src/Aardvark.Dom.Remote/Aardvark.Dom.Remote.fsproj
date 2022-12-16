@@ -9,6 +9,7 @@
   <ItemGroup>
     <EmbeddedResource Include="aardvark-dom.js" />
     <Compile Include="AbstractRemoteHtmlBackend.fs" />
+    <None Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />

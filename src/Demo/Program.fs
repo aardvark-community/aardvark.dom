@@ -280,6 +280,7 @@ let testApp (_runtime : IRuntime) =
                     myHandler <- Some handler
                 )
                 
+                //Sg.ForcePixelPicking
                 //Sg.OnTap (fun e ->
                 //    transact (fun () ->
                 //        text.Value <- (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))

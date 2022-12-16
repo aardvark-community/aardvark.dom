@@ -160,6 +160,12 @@ type AbstractRemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Di
         use r = new System.IO.StreamReader(s)
         r.ReadToEnd()
         
+    static let specialAttributes =
+        System.Collections.Generic.HashSet [
+            "colspan"
+            "rowspan"
+        ]
+        
     let mutable server = server
     let mutable eventListeners = eventListeners
     let mutable currentId = currentId
@@ -338,7 +344,7 @@ type AbstractRemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Di
             code.AppendLine $"{var}.{name} = null; {var}.removeAttribute(\"{attName}\");"
             
         member x.SetAttribute(node : int64, name : string, value : string) =
-            if name.Contains "-" then
+            if name.Contains "-" || specialAttributes.Contains (name.ToLower()) then
                 let var = code.GetOrCreateVar node
                 code.AppendLine $"{var}.setAttribute(\"{name}\", \"{HttpUtility.JavaScriptStringEncode(value)}\");"
             else

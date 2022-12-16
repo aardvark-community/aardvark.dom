@@ -15,8 +15,13 @@ type TextAlignment = Aardvark.Rendering.Text.TextAlignment
 type ConcreteShape = Aardvark.Rendering.Text.ConcreteShape
 type TextConfig = Aardvark.Rendering.Text.TextConfig
 module Font = Aardvark.Rendering.Text.Font
-module FontSquirrel = Aardvark.Rendering.Text.FontSquirrel
 module ShapeList = Aardvark.Rendering.Text.ShapeList
+
+type private HackType = Aardvark.FontProvider.FontSquirrelProvider< "Hack" >
+    
+type DefaultFonts private() =
+    static member Hack = HackType.Font
+
 module private SceneGraphShapeUtilities =
     open Aardvark.Rendering.Text
     let private defaultDepthBias = 1.0 / float (1 <<< 21)
@@ -168,7 +173,7 @@ module private SceneGraphShapeUtilities =
 [<AutoOpen>]
 module SceneBuilder =
     let sg = SceneNodeBuilder()
-
+    
 
 [<AbstractClass; Sealed; Extension>]
 type FontExtensions() =
@@ -348,6 +353,40 @@ type TextPickInfo =
 [<AbstractClass; Sealed; AutoOpen>]
 type Sg private() =
 
+    static member ForcePixelPicking =
+        SceneAttribute.ForcePixelPicking true
+    
+    static member VertexAttributes(att : HashMap<string, BufferView>) =
+        SceneAttribute.VertexAttributes att
+    
+    static member VertexAttribute(name : string, value : aval<'a[]>) =
+        let buffer = value |> AVal.map (fun arr -> arr |> ArrayBuffer :> IBuffer)
+        let view = BufferView(buffer, typeof<'a>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : System.Array) =
+        let view = BufferView.ofArray value
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+    
+    static member Index(buffer : option<BufferView>) =
+        SceneAttribute.Index(buffer)
+        
+    static member Index(buffer : BufferView) =
+        SceneAttribute.Index(Some buffer)
+        
+    static member Index(buffer : System.Array) =
+        let view = BufferView.ofArray buffer
+        SceneAttribute.Index(Some view)
+        
+    static member NoIndex =
+        SceneAttribute.Index(None)
+    
+    static member Mode(mode : IndexedGeometryMode) =
+        SceneAttribute.Mode(mode)
+    
+    static member Pass(pass : RenderPass) =
+        SceneAttribute.Pass pass
+    
     static member Active (v : aval<bool>) =
         SceneAttribute.Active v
 
@@ -632,7 +671,7 @@ type Sg private() =
         
         let config =
             {
-                TextConfig.font = match font with | Some f -> f | None -> FontSquirrel.Hack.Regular
+                TextConfig.font = match font with | Some f -> f | None -> DefaultFonts.Hack
                 TextConfig.color = match color with | Some c -> AVal.force c | None -> C4b.White
                 TextConfig.align = defaultArg align TextAlignment.Left
                 TextConfig.flipViewDependent = true

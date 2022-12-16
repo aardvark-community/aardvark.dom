@@ -151,18 +151,20 @@ type Applicator(attributes : list<SceneAttribute>, children : aset<ISceneNode>) 
     
     interface ISceneNode with
         member x.GetObjects(state : TraversalState) =
-            
             let self =
-                (([], None), attributes) ||> List.fold (fun (m, i) a ->
-                    match i with
-                    | Some t -> m, Some t
-                    | None -> 
-                        match a with 
-                        | SceneAttribute.Intersectable i -> m, Some (m, i)
-                        | SceneAttribute.Model ms -> (m @ ms), None
-                        | _ -> (m, None)
-                )
-                |> snd
+                if state.ForcePixelPick then
+                    None
+                else
+                    (([], None), attributes) ||> List.fold (fun (m, i) a ->
+                        match i with
+                        | Some t -> m, Some t
+                        | None -> 
+                            match a with 
+                            | SceneAttribute.Intersectable i -> m, Some (m, i)
+                            | SceneAttribute.Model ms -> (m @ ms), None
+                            | _ -> (m, None)
+                    )
+                    |> snd
                 
             let childState = x.GetChildState state
             match self with
@@ -176,8 +178,7 @@ type Applicator(attributes : list<SceneAttribute>, children : aset<ISceneNode>) 
                     children |> ASet.collect (fun c -> c.GetRenderObjects childState)
                 render, pick
             | None ->
-                let noEvents = attributes |> List.exists (function SceneAttribute.NoEvents -> true | _ -> false)
-                if noEvents then
+                if state.ForcePixelPick || attributes |> List.exists (function SceneAttribute.NoEvents -> true | _ -> false) then
                     let render =
                         children |> ASet.collect (fun c -> c.GetRenderObjects childState)
                     render, ASet.empty
@@ -444,9 +445,6 @@ type SceneNodeBuilder() =
     member inline x.Yield(att : list<SceneAttribute>) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append att
 
-    member inline x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
-        fun (s : SceneNodeBuilderState) -> s.Append node
-        
     member inline x.Zero() : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> ()
         
@@ -462,32 +460,48 @@ type SceneNodeBuilder() =
         s.Build()
      
         
-    member inline x.Yield(node : ISceneNode) : SceneBuilder<unit> =
-        x.Yield(ASet.single node)
-        
-    member inline x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : SceneBuilder<unit> =
-        x.Yield(ASet.single node)
-
     member inline x.Bind((info : 'a, node : ISceneNode), action : 'a -> SceneBuilder<'b>) : SceneBuilder<'b> =
         x.Combine(x.Yield(node), action info)
 
-    member inline x.Yield(node : Aardvark.SceneGraph.ISg) : SceneBuilder<unit> =
-        x.Yield(ASet.single (SceneNodeBuilder.Wrap node))
-
-    member inline x.Yield(node : aval<#seq<ISceneNode>>) : SceneBuilder<unit> =
-        x.Yield(ASet.ofAVal node)
+    member inline x.Yield(node : ISceneNode) : SceneBuilder<unit> =
+        x.Yield(ASet.single node)
+      
+    member inline x.Yield(node : seq<ISceneNode>) : SceneBuilder<unit> =
+        x.Yield(ASet.ofSeq node)
+      
+    member inline x.Yield(node : list<ISceneNode>) : SceneBuilder<unit> =
+        x.Yield(ASet.ofList node)
         
-    member inline x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
-        x.Yield(ASet.ofAVal node |> ASet.map SceneNodeBuilder.Wrap)
+    member inline x.Yield(node : ISceneNode[]) : SceneBuilder<unit> =
+        x.Yield(ASet.ofArray node)
+      
+    member inline x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
+        fun (s : SceneNodeBuilderState) -> s.Append node
+        
+    member inline x.Yield(node : alist<ISceneNode>) : SceneBuilder<unit> =
+        fun (s : SceneNodeBuilderState) -> s.Append (AList.toASet node)
+          
+    member inline x.Yield((_info : #ISceneNodeMetaInfo, node : ISceneNode)) : SceneBuilder<unit> =
+        x.Yield(ASet.single node)
 
     member inline x.Yield(node : aval<ISceneNode>) : SceneBuilder<unit> =
         x.Yield(node |> ASet.bind ASet.single)
         
-    member inline x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : SceneBuilder<unit>=
-        x.Yield(node |> ASet.bind (SceneNodeBuilder.Wrap >> ASet.single))
+    member inline x.Yield(node : aval<#seq<ISceneNode>>) : SceneBuilder<unit> =
+        x.Yield(ASet.ofAVal node)
         
     member inline x.Yield(node : aval<option<ISceneNode>>) : SceneBuilder<unit> =
         x.Yield(node |> ASet.bind (function Some v -> ASet.single v | None -> ASet.empty))
+        
+        
+    member inline x.Yield(node : Aardvark.SceneGraph.ISg) : SceneBuilder<unit> =
+        x.Yield(ASet.single (SceneNodeBuilder.Wrap node))
+
+    member inline x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
+        x.Yield(ASet.ofAVal node |> ASet.map SceneNodeBuilder.Wrap)
+
+    member inline x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : SceneBuilder<unit>=
+        x.Yield(node |> ASet.bind (SceneNodeBuilder.Wrap >> ASet.single))
         
     member inline x.Yield(node : aval<option<Aardvark.SceneGraph.ISg>>) : SceneBuilder<unit> =
         x.Yield(node |> ASet.bind (function Some v -> ASet.single (SceneNodeBuilder.Wrap v) | None -> ASet.empty))

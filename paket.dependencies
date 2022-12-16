@@ -15,3 +15,4 @@ nuget Aardvark.Application.Slim.Vulkan ~> 5.2.14
 nuget Aardvark.Rendering.Text ~> 5.2.14
 nuget Adaptify.Core ~> 1.1.6
 nuget Adaptify.MSBuild ~> 1.1.6
+nuget Aardvark.FontProvider ~> 0.0.5
