@@ -1,3 +1,7 @@
+### 1.0.0-prerelease0024
+* several small improvements
+* added support for modified pixel-picking via returning `PickViewPosition`. user-shaders may return a replacement for the view-position which will be respected by the picking system (note that it may also differ in the XY-coordinates)
+
 ### 1.0.0-prerelease0023
 * added Env.RunModal (allowing for temporary UI in root-node)
 

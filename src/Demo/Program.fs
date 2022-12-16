@@ -14,6 +14,19 @@ open Aardvark.Rendering
 open Aardvark.Application.Slim
 open Demo
 
+module Shader =
+    open FShade
+    
+    type Fragment =
+        {
+            [<Semantic("PickViewPosition")>] vp : V3d
+        }
+    
+    let withViewPos (v : Effects.Vertex) =
+        fragment {
+            return { vp = Vec.xyz (uniform.ProjTrafoInv * v.pos) }
+        }
+    
 let testApp (_runtime : IRuntime) =
     let content = cval 0
     let text = cval ""
@@ -368,13 +381,21 @@ let testApp (_runtime : IRuntime) =
                     Sg.OnPointerMove(fun e ->
                         let m = e.ModelTrafo
                         printfn "move"
-                        transact (fun () -> 
-                            marker.Value <- Ray3d(e.Position, e.Normal)
+                        transact (fun () ->
+                            if Vec.AllTiny e.Normal then
+                                marker.Value <- Ray3d(e.Position, V3d.OOI)
+                            else
+                                marker.Value <- Ray3d(e.Position, e.Normal)
                         )
                     )
 
                     // render a teapot and a sphere
                     sg {
+                        Sg.Shader {
+                            DefaultSurfaces.trafo
+                            DefaultSurfaces.simpleLighting
+                            Shader.withViewPos
+                        }
                         Translate(0.5, 0.0, 0.0)
                         Primitives.Teapot(C4b.Green)
                     }
@@ -478,6 +499,7 @@ let testApp2 (_runtime : IRuntime) =
             content
         }
     }
+
 
 module Elm =
     open Adaptify

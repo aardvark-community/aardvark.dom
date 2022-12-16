@@ -29,10 +29,12 @@ type SceneEventKind =
     | KeyUp
     | KeyInput
     
-type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, depth : float, viewNormal : V3d) =
-    let ndc = V3d(2.0 * pixel.X / float viewportSize.X - 1.0, 1.0 - 2.0 * pixel.Y / float viewportSize.Y, depth)
+type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
+    
+    let ndc = projTrafo.TransformPosProj viewPos
+    //let ndc = V3d(2.0 * pixel.X / float viewportSize.X - 1.0, 1.0 - 2.0 * pixel.Y / float viewportSize.Y, depth)
     let viewProj = viewTrafo * projTrafo
-    let worldPosition = viewProj.Backward.TransformPosProj ndc
+    let worldPosition = viewTrafo.Backward.TransformPosProj viewPos
     let worldNormal = viewTrafo.Forward.Transposed.TransformDir viewNormal |> Vec.normalize
     
     let localPosition = local2World.Backward.TransformPosProj worldPosition
@@ -44,7 +46,7 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
     member x.ViewProjTrafo = viewProj
     member x.Pixel = pixel
     member x.ViewportSize = viewportSize
-    member x.Depth = depth
+    member x.Depth = ndc.Z
     member x.ViewNormal = viewNormal
     member x.WorldPosition = worldPosition
     member x.WorldNormal = worldNormal
@@ -61,12 +63,12 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
             projTrafo, 
             pixel, 
             viewportSize, 
-            depth, 
+            viewPos, 
             viewNormal
         )
 
-    new(modelTrafo : aval<Trafo3d>, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, depth : float, viewNormal : V3d) =
-        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, depth, viewNormal)
+    new(modelTrafo : aval<Trafo3d>, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
+        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, viewPos, viewNormal)
 
 type IEventHandler =
     abstract HasPointerCapture : state : obj * pointerId : int -> bool

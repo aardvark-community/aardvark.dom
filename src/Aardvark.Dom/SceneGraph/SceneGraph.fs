@@ -458,14 +458,16 @@ type SceneNodeBuilder() =
         let s = SceneNodeBuilderState()
         action s
         s.Build()
-     
+
+    member inline x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
+        fun (s : SceneNodeBuilderState) -> s.Append node
         
+    member inline x.Yield(node : ISceneNode) : SceneBuilder<unit> =
+        x.Yield(ASet.single node)
+           
     member inline x.Bind((info : 'a, node : ISceneNode), action : 'a -> SceneBuilder<'b>) : SceneBuilder<'b> =
         x.Combine(x.Yield(node), action info)
 
-    member inline x.Yield(node : ISceneNode) : SceneBuilder<unit> =
-        x.Yield(ASet.single node)
-      
     member inline x.Yield(node : seq<ISceneNode>) : SceneBuilder<unit> =
         x.Yield(ASet.ofSeq node)
       
@@ -475,9 +477,6 @@ type SceneNodeBuilder() =
     member inline x.Yield(node : ISceneNode[]) : SceneBuilder<unit> =
         x.Yield(ASet.ofArray node)
       
-    member inline x.Yield(node : aset<ISceneNode>) : SceneBuilder<unit> =
-        fun (s : SceneNodeBuilderState) -> s.Append node
-        
     member inline x.Yield(node : alist<ISceneNode>) : SceneBuilder<unit> =
         fun (s : SceneNodeBuilderState) -> s.Append (AList.toASet node)
           

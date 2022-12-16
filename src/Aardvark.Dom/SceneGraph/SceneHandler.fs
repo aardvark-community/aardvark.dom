@@ -71,6 +71,7 @@ module internal PickShader =
             [<Color>] c : V4d
             [<Position>] pos : V4d
             [<Semantic("ViewSpaceNormal")>] vn : V3d
+            [<Semantic("PickViewPosition")>] pvp : V3d
             [<Depth>] d : float
             [<FragCoord>] fc : V4d
         }
@@ -80,6 +81,7 @@ module internal PickShader =
             [<Color>] c : V4d
             [<Semantic("PickId")>] id : V4i
         }
+        
     let pickVertex (v : Effects.Vertex) =
         vertex {
             let vn = uniform.ModelViewTrafoInv.Transposed * V4d(v.n, 0.0) |> Vec.xyz |> Vec.normalize
@@ -87,6 +89,7 @@ module internal PickShader =
             return {
                 c = v.c
                 pos = v.pos
+                pvp = uniform.ModelViewTrafo * v.pos |> Vec.xyz
                 vn = vn
                 d = 0.0
                 fc = V4d.Zero
@@ -100,6 +103,14 @@ module internal PickShader =
         fragment {
             let d = fragCoord().Z
             return { v with d = d }
+        }
+        
+    let pickIdWithRealPosition(v : Vertex) =
+        fragment {
+            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            let len = Vec.length v.pvp
+            let dir = Normal32.encode (v.pvp / len) |> int
+            return { c = v.c; id = V4i(-uniform.PickId, n32, dir, Bitwise.FloatBitsToInt len) }
         }
         
     let pickId(v : Vertex) =
@@ -119,6 +130,7 @@ module internal PickShader =
     let vertexPickEffect = Effect.ofFunction pickVertex
     let pickEffectBefore = Effect.ofFunction pickIdBefore
     let pickEffect = Effect.ofFunction pickId
+    let pickEffectWithRealPosition = Effect.ofFunction pickIdWithRealPosition
     let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
 
     let pickSampler =
@@ -445,7 +457,7 @@ module private PickBuffer =
 
         let levelSizes =
             let mutable s = treeSize
-            Array.init 16 (fun i ->
+            Array.init 16 (fun _i ->
                 let mine = s
                 s <- V2i(max 1 (s.X / 2), max 1 (s.Y / 2))
                 mine
@@ -487,6 +499,7 @@ module private PickBuffer =
 [<AutoOpen>]
 module internal BlitExtensions =
     let private pickBuffer = Symbol.Create "PickId"
+    let private pickViewPosition = Symbol.Create "PickViewPosition"
     //module private GL =
     //    open OpenTK.Graphics.OpenGL4
     //    open Aardvark.Rendering.GL
@@ -604,7 +617,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     
     let runtime = signature.Runtime :?> IRuntime
 
-    let mutable currentId = 0
+    let mutable currentId = 1
     let pickIds = Dict<TraversalState, int>()
     let scopes = Dict<int, TraversalState>()
 
@@ -638,20 +651,36 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
 
     let mutable lastMousePosition = None
      
-    let read (pixel : V2i) =
+    let read (projTrafo : Trafo3d) (pixel : V2i) =
         match pickTexture with
         | Some (pickTexture, pickFbo) when pixel.AllGreaterOrEqual 0 && pixel.AllSmaller pickTexture.Size.XY ->
             let value = runtime.ReadPixel(pickFbo, pixel)
             
             let id = value.X
             transact (fun () -> hoverId.Value <- id)
-            if id >= 0 then
-                let n = value.Y |> Normal32.decode
-                let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
-                    
+            if id > 0 then
                 match scopes.TryGetValue id with
-                | (true, scope) ->
-                    Some (scope, float depth, n)
+                | true, scope ->
+                    let n = value.Y |> Normal32.decode
+                    let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
+                    let tc = (V2d pixel + V2d.Half) / V2d pickTexture.Size.XY
+                    let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
+                    let viewPos = projTrafo.Backward.TransformPosProj ndc
+                    
+                    Some (scope, float depth, viewPos, n)
+                | _ ->
+                    None
+            elif id < 0 then
+                let id = -id
+                match scopes.TryGetValue id with
+                | true, scope ->
+                    let n = value.Y |> Normal32.decode
+                    let vd = value.Z |> Normal32.decode
+                    let vl = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.W|]).[0] |> float
+                    
+                    let viewPos = vd * vl
+                    let depth = projTrafo.TransformPosProj(viewPos).Z
+                    Some (scope, float depth, viewPos, n)
                 | _ ->
                     None
             else
@@ -709,17 +738,23 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                             //    )
                             hasVertexInputs
 
-                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
+                        let hasPickPositions =
+                            Map.containsKey "PickViewPosition" eff.Outputs
                             
-                        let newSurface =
-                            if hasAllInputs withNormal then
-                                Surface.FShadeSimple withNormal
+                        let newShader =
+                            if hasPickPositions then
+                                FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectWithRealPosition]
                             else
-                                Surface.FShadeSimple (FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal])
-                                    
+                                let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
+                                
+                                if hasAllInputs withNormal then
+                                    withNormal
+                                else
+                                    FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                        
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
-                        r.Surface <- newSurface
+                        r.Surface <- Surface.FShadeSimple newShader
                         r :> IRenderObject, true
                     | s ->
                         Log.warn "cannot change surface: %A" s
@@ -826,7 +861,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 clearColor
                 |> AVal.map (fun color ->
                     ClearValues.empty
-                    |> ClearValues.colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit color; pickBuffer, ClearColor.op_Implicit V4i.NNNN])
+                    |> ClearValues.colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit color; pickBuffer, ClearColor.op_Implicit V4i.Zero])
                     |> ClearValues.depth 1.0
                     |> ClearValues.stencil 0
                 )
@@ -973,16 +1008,16 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
 
         let result = 
             if pixel.AllGreaterOrEqual 0 && pixel.AllSmaller viewportSize then
+                let v = AVal.force view
+                let p = AVal.force proj
                 lastMousePosition <- Some pixel
-                let pixelResult = read pixel
+                let pixelResult = read p pixel
 
                 let s =
                     match pickTexture with
                     | Some(t,_) -> t.Size.XY
                     | None -> V2i.II
 
-                let v = AVal.force view
-                let p = AVal.force proj
                 let vp = v * p
                 let ndc = V2d(2.0 * float pixel.X / float s.X - 1.0, 1.0 - 2.0 * float pixel.Y / float s.Y)
                 let ray =
@@ -997,8 +1032,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             
                 // limit t if pixel-result found
                 match pixelResult with
-                | Some (_, depth, _) ->
-                    let world = vp.Backward.TransformPosProj(V3d(ndc, depth))
+                | Some (_, _, viewPos, _) ->
+                    let world = v.Backward.TransformPos viewPos
                     t <- Vec.dot ray.Direction (world - ray.Origin)
                 | None ->
                     ()
@@ -1013,15 +1048,23 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             
                 match AVal.force(bvh).GetClosestHit(ray, 0.0, t, tryIntersect) with
                 | None ->
-                    pixelResult
+                    match pixelResult with
+                    | Some (scope, depth, viewPos, normal) ->
+                        Some (scope, viewPos, normal)
+                    | None ->
+                        None
                 | Some (bestT, (best, bestNormal)) ->
                     let bestDepth = vp.Forward.TransformPosProj(ray.GetPointOnRay bestT).Z
                     match pixelResult with
-                    | Some (scope, depth, viewNormal) ->
-                        if depth < bestDepth then Some (scope, depth, viewNormal)
-                        else Some (best, bestDepth, Vec.normalize (v.Backward.TransposedTransformDir bestNormal))
+                    | Some (scope, depth, viewPos, viewNormal) ->
+                        if depth < bestDepth then
+                            Some (scope, viewPos, viewNormal)
+                        else
+                            let viewPos = p.Backward.TransformPosProj (V3d(ndc, bestDepth))
+                            Some (best, viewPos, Vec.normalize (v.Backward.TransposedTransformDir bestNormal))
                     | None ->
-                        Some(best, bestDepth, Vec.normalize (v.Backward.TransposedTransformDir bestNormal))
+                        let viewPos = p.Backward.TransformPosProj (V3d(ndc, bestDepth))
+                        Some (best, viewPos, Vec.normalize (v.Backward.TransposedTransformDir bestNormal))
             else
             
                 None
@@ -1036,8 +1079,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     None
             | Some c ->
                 match result with
-                | Some (target, depth, normal) -> Some (c, target :> obj, depth, normal)
-                | None -> Some (c, null, 1.0, V3d.Zero)
+                | Some (target, viewPos, normal) -> Some (c, target :> obj, viewPos, normal)
+                | None -> Some (c, null, V3d(0.0, 0.0, -1000000000.0), V3d.Zero)
 
         lastMouseInfo <- Some (pixel, capturedResult)
         lastRealMouseInfo <- Some (pixel, result, evt)
@@ -1054,9 +1097,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             let pixel = original.ClientPosition - V2i original.ClientRect.Min
 
             match x.Read(pixel, original.PointerId, original) with
-            | Some (best, target, depth, viewNormal) ->
+            | Some (best, target, viewPos, viewNormal) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, depth, viewNormal)
+                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, viewPos, viewNormal)
                 let evt = ScenePointerEvent(x, best, target, kind, loc, original)
 
                 TraversalState.handleMove lastOver evt (Some best)
@@ -1082,14 +1125,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | None ->
                 match kind with
                 | SceneEventKind.Click when Option.isSome lastFocus.Value -> 
-                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
                     let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, original)
                     TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt None
                 | _ -> ()
                     
 
                 if Option.isSome lastOver.Value then
-                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, 1.0, V3d.Zero)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
                     let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, original)
                     TraversalState.handleMove lastOver evt None
 
@@ -1148,8 +1191,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, s, depth, viewNormal)
                 | _ ->
                     match lastMousePosition with
-                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
-                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
                 
             let evt = SceneKeyboardEvent(x, best, best, kind, evtLocation, original)
             TraversalState.handleEvent true evt best
@@ -1170,8 +1213,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, s, depth, viewNormal)
                 | _ ->
                     match lastMousePosition with
-                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, 1.0, V3d.Zero)
-                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, 1.0, V3d.Zero)
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
                 
             let evt = SceneInputEvent(x, best, best, kind, evtLocation, original)
             TraversalState.handleEvent true evt best
@@ -1195,8 +1238,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some (px, Some (_, _, depth, viewNormal)) ->  SceneEventLocation(model, view, proj, V2d px, viewportSize, depth, viewNormal)
                 | _ ->
                     match lastMousePosition with
-                    | Some px -> SceneEventLocation(model, view, proj, V2d px, viewportSize, 1.0, V3d.Zero)
-                    | None -> SceneEventLocation(model, view, proj, V2d.NN, viewportSize, 1.0, V3d.Zero)
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero)
 
             let target =
                 match newTarget with
@@ -1260,7 +1303,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let loc, target = 
                     match scope with
                     | Some (scope, depth, viewNormal) -> SceneEventLocation(TraversalState.modelTrafo scope, view, proj, V2d px, viewportSize, depth, viewNormal), Some scope
-                    | None -> SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d px, viewportSize, 1.0, V3d.Zero), None
+                    | None -> SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d px, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero), None
 
                 let eventTarget =
                     match target with
