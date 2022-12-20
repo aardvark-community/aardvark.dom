@@ -104,14 +104,20 @@ type DirectDrawNode(call : aval<list<DrawCallInfo>>) =
 
     interface ISceneNode with
         member x.GetObjects(state : TraversalState) =
-            let o = RenderObject.ofTraversalState state
-            o.DrawCalls <- DrawCalls.Direct call
-            ASet.single (o :> IRenderObject), ASet.empty
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty, ASet.empty
+            else
+                let o = RenderObject.ofTraversalState state
+                o.DrawCalls <- DrawCalls.Direct call
+                ASet.single (o :> IRenderObject), ASet.empty
 
         member x.GetRenderObjects(state : TraversalState) =
-            let o = RenderObject.ofTraversalState state
-            o.DrawCalls <- DrawCalls.Direct call
-            ASet.single (o :> IRenderObject)
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty
+            else
+                let o = RenderObject.ofTraversalState state
+                o.DrawCalls <- DrawCalls.Direct call
+                ASet.single (o :> IRenderObject)
 
     new(call : aval<DrawCallInfo>) = DirectDrawNode(AVal.mapNonAdaptive List.singleton call)
     new(calls : list<DrawCallInfo>) = DirectDrawNode(AVal.constant calls)
@@ -122,13 +128,19 @@ type IndirectDrawNode(buffer : aval<IndirectBuffer>) =
 
     interface ISceneNode with
         member x.GetObjects(state : TraversalState) =
-            let o = RenderObject.ofTraversalState state
-            o.DrawCalls <- DrawCalls.Indirect buffer
-            ASet.single (o :> IRenderObject), ASet.empty
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty, ASet.empty
+            else
+                let o = RenderObject.ofTraversalState state
+                o.DrawCalls <- DrawCalls.Indirect buffer
+                ASet.single (o :> IRenderObject), ASet.empty
         member x.GetRenderObjects(state : TraversalState) =
-            let o = RenderObject.ofTraversalState state
-            o.DrawCalls <- DrawCalls.Indirect buffer
-            ASet.single (o :> IRenderObject)
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty
+            else
+                let o = RenderObject.ofTraversalState state
+                o.DrawCalls <- DrawCalls.Indirect buffer
+                ASet.single (o :> IRenderObject)
 
     new(buffer : IndirectBuffer) = IndirectDrawNode(AVal.constant buffer)
 
@@ -151,47 +163,53 @@ type Applicator(attributes : list<SceneAttribute>, children : aset<ISceneNode>) 
     
     interface ISceneNode with
         member x.GetObjects(state : TraversalState) =
-            let self =
-                if state.ForcePixelPick then
-                    None
-                else
-                    (([], None), attributes) ||> List.fold (fun (m, i) a ->
-                        match i with
-                        | Some t -> m, Some t
-                        | None -> 
-                            match a with 
-                            | SceneAttribute.Intersectable i -> m, Some (m, i)
-                            | SceneAttribute.Model ms -> (m @ ms), None
-                            | _ -> (m, None)
-                    )
-                    |> snd
-                
-            let childState = x.GetChildState state
-            match self with
-            | Some (model, res) ->
-                let trafo = { state with Model = model @ state.Model } |> TraversalState.modelTrafo
-                let pick = 
-                    res |> ASet.bind (fun i ->
-                        ASet.single (PickObject(state, i, trafo))
-                    )
-                let render =
-                    children |> ASet.collect (fun c -> c.GetRenderObjects childState)
-                render, pick
-            | None ->
-                if state.ForcePixelPick || attributes |> List.exists (function SceneAttribute.NoEvents -> true | _ -> false) then
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty, ASet.empty
+            else
+                let self =
+                    if state.ForcePixelPick then
+                        None
+                    else
+                        (([], None), attributes) ||> List.fold (fun (m, i) a ->
+                            match i with
+                            | Some t -> m, Some t
+                            | None -> 
+                                match a with 
+                                | SceneAttribute.Intersectable i -> m, Some (m, i)
+                                | SceneAttribute.Model ms -> (m @ ms), None
+                                | _ -> (m, None)
+                        )
+                        |> snd
+                    
+                let childState = x.GetChildState state
+                match self with
+                | Some (model, res) ->
+                    let trafo = { state with Model = model @ state.Model } |> TraversalState.modelTrafo
+                    let pick = 
+                        res |> ASet.bind (fun i ->
+                            ASet.single (PickObject(state, i, trafo))
+                        )
                     let render =
                         children |> ASet.collect (fun c -> c.GetRenderObjects childState)
-                    render, ASet.empty
-                else
-                    let things = children |> ASet.map (fun c -> c.GetObjects childState)
-                    let render = things |> ASet.collect fst
-                    let pick = things |> ASet.collect snd
                     render, pick
-                
+                | None ->
+                    if state.ForcePixelPick || attributes |> List.exists (function SceneAttribute.NoEvents -> true | _ -> false) then
+                        let render =
+                            children |> ASet.collect (fun c -> c.GetRenderObjects childState)
+                        render, ASet.empty
+                    else
+                        let things = children |> ASet.map (fun c -> c.GetObjects childState)
+                        let render = things |> ASet.collect fst
+                        let pick = things |> ASet.collect snd
+                        render, pick
+                    
         member x.GetRenderObjects(state : TraversalState) =
-            let childState = x.GetChildState state
-            children |> ASet.collect (fun c -> c.GetRenderObjects childState)
-      
+            if state.Active.IsConstant && not (AVal.force state.Active) then
+                ASet.empty
+            else
+                let childState = x.GetChildState state
+                children |> ASet.collect (fun c -> c.GetRenderObjects childState)
+          
 module SgAdapter =
     open Aardvark.Base.Ag
     open Aardvark.SceneGraph

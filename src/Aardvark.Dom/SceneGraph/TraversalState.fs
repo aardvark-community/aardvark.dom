@@ -344,12 +344,7 @@ module SceneAttribute =
         | SceneAttribute.BlendState bs -> { state with Blend = bs }
         | SceneAttribute.DepthState ds -> { state with Depth = ds }
         | SceneAttribute.StencilState ss -> { state with Stencil = ss }
-        | SceneAttribute.Active a ->
-            if a.IsConstant then
-                if AVal.force a then { state with Active = a }
-                else { state with Active = AVal.constant false }
-            else
-                { state with Active = AVal.logicalAnd [state.Active; a] }
+        | SceneAttribute.Active a -> { state with Active = AVal.map2 (&&) state.Active a }
         | SceneAttribute.On table -> { state with EventHandlers = (state.EventHandlers, table) ||> AMap.unionWith (fun _ a b -> SceneEventHandler.merge a b) }
         | SceneAttribute.Intersectable _ ->
             if not state.ForcePixelPick then { state with PixelPick = false }
