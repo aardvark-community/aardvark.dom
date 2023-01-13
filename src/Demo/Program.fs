@@ -303,7 +303,7 @@ let testApp (_runtime : IRuntime) =
                 Dom.OnKeyDown((fun e ->
                     match myHandler with
                     | Some handler ->
-                        handler.Read(handler.Size / 2) |> printfn "%A"
+                        handler.Read(handler.Size / 2, SceneEventKind.KeyDown) |> printfn "%A"
                     | None ->
                         printfn "no handler"
                     //printfn "Down %s" (JsonSerializer.Serialize(e, JsonSerializerOptions(WriteIndented = true)))
@@ -423,11 +423,36 @@ let testApp (_runtime : IRuntime) =
                     }
                 }
                 sg {
+                    Sg.PickThrough
                     Sg.Scale 0.2
-                    Sg.Text(AVal.constant "Hi There")
+                    Sg.Translate (0.0, 0.0, 0.5)
+                    Sg.Text(AVal.constant "Hi There", pickBounds = true)
+                    // Sg.OnPointerEnter(fun e ->
+                    //     printfn "enter text"
+                    //     transact (fun () -> 
+                    //         markerColor.Value <- C4b.Green
+                    //         rotActive.Value <- false
+                    //     )
+                    // )
+                    // Sg.OnPointerLeave(fun e ->
+                    //     printfn "leave text"
+                    //     transact (fun () -> 
+                    //         markerColor.Value <- C4b.Gray
+                    //         rotActive.Value <- true
+                    //     )
+                    // )
+                    Sg.OnTap (fun e ->
+                        transact (fun () -> text.Value <- e.WorldPosition.ToString())
+                        if e.Target <> e.This then
+                            e.Context.DispatchPointerEvent(e.Target, e) |> ignore
+                            false
+                        else
+                            true
+                    )
                 }
                 
                 sg {
+                    Sg.NoEvents
                     Sg.Shader {
                         DefaultSurfaces.trafo
                         DefaultSurfaces.constantColor C4f.Red

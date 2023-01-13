@@ -1,4 +1,4 @@
-namespace Aardvark.Dom
+namespace rec Aardvark.Dom
 
 open Aardvark.Base
 open Aardvark.Application
@@ -49,6 +49,7 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
     member x.Depth = ndc.Z
     member x.ViewNormal = viewNormal
     member x.WorldPosition = worldPosition
+    member x.ViewPosition = viewPos
     member x.WorldNormal = worldNormal
     member x.ModelPosition = (AVal.force modelTrafo).Backward.TransformPosProj worldPosition
     member x.ModelNormal = (AVal.force modelTrafo).Forward.Transposed.TransformDir worldNormal |> Vec.normalize
@@ -79,11 +80,14 @@ type IEventHandler =
     abstract HandleWheelEvent : SceneEventKind * WheelEvent -> bool 
     abstract HandleKeyEvent : SceneEventKind * KeyboardEvent -> bool 
     abstract HandleInputEvent : SceneEventKind * InputEvent -> bool 
-    abstract HandleTapEvent : SceneEventKind * TapEvent -> bool 
+    abstract HandleTapEvent : SceneEventKind * TapEvent -> bool
+    
+    abstract DispatchPointerEvent : target : obj * event : ScenePointerEvent -> bool
+    
     abstract Cursor : aval<option<string>>
     
     abstract Size : V2i 
-    abstract Read : pixel : V2i -> option<SceneEventLocation>
+    abstract Read : pixel : V2i * kind : SceneEventKind -> option<SceneEventLocation>
     
 [<AbstractClass>]
 type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneEventKind, location : SceneEventLocation, original : Event) =
@@ -108,6 +112,7 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     member x.Depth = location.Depth
     member x.ViewNormal = location.ViewNormal
     member x.WorldPosition = location.WorldPosition
+    member x.ViewPosition = location.ViewPosition
     member x.WorldNormal = location.WorldNormal
     member x.ModelPosition = location.ModelPosition
     member x.ModelNormal = location.ModelNormal

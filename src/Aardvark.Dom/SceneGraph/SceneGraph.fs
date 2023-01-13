@@ -78,7 +78,7 @@ module RenderObject =
             }
 
         let o = RenderObject.Create()
-        lock traversalStates (fun () -> traversalStates.Add(o, state) |> ignore)
+        lock traversalStates (fun () -> traversalStates.Add(o, state))
         o.BlendState <- state.Blend
         o.DepthState <- state.Depth
         o.DrawCalls <- DrawCalls.Direct (AVal.constant [])
@@ -320,7 +320,7 @@ module SgAdapter =
 
         member x.RenderObjects(sg : WrapperNode, scope : Ag.Scope) : aset<IRenderObject> =
             sg.Node.RenderObjects(scope) |> ASet.map (fun o ->
-                RenderObject.traversalStates.Add(o, sg.State) |> ignore
+                RenderObject.traversalStates.Add(o, sg.State)
                 o
             )
             
@@ -464,7 +464,7 @@ type SceneNodeBuilder() =
         fun (s : SceneNodeBuilderState) -> s.Append att
 
     member inline x.Zero() : SceneBuilder<unit> =
-        fun (s : SceneNodeBuilderState) -> ()
+        fun (_s : SceneNodeBuilderState) -> ()
         
     member inline x.Delay([<InlineIfLambda>] action : unit -> SceneBuilder<'a>) : SceneBuilder<'a> =
         action()

@@ -850,6 +850,14 @@ type RenderControl private() =
 
 [<AbstractClass; Sealed; AutoOpen>]
 type Css private() =
+    static member inline PointerEvents(value : string) = StyleProperty("pointer-events", value)
+    static member inline UserSelect(value : string) = StyleProperty("user-select", value)
+    static member inline WebkitUserSelect(value : string) = StyleProperty("-webkit-user-select", value)
+    static member inline Overscroll(value : string) = StyleProperty("overscroll", value)
+    static member inline BackdropFilter(value : string) = StyleProperty("backdrop-filter", value)
+    static member inline WebkitBackdropFilter(value : string) = StyleProperty("-webkit-backdrop-filter", value)
+    static member inline AlignItems(value : string) = StyleProperty("align-items", value)
+    static member inline JustifyContent(value : string) = StyleProperty("justify-content", value)
     static member inline Color(value : string) = StyleProperty("color", value)
     static member inline Cursor(value : string) = StyleProperty("cursor", value)
     static member inline FontFamily(value : string) = StyleProperty("font-family", value)

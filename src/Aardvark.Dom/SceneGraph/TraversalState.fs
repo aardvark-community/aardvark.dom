@@ -1,6 +1,5 @@
 namespace Aardvark.Dom
 
-open System.Runtime.CompilerServices
 open Aardvark.Base
 open Aardvark.Application
 open Aardvark.Rendering
@@ -33,6 +32,7 @@ type TraversalState =
         EventHandlers       : amap<SceneEventKind, SceneEventHandler>
         ForcePixelPick      : bool
         PixelPick           : bool
+        PickThrough         : bool   
     }
 
 module TraversalState =
@@ -84,6 +84,7 @@ module TraversalState =
             PixelPick = true
             CanFocus = true
             Cursor = AVal.constant None
+            PickThrough = false
         }
 
     let commonAncestor (a : TraversalState) (b : TraversalState) =
@@ -287,6 +288,7 @@ type SceneAttribute =
     | DepthClamp of aval<bool>
 
     | On of amap<SceneEventKind, SceneEventHandler>
+    | PickThrough of bool
 
 module SceneAttribute =
     let apply (att : SceneAttribute) (state : TraversalState) =
@@ -355,4 +357,4 @@ module SceneAttribute =
         | SceneAttribute.NoEvents -> { state with PixelPick = false }
         | SceneAttribute.CanFocus f -> { state with CanFocus = f }
         | SceneAttribute.Cursor c -> { state with Cursor = c }
-
+        | SceneAttribute.PickThrough v -> { state with PickThrough = v }

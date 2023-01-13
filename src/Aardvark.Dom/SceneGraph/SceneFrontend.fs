@@ -356,6 +356,9 @@ type Sg private() =
     static member ForcePixelPicking =
         SceneAttribute.ForcePixelPicking true
     
+    static member PickThrough =
+        SceneAttribute.PickThrough true
+    
     static member VertexAttributes(att : HashMap<string, BufferView>) =
         SceneAttribute.VertexAttributes att
     
@@ -2417,7 +2420,6 @@ type Primitives private() =
                 let tris =
                     Aardvark.Geometry.PolygonTessellator.Triangulate([p], tessellationRule)
                     |> List.toArray
-                       
                 let positions = Array.zeroCreate (3 * tris.Length)
                 let normals = Array.zeroCreate positions.Length
                 let mutable oi = 0
