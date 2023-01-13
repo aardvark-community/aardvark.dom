@@ -1083,7 +1083,12 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                         else
                             match tryGetIntersection true 0.0 t bvh with
                             | Some (_isPixel, _nDepth, nScope, nViewPos, nViewNormal) ->
-                                if HashMap.containsKey kind (AMap.force scope.EventHandlers) then
+                                
+                                let rec hasEventHandler (kind : SceneEventKind) (scope : TraversalState) =
+                                    HashMap.containsKey kind (AMap.force scope.EventHandlers) ||
+                                    (Option.isSome scope.Parent && hasEventHandler kind (Option.get scope.Parent))
+                                
+                                if hasEventHandler kind scope then
                                     Some (scope, nViewPos, nViewNormal, Some nScope)
                                 else
                                     Some (nScope, nViewPos, nViewNormal, None)

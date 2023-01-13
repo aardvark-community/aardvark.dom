@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0027
+* fixed `Sg.PickThrough` problem
+* 
 ### 1.0.0-prerelease0026
 * added `Sg.PickThrough` currently only working on intersectable nodes
 
