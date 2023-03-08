@@ -241,7 +241,7 @@ module SgAdapter =
                 let elementSize = System.Runtime.InteropServices.Marshal.SizeOf view.ElementType
                 view.Buffer |> AVal.map (fun b ->
                     match b with
-                        | :? INativeBuffer as b -> (b.SizeInBytes - view.Offset) / elementSize
+                        | :? INativeBuffer as b -> (b.SizeInBytes - nativeint view.Offset) / nativeint elementSize |> int
                         | _ -> failwithf "[Sg] could not determine buffer-size: %A" b
                 )
                 

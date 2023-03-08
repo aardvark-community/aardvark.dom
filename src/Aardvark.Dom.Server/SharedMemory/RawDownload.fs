@@ -27,7 +27,7 @@ module RawDownloader =
                     | Some t when t.Size.XY = size -> t
                     | _ ->
                         tempImage |> Option.iter (fun i -> i.Dispose())
-                        let t = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.ColorAttachmentBit) device
+                        let t = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.ColorAttachmentBit) ImageExportMode.None device
                         tempImage <- Some t
                         t
 
@@ -148,7 +148,7 @@ module RawDownloader =
             if samples > 1 then
                 let lineSize = 4L * int64 image.Size.X
                 let size = lineSize * int64 image.Size.Y
-                let tempImage = Image.create image.Size 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) device
+                let tempImage = Image.create image.Size 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
                 use temp = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit size
 
                 let l = image.Layout

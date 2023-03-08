@@ -3,16 +3,16 @@ source https://api.nuget.org/v3/index.json
 source https://nuget.pkg.github.com/aardworx/index.json
 storage: none
 
-nuget FSharp.Core >= 5.0.0 lowest_matching: true
+nuget FSharp.Core >= 6.0.1 lowest_matching: true
 nuget Aardvark.Build ~> 1.0.13
-nuget Aardvark.Base ~> 5.2.5
+nuget Aardvark.Base ~> 5.2.21
 nuget Giraffe ~> 6.0.0
-nuget Aardvark.SceneGraph ~> 5.2.14
-nuget Aardvark.Rendering.GL ~> 5.2.14
-nuget Aardvark.Application.Slim.GL ~> 5.2.14
-nuget Aardvark.Rendering.Vulkan ~> 5.2.14
-nuget Aardvark.Application.Slim.Vulkan ~> 5.2.14
-nuget Aardvark.Rendering.Text ~> 5.2.14
-nuget Adaptify.Core ~> 1.1.6
-nuget Adaptify.MSBuild ~> 1.1.6
-nuget Aardvark.FontProvider ~> 0.0.5
+nuget Aardvark.SceneGraph ~> 5.3.6
+nuget Aardvark.Rendering.GL ~> 5.3.6
+nuget Aardvark.Application.Slim.GL ~> 5.3.6
+nuget Aardvark.Rendering.Vulkan ~> 5.3.6
+nuget Aardvark.Application.Slim.Vulkan ~> 5.3.6
+nuget Aardvark.Rendering.Text ~> 5.3.6
+nuget Adaptify.Core ~> 1.1.9
+nuget Adaptify.MSBuild ~> 1.1.9
+nuget Aardvark.FontProvider ~> 0.0.6

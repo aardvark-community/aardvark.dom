@@ -55,7 +55,7 @@ module private SceneGraphShapeUtilities =
                                 BaseVertex = 0
                             )
                             )
-                        |> IndirectBuffer.ofArray false
+                        |> IndirectBuffer.ofArray
 
                 let trafoR0, trafoR1 =
                     let r0, r1 = 

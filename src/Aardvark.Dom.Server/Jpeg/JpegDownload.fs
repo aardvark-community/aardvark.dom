@@ -52,7 +52,7 @@ module private JpegTools =
 
             let small =
                 if size <> fbo.Size then
-                    Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) device
+                    Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
                     |> Some
                 else
                     None
@@ -93,11 +93,11 @@ module private JpegTools =
             let device = fbo.Device
             let color = fbo.Attachments.[DefaultSemantic.Colors].Image.[TextureAspect.Color, 0, 0]
 
-            let tempImage = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) device
+            let tempImage = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
 
             let full =
                 if size <> fbo.Size then
-                    Image.create (V3i(fbo.Size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) device
+                    Image.create (V3i(fbo.Size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
                     |> Some
                 else
                     None
