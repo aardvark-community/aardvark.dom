@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0029
+* made PixelPick-Shader creation lazy
+
 ### 1.0.0-prerelease0028
 * updated packages
 

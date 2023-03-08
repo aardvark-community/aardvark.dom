@@ -710,51 +710,57 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     let pickId = getId(t)
                     match o.Surface with
                     | Surface.FShadeSimple eff ->
-                        let hasAllInputs (effect : FShade.Effect) =
-                            let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
-                            let m = FShade.Effect.toModule cfg effect
-                            let vertex = 
-                                m.entries |> List.find (fun e -> 
-                                    e.decorations |> List.exists (function 
-                                        | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
-                                        | _ -> false
-                                    )
-                                )
-                        
-                            let hasVertexInputs = 
-                                vertex.inputs |> List.forall (fun p -> 
-                                    Option.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
-                                    Option.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
-                                )
-                            
-                            //let hasUniforms = 
-                            //    m.entries |> List.collect (fun e -> e.uniforms) |> List.forall (fun u -> 
-                            //        let has = 
-                            //            u.uniformName = "PickId" ||
-                            //            Option.isSome (Uniforms.tryGetDerivedUniform u.uniformName o.Uniforms) ||
-                            //            Option.isSome (o.Uniforms.TryGetUniform(Ag.Scope.Root, u.uniformName))
-                            //        if not has then Log.warn "missing: %A" u
-                            //        has
-                            //    )
-                            hasVertexInputs
-
-                        let hasPickPositions =
-                            Map.containsKey "PickViewPosition" eff.Outputs
-                            
-                        let newShader =
-                            if hasPickPositions then
-                                FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectWithRealPosition]
-                            else
-                                let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
+                        let newShaders =
+                            lazy (
+                                let hasAllInputs (effect : FShade.Effect) =
+                                    let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
+                                    let m = FShade.Effect.toModule cfg effect
+                                    let vertex = 
+                                        m.entries |> List.find (fun e -> 
+                                            e.decorations |> List.exists (function 
+                                                | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
+                                                | _ -> false
+                                            )
+                                        )
                                 
-                                if hasAllInputs withNormal then
-                                    withNormal
-                                else
-                                    FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                    let hasVertexInputs = 
+                                        vertex.inputs |> List.forall (fun p -> 
+                                            Option.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
+                                            Option.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
+                                        )
+                                    
+                                    //let hasUniforms = 
+                                    //    m.entries |> List.collect (fun e -> e.uniforms) |> List.forall (fun u -> 
+                                    //        let has = 
+                                    //            u.uniformName = "PickId" ||
+                                    //            Option.isSome (Uniforms.tryGetDerivedUniform u.uniformName o.Uniforms) ||
+                                    //            Option.isSome (o.Uniforms.TryGetUniform(Ag.Scope.Root, u.uniformName))
+                                    //        if not has then Log.warn "missing: %A" u
+                                    //        has
+                                    //    )
+                                    hasVertexInputs
+
+                                let hasPickPositions =
+                                    Map.containsKey "PickViewPosition" eff.Outputs
+                                    
+                                let newShader =
+                                    if hasPickPositions then
+                                        FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectWithRealPosition]
+                                    else
+                                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
                                         
+                                        if hasAllInputs withNormal then
+                                            withNormal
+                                        else
+                                            FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                newShader.Shaders
+                            )
+                            
+                        let newEffect = FShade.Effect("pick_" + eff.Id, newShaders, [])
+                            
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
-                        r.Surface <- Surface.FShadeSimple newShader
+                        r.Surface <- Surface.FShadeSimple newEffect
                         r :> IRenderObject, true
                     | s ->
                         Log.warn "cannot change surface: %A" s
