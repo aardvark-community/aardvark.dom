@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0032
+* yet another pointerCapture/Tap problem
+
 ### 1.0.0-prerelease0031
 * fixed another pointerCapture/Tap problem
 

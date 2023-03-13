@@ -643,7 +643,7 @@
             let downEvt = down.get(e.pointerId);
             if (downEvt) {
                 down.delete(e.pointerId);
-                if (!fromWindow || downEvt.target === e.target) {
+                if (true) {
                     let dt = e.timeStamp - downEvt.timeStamp;
                     let dx = e.clientX - downEvt.clientX;
                     let dy = e.clientY - downEvt.clientY;
