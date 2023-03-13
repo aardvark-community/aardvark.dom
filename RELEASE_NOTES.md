@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0030
+* fixed composition problem with pointerCapture and Tap
+
 ### 1.0.0-prerelease0029
 * made PixelPick-Shader creation lazy
 

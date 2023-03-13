@@ -426,8 +426,8 @@ type AbstractRemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Di
                         "if(flags.preventDefault) { e.preventDefault(); }"
                             
                         match name.ToLower() with
-                        | "pointerdown" -> $"if(flags.pointerCapture) {{ {var}.setPointerCapture(e.pointerId); }}"
-                        | "pointerup" -> $"if(flags.pointerCapture) {{ {var}.releasePointerCapture(e.pointerId); }}"
+                        | "pointerdown" -> $"if(flags.pointerCapture) {{ aardvark.setPointerCapture({var}, e.pointerId, true); }}"
+                        | "pointerup" -> $"if(flags.pointerCapture) {{ aardvark.setPointerCapture({var}, e.pointerId, false); }}"
                         | _ -> ()
                         $"aardvark.trigger({var}, {element}, \"{name}\", e);"
                     ]

@@ -578,13 +578,68 @@
         });
     }
 
+    const downHandlerSym = Symbol("down");
+    const upHandlerSym = Symbol("up");
+    
+    function installGlobalPointerEvents(element) {
+        let downHandler =
+            {
+                handleEvent: function (e) {
+                    if(aardvark.globalPointerDown) {
+                        aardvark.globalPointerDown(e);
+                    }
+                }
+            }
+        let upHandler =
+            {
+                handleEvent: function (e) {
+                    if(aardvark.globalPointerUp) {
+                        aardvark.globalPointerUp(e);
+                    }
+                }
+            }
+            
+        element.addEventListener("pointerdown", downHandler, true);
+        element.addEventListener("pointerup", upHandler, true);
+        
+        element[downHandlerSym] = downHandler;
+        element[upHandlerSym] = upHandler;
+    }
+    
+    function releaseGlobalPointerEvents(element) {
+        let downHandler = element[downHandlerSym];
+        let upHandler = element[upHandlerSym];
+        
+        if(downHandler) {
+            element.removeEventListener("pointerdown", downHandler, true);
+            delete element[downHandlerSym];
+        }
+        
+        if(upHandler) {
+            element.removeEventListener("pointerup", upHandler, true);
+            delete element[upHandlerSym];
+        }
+    }
+    
+    aardvark.setPointerCapture = function(element, pointerId, capture) {
+        if(capture) {
+            element.setPointerCapture(pointerId);
+            installGlobalPointerEvents(element);
+        }
+        else {
+            element.releasePointerCapture(pointerId);
+            releaseGlobalPointerEvents(element);
+        }
+    };
+    
     aardvark.onReady(function () {
         let down = new Map();
-        window.addEventListener("pointerdown", (e) => {
-            down.set(e.pointerId, e);
-        }, true);
         
-        window.addEventListener("pointerup", (e) => {
+        aardvark.globalPointerDown = function(e) {
+            down.set(e.pointerId, e);
+        };
+        
+        aardvark.globalPointerUp = function(e) {
             let downEvt = down.get(e.pointerId);
             if (downEvt) {
                 down.delete(e.pointerId);
@@ -610,6 +665,14 @@
                     }
                 }
             }
+        };
+        
+        window.addEventListener("pointerdown", (e) => {
+            aardvark.globalPointerDown(e);
+        }, true);
+        
+        window.addEventListener("pointerup", (e) => {
+            aardvark.globalPointerUp(e);
         }, true);
 
         let lastTap = null;

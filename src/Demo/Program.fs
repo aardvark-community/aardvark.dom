@@ -281,7 +281,7 @@ let testApp (_runtime : IRuntime) =
                             AdaptiveFunc.Identity
                     )
                 ]
-
+            let rotActive = cval true
             renderControl  {
                 // HTML attributes
                 Style [Width "100%"; Height "600px"; Background "#202124"] 
@@ -292,6 +292,14 @@ let testApp (_runtime : IRuntime) =
                 RenderControl.OnReady (fun handler ->
                     myHandler <- Some handler
                 )
+                
+                Dom.OnPointerDown((fun e ->
+                    transact(fun () -> rotActive.Value <- false)
+                ), pointerCapture = true)
+                
+                Dom.OnPointerUp((fun e ->
+                    transact(fun () -> rotActive.Value <- true)
+                ), pointerCapture = true)
                 
                 //Sg.ForcePixelPicking
                 //Sg.OnTap (fun e ->
@@ -355,7 +363,7 @@ let testApp (_runtime : IRuntime) =
                 
 
                 // setup transformation and shaders
-                let rotActive = cval true
+                
                 Scale 3.0
                 Trafo (rotationTrafo rotActive time)
                 Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }  
@@ -386,6 +394,11 @@ let testApp (_runtime : IRuntime) =
                                 marker.Value <- Ray3d(e.Position, V3d.OOI)
                             else
                                 marker.Value <- Ray3d(e.Position, e.Normal)
+                        )
+                    )
+                    Sg.OnTap(fun e ->
+                        transact (fun () -> 
+                            markerColor.Value <- C4b.Green
                         )
                     )
 
