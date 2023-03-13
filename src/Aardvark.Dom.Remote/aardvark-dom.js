@@ -586,7 +586,7 @@
             {
                 handleEvent: function (e) {
                     if(aardvark.globalPointerDown) {
-                        aardvark.globalPointerDown(e);
+                        aardvark.globalPointerDown(e, false);
                     }
                 }
             }
@@ -594,7 +594,7 @@
             {
                 handleEvent: function (e) {
                     if(aardvark.globalPointerUp) {
-                        aardvark.globalPointerUp(e);
+                        aardvark.globalPointerUp(e, false);
                     }
                 }
             }
@@ -635,15 +635,15 @@
     aardvark.onReady(function () {
         let down = new Map();
         
-        aardvark.globalPointerDown = function(e) {
+        aardvark.globalPointerDown = function(e, fromWindow) {
             down.set(e.pointerId, e);
         };
         
-        aardvark.globalPointerUp = function(e) {
+        aardvark.globalPointerUp = function(e, fromWindow) {
             let downEvt = down.get(e.pointerId);
             if (downEvt) {
                 down.delete(e.pointerId);
-                if (downEvt.target === e.target) {
+                if (!fromWindow || downEvt.target === e.target) {
                     let dt = e.timeStamp - downEvt.timeStamp;
                     let dx = e.clientX - downEvt.clientX;
                     let dy = e.clientY - downEvt.clientY;
@@ -668,11 +668,11 @@
         };
         
         window.addEventListener("pointerdown", (e) => {
-            aardvark.globalPointerDown(e);
+            aardvark.globalPointerDown(e, true);
         }, true);
         
         window.addEventListener("pointerup", (e) => {
-            aardvark.globalPointerUp(e);
+            aardvark.globalPointerUp(e, true);
         }, true);
 
         let lastTap = null;
