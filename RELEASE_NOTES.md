@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0033
+* added Worker-API sketch
+
 ### 1.0.0-prerelease0032
 * yet another pointerCapture/Tap problem
 

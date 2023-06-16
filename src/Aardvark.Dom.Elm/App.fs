@@ -2,6 +2,7 @@
 
 open System
 open System.Threading
+open System.Threading.Tasks
 open Aardvark.Base
 open Aardvark.Rendering
 open System.Runtime.CompilerServices
@@ -16,7 +17,7 @@ type Env<'msg> =
     
     abstract RunModal : modal : (IDisposable -> DomNode) -> IDisposable
     
-    
+    abstract StartWorker<'t, 'a, 'b when 't :> AbstractWorker<'a, 'b> and 't : (new : unit -> 't)> : unit -> Task<WorkerInstance<'b, 'a>>
     
     //abstract Start : IAsyncEnumerable<'msg> -> IDisposable
 
@@ -27,6 +28,7 @@ module Env =
             member x.Run(js, cb) = env.Run(js, cb)
             member x.Emit msg = env.Emit (Seq.map mapping msg)
             member x.RunModal(modal) = env.RunModal(modal)
+            member x.StartWorker<'t, 'a, 'b when 't :> AbstractWorker<'a, 'b> and 't : (new : unit -> 't)>() = env.StartWorker<'t, 'a, 'b>()
         }
 
 type App<'model, 'amodel, 'msg> =   
@@ -99,6 +101,9 @@ module App =
                     let ui = modal destroy
                     transact(fun () -> customChildren.Perform(IndexListDelta.single idx (Set ui)))
                     destroy
+                
+                member x.StartWorker<'t, 'a, 'b when 't :> AbstractWorker<'a, 'b> and 't : (new : unit -> 't)>() =
+                    ctx.StartWorker<'t, 'a, 'b>()
             }
 
         let updateThread = 

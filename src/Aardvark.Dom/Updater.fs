@@ -48,12 +48,22 @@ type IHtmlBackend<'a> =
     abstract Delay : (IHtmlBackend<'a> -> unit) -> obj
     abstract Run : obj -> unit
 
+type WorkerInstance<'cmd, 'msg> =
+    {
+        Receive         : unit -> Task<'cmd>
+        Send            : seq<'msg> -> Task
+        FinishSending   : unit -> unit
+    }
+
+[<AbstractClass>]
+type AbstractWorker<'cmd, 'msg>() =
+    abstract Run : instance : WorkerInstance<'cmd, 'msg> -> Task
+        
 
 type DomContext =
-    {
-        Runtime : IRuntime
-        Execute : string -> option<System.Text.Json.JsonElement -> unit> -> unit
-    }   
+    abstract Runtime : IRuntime
+    abstract Execute : string -> option<System.Text.Json.JsonElement -> unit> -> unit
+    abstract StartWorker<'t, 'a, 'b when 't :> AbstractWorker<'a, 'b> and 't : (new : unit -> 't)> : unit -> Task<WorkerInstance<'b, 'a>>
 
 
 

@@ -16,6 +16,119 @@ open Giraffe
 
 module DomNode =
 
+    module private WorkerImplementation =
+            
+        type private AsyncSignal(isSet : bool) =
+            static let finished = Task.FromResult()
+            
+            let mutable isSet = isSet
+            let mutable tcs : option<TaskCompletionSource<unit>> = None
+
+            member x.Set() =
+                lock x (fun () -> 
+                    isSet <- true
+                    match tcs with
+                    | Some t -> 
+                        t.SetResult()
+                        tcs <- None
+                    | None ->
+                        ()
+                )
+                
+            member x.Reset() =
+                lock x (fun () ->
+                    isSet <- false    
+                )
+                    
+            member x.Wait(ct : CancellationToken) =
+                lock x (fun () ->
+                    if isSet then
+                        finished
+                    else
+                        match tcs with
+                        | Some tcs -> 
+                            tcs.Task
+                        | None -> 
+                            let t = TaskCompletionSource<unit>(TaskCreationOptions.RunContinuationsAsynchronously)
+                            tcs <- Some t
+
+                            if ct.CanBeCanceled then
+                                Async.StartAsTask(Async.AwaitTask(t.Task), cancellationToken = ct)
+                            else
+                                t.Task
+                )
+                        
+            member x.Wait() = x.Wait(CancellationToken.None)
+                    
+        type private AsyncBlockingCollection<'a>() =
+            let store = System.Collections.Generic.Queue<'a>()
+            let mutable completed = false
+            let isNonEmpty = AsyncSignal(false)
+            
+            member x.Put(value : 'a) =
+                let needsSet = 
+                    lock store (fun () ->
+                        store.Enqueue value
+                        store.Count = 1
+                    )
+                if needsSet then isNonEmpty.Set()
+            
+            member x.Take() =
+                task {
+                    do! isNonEmpty.Wait()
+                    let value = 
+                        lock store (fun () ->
+                            if store.Count > 0 then Some (store.Dequeue())
+                            elif completed then raise <| OperationCanceledException()
+                            else None
+                        )
+                    match value with
+                    | Some v -> return v
+                    | None ->
+                        isNonEmpty.Reset()
+                        return! x.Take()
+                }
+
+            member x.Completed() =
+                lock store (fun () ->
+                    completed <- true
+                    isNonEmpty.Set()
+                )
+      
+        let start<'cmd, 'msg> (run : WorkerInstance<'cmd, 'msg> -> Task) =
+            
+            let cmds = AsyncBlockingCollection<'cmd>()
+            let msgs = AsyncBlockingCollection<'msg>()
+            let worker =
+                {
+                    Receive = fun () ->
+                        cmds.Take()
+                    Send = fun ms ->
+                        for m in ms do msgs.Put m
+                        Task.CompletedTask
+                    FinishSending = fun () ->
+                        msgs.Completed()
+                }
+                
+            let run =
+                task {
+                    try do! run worker
+                    finally msgs.Completed()
+                }
+            
+            {
+                Receive = fun () ->
+                    msgs.Take()
+                Send = fun ms ->
+                    for m in ms do cmds.Put m
+                    Task.CompletedTask
+                FinishSending = fun () ->
+                    cmds.Completed()
+            }
+            
+            
+           
+    
     [<AutoOpen>]
     module private Utilities = 
         let mainPage =
@@ -180,12 +293,17 @@ module DomNode =
                     }
 
                 let appCtx = 
-                    { 
-                        Runtime = runtime
-                        Execute = fun code cb ->
+                    { new DomContext with 
+                        member x.Runtime = runtime
+                        member x.Execute code cb =
                             match cb with
                             | None -> ctx.Execute code |> ignore
                             | Some cb -> ctx.ExecuteWithCallback code cb |> ignore
+
+                        member x.StartWorker<'t, 'a, 'b when 't :> AbstractWorker<'a, 'b> and 't : (new : unit -> 't)>() =
+                            let r = new 't()
+                            WorkerImplementation.start r.Run
+                            |> Task.FromResult
                     }
 
                 let dom, disp = view appCtx
