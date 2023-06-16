@@ -23,5 +23,8 @@
     <Compile Include="AdaptiveUtilities.fs" />
     <None Include="paket.references" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Aardvark.Dom.Core\Aardvark.Dom.Core.fsproj" />
+  </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

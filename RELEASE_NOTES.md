@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0034
+* moved worker to Aardvark.Dom.Core
+
 ### 1.0.0-prerelease0033
 * added Worker-API sketch
 

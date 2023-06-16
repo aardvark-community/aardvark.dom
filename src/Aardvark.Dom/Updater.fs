@@ -47,18 +47,7 @@ type IHtmlBackend<'a> =
 
     abstract Delay : (IHtmlBackend<'a> -> unit) -> obj
     abstract Run : obj -> unit
-
-type WorkerInstance<'cmd, 'msg> =
-    {
-        Receive         : unit -> Task<'cmd>
-        Send            : seq<'msg> -> Task
-        FinishSending   : unit -> unit
-    }
-
-[<AbstractClass>]
-type AbstractWorker<'cmd, 'msg>() =
-    abstract Run : instance : WorkerInstance<'cmd, 'msg> -> Task
-        
+  
 
 type DomContext =
     abstract Runtime : IRuntime
