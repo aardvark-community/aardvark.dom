@@ -18,6 +18,7 @@
     <Compile Include="UI\Attribute.fs" />
     <Compile Include="UI\AttributeMap.fs" />
     <Compile Include="UI\DomNode.fs" />
+    <Compile Include="UI\Extensions.fs" />
     <Compile Include="Frontend.fs" />
     <Compile Include="Updater.fs" />
     <Compile Include="AdaptiveUtilities.fs" />

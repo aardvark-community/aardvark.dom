@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0036
+* added extension library for dom builders
+
 ### 1.0.0-prerelease0035
 * added new yield overloads for dom builders
 
