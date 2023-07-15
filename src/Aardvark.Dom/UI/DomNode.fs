@@ -556,7 +556,10 @@ type RenderControlBuilder() =
         fun (state : RenderControlBuilderState) ->
             action state.Info state
 
-
+    member inline x.Bind(value : RenderControlBuilder<'a>, [<InlineIfLambda>] action : 'a -> RenderControlBuilder<'b>) =
+        fun (state : RenderControlBuilderState) ->
+            let a = value state
+            action a state
 
     member inline x.Yield(att : SceneAttribute) : RenderControlBuilder<unit> =
         fun (s : RenderControlBuilderState) -> s.Append [att]
@@ -617,6 +620,9 @@ type RenderControlBuilder() =
 
     member inline x.Yield((kind : RenderControlEventKind, callback : RenderControlEventInfo -> unit)) : RenderControlBuilder<unit> =
         fun (s : RenderControlBuilderState) -> s.Append(kind, callback)
+
+    member inline x.Yield(att : RenderControlBuilder<unit>) =
+        att
 
     member inline x.Run(run : RenderControlBuilder<unit>) =
         let getContent (info : RenderControlInfo) =
@@ -683,6 +689,9 @@ type NodeBuilder =
     member inline x.Yield(att : aval<option<Attribute>>) =
         { children = NodeList.Empty; attributes = AttributeTable (AttributeMap.ofOptionA att)  }
 
+    member inline x.Yield(state : NodeBuilderState) =
+        state
+        
     member inline x.For(elements : seq<'a>, [<InlineIfLambda>] action : 'a -> NodeBuilderState) =
         let mutable res = { children = NodeList.Empty; attributes = AttributeTable.Empty }
         for e in elements do
@@ -738,6 +747,9 @@ type VoidNodeBuilder =
     member inline x.Yield(att : list<Attribute>) =
         AttributeMap.ofList att
 
+    member inline x.Yield(att : AttributeMap) =
+        att
+
     member inline x.Zero() =
         AttributeMap.empty
 
@@ -752,7 +764,7 @@ type VoidNodeBuilder =
 
     new(tag : string) = { Tag = tag }
 
-type AttributeMapBuilder =
+type AttributeMapBuilder() =
 
     member inline x.Yield(att : Attribute) =
         AttributeTable [att]
@@ -802,7 +814,6 @@ type AttributeMapBuilder =
         let state = run()
         AttributeMap (state.ToAMap())
 
-    new() = { }
     
     
 [<AutoOpen>]

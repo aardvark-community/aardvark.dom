@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0035
+* added new yield overloads for dom builders
+
 ### 1.0.0-prerelease0034
 * moved worker to Aardvark.Dom.Core
 
