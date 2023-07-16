@@ -9,8 +9,18 @@
   <ItemGroup>
     <None Include="paket.references" />
     <None Include="paket.template" />
-    <EmbeddedResource Include="aardvark-dom.js" />
-    <Compile Include="AbstractRemoteHtmlBackend.fs" />
+    <EmbeddedResource Include="resources\bootstrap.min.css" />
+    <EmbeddedResource Include="resources\bootstrap.bundle.min.js" />
+    <EmbeddedResource Include="resources\fontawesome.min.css" />
+    <Compile Include="Offcanvas.fs" />
+    <Compile Include="Accordion.fs" />
+    <Compile Include="Dropdown.fs" />
+    <Compile Include="Select.fs" />
+    <Compile Include="Toggle.fs" />
+    <Compile Include="Slider.fs" />
+    <Compile Include="Numeric.fs" />
+    <Compile Include="Modal.fs" />
+    <Compile Include="Tooltip.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />

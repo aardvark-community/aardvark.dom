@@ -25,6 +25,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Project", "Project", "{69CA
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Aardvark.Dom.Core", "src\Aardvark.Dom.Core\Aardvark.Dom.Core.fsproj", "{2B9D63DB-F42C-454E-A428-60CD68DC1E19}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Aardvark.Dom.Bootstrap", "src\Aardvark.Dom.Bootstrap\Aardvark.Dom.Bootstrap.fsproj", "{88CB0774-133A-4D2E-8F54-813A0BBC7140}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -59,6 +61,10 @@ Global
 		{2B9D63DB-F42C-454E-A428-60CD68DC1E19}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2B9D63DB-F42C-454E-A428-60CD68DC1E19}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2B9D63DB-F42C-454E-A428-60CD68DC1E19}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88CB0774-133A-4D2E-8F54-813A0BBC7140}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88CB0774-133A-4D2E-8F54-813A0BBC7140}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88CB0774-133A-4D2E-8F54-813A0BBC7140}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88CB0774-133A-4D2E-8F54-813A0BBC7140}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -71,6 +77,7 @@ Global
 		{6D049923-19A4-4C94-8227-53EDBE0DDA86} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
 		{003C9BBF-798E-4682-9BB4-2163F6B7A0D8} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
 		{2B9D63DB-F42C-454E-A428-60CD68DC1E19} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
+		{88CB0774-133A-4D2E-8F54-813A0BBC7140} = {03720CF8-7F88-42B2-AA38-25A03FB2F9A4}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {7ADD391C-3926-4C2A-8988-9DDB4A4339CA}

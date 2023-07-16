@@ -7,8 +7,9 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="App.fs" />
     <None Include="paket.references" />
+    <None Include="paket.template" />
+    <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />

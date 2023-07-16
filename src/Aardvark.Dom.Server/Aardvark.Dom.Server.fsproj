@@ -7,6 +7,8 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="paket.references" />
+    <None Include="paket.template" />
     <Compile Include="RemoteUtilities.fs" />
     <Compile Include="RemoteHtmlBackend.fs" />
     <Compile Include="Jpeg\TurboJpeg.fs" />
@@ -15,7 +17,6 @@
     <Compile Include="SharedMemory\SharedMemory.fs" />
     <Compile Include="SharedMemory\RawDownload.fs" />
     <Compile Include="SharedMemory\SharedMemoryTransfer.fs" />
-    <None Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj" />

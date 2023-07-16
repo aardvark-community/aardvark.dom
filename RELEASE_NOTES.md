@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0038
+* added Aardvark.Dom.Bootstrap
+
 ### 1.0.0-prerelease0036
 * added extension library for dom builders
 

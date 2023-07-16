@@ -7,8 +7,9 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Worker.fs" />
     <None Include="paket.references" />
+    <None Include="paket.template" />
+    <Compile Include="Worker.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

@@ -7,6 +7,8 @@
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="paket.references" />
+    <None Include="paket.template" />
     <Compile Include="Events.fs" />
     <Compile Include="SceneGraph\BVH.fs" />
     <Compile Include="SceneGraph\Intersectable.fs" />
@@ -22,7 +24,6 @@
     <Compile Include="Frontend.fs" />
     <Compile Include="Updater.fs" />
     <Compile Include="AdaptiveUtilities.fs" />
-    <None Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Core\Aardvark.Dom.Core.fsproj" />

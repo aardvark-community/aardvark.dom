@@ -202,12 +202,12 @@
 
                     let path = aardvark.parseURL(u).pathname.toLowerCase();
 
-                    if (path.endsWith(".js")) {
+                    if (path.endsWith(".js") || path.startsWith("data:text/javascript")) {
                         s = document.createElement("script");
                         s.type = "application/javascript";
                         s.src = u;
                     }
-                    else if (path.endsWith(".css")) {
+                    else if (path.endsWith(".css")  || path.startsWith("data:text/css")) {
                         s = document.createElement("link");
                         s.type = "text/css";
                         s.rel = "stylesheet";
