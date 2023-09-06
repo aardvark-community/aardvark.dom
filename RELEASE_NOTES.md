@@ -1,3 +1,6 @@
+### 1.0.0-prerelease0039
+* IIntersectable can now set explicit hit-position
+
 ### 1.0.0-prerelease0038
 * added Aardvark.Dom.Bootstrap
 

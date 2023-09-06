@@ -12,14 +12,14 @@ open Microsoft.FSharp.NativeInterop
 
 type IIntersectable =
     abstract BoundingBox : Box3d
-    abstract Intersects : ray : Ray3d * tmin : float * tmax : float * t : byref<float> * n : byref<V3d> -> bool
+    abstract Intersects : ray : Ray3d * tmin : float * tmax : float * t : byref<float> * pt : byref<V3d> * n : byref<V3d> -> bool
 
 module Intersectable =
 
     let box (b : Box3d) =
         { new IIntersectable with
             member x.BoundingBox = b
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 // o + t*d = b.Min
                 let (bmin, bmax) = b.GetMinMaxInDirection(ray.Direction)
                 
@@ -57,6 +57,7 @@ module Intersectable =
                 if System.Double.IsFinite tMin && tMin >= tmin && tMin <= tmax then
                     n <- nMin
                     t <- tMin
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -65,7 +66,7 @@ module Intersectable =
     let sphere (sphere : Sphere3d) =
         { new IIntersectable with
             member x.BoundingBox = sphere.BoundingBox3d
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 // |o + t * d| = r
                 // |o + t * d|² = r²
                 // <o+t*d|o+t*d> = r²
@@ -86,6 +87,7 @@ module Intersectable =
                     let n0 = Vec.normalize (ray.GetPointOnRay r - sphere.Center)
                     t <- r
                     n <- n0
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -102,7 +104,7 @@ module Intersectable =
         { new IIntersectable with
             member x.BoundingBox =
                 cylinder.BoundingBox3d
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 let ray = ray.Transformed toCylinder.Backward
 
                 let o = ray.Origin
@@ -136,6 +138,7 @@ module Intersectable =
                 if System.Double.IsFinite tr then
                     t <- tr
                     n <- Vec.normalize (toCylinder.Backward.TransposedTransformDir nr)
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -158,7 +161,7 @@ module Intersectable =
         { new IIntersectable with
             member x.BoundingBox =
                 bounds
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 let r = ray.Transformed toCone.Backward
                 let d = r.Direction
                 let o = r.Origin
@@ -205,6 +208,7 @@ module Intersectable =
                     let pt = toCone.Forward.TransformPos (r.GetPointOnRay tr)
                     n <- toCone.Backward.TransposedTransformDir nr |> Vec.normalize
                     t <- tr
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -226,7 +230,7 @@ module Intersectable =
         { new IIntersectable with
             member x.BoundingBox =
                 bb
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 let mutable t0 = System.Double.PositiveInfinity
                 let mutable t1 = System.Double.PositiveInfinity
                 let mutable t2 = System.Double.PositiveInfinity
@@ -254,6 +258,7 @@ module Intersectable =
                 if System.Double.IsFinite tr && tr >= tmin && tr <= tmax then
                     t <- tr
                     n <- nr
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -283,7 +288,7 @@ module Intersectable =
         { new IIntersectable with
             member x.BoundingBox =
                 bb
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 let mutable t0 = System.Double.PositiveInfinity
                 let mutable t1 = System.Double.PositiveInfinity
                 let mutable t2 = System.Double.PositiveInfinity
@@ -315,6 +320,7 @@ module Intersectable =
                 if System.Double.IsFinite tr && tr >= tmin && tr <= tmax then
                     t <- tr
                     n <- nr
+                    hit <- ray.GetPointOnRay t
                     true
                 else
                     false
@@ -325,7 +331,7 @@ module Intersectable =
             member x.BoundingBox =
                 Box3d(V3d(bounds.Min, -1E-8), V3d(bounds.Max, 1E-8))
                 
-            member x.Intersects(ray, tmin, tmax, t, n) =
+            member x.Intersects(ray, tmin, tmax, t, hit, n) =
                 // o.Z + t*d.Z = 0
                 let rayT = 
                     if Fun.IsTiny ray.Direction.Z then
@@ -339,6 +345,7 @@ module Intersectable =
                     if bounds.Contains pt then
                         t <- rayT
                         n <- V3d.OOI
+                        hit <- ray.GetPointOnRay t
                         true
                     else
                         false
