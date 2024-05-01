@@ -2,6 +2,7 @@
 * updated rendering packages
 * added `App.startAndGetEnv`
 * added several `Sg.VertexAttribute` overloads for single-values
+* pinned dotnet to 6.0.100
 
 ### 1.0.0-prerelease0039
 * IIntersectable can now set explicit hit-position
