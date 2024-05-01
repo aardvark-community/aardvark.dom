@@ -371,6 +371,45 @@ type Sg private() =
         let view = BufferView.ofArray value
         SceneAttribute.VertexAttributes(HashMap.single name view)
     
+    
+    static member VertexAttribute(name : string, value : aval<V4f>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V4f>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<V3f>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V3f>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<V2f>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V2f>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<float32>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<float32>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<V4i>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V4i>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<V3i>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V3i>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<V2i>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<V2i>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+        
+    static member VertexAttribute(name : string, value : aval<int>) =
+        let view = BufferView(SingleValueBuffer(value), typeof<int>)
+        SceneAttribute.VertexAttributes(HashMap.single name view)
+    
+    static member VertexAttribute(name : string, value : aval<C4f>) =
+        Sg.VertexAttribute(name, value |> AVal.map (fun c -> c.ToV4f()))
+        
+    static member VertexAttribute(name : string, value : aval<C4b>) =
+        Sg.VertexAttribute(name, value |> AVal.map (fun c -> c.ToC4f().ToV4f()))
+        
     static member Index(buffer : option<BufferView>) =
         SceneAttribute.Index(buffer)
         
@@ -482,12 +521,22 @@ type Sg private() =
         attachmentModes 
         |> SceneAttribute.AttachmentBlendMode
        
-    static member BlendMode (attachmentModes : aval<#seq<Symbol * BlendMode>>) =
+    static member BlendMode (attachmentModes : aval<seq<Symbol * BlendMode>>) =
         attachmentModes 
         |> AVal.map Map.ofSeq
         |> SceneAttribute.AttachmentBlendMode
         
-    static member BlendMode (attachmentModes : #seq<Symbol * BlendMode>) =
+    static member BlendMode (attachmentModes : aval<list<Symbol * BlendMode>>) =
+        attachmentModes 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentBlendMode
+        
+    static member BlendMode (attachmentModes : aval<array<Symbol * BlendMode>>) =
+        attachmentModes 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentBlendMode
+        
+    static member BlendMode (attachmentModes : seq<Symbol * BlendMode>) =
         attachmentModes 
         |> Map.ofSeq
         |> AVal.constant
@@ -516,12 +565,22 @@ type Sg private() =
         attachmentMasks 
         |> SceneAttribute.AttachmentColorWriteMask
        
-    static member ColorMask (attachmentMasks : aval<#seq<Symbol * ColorMask>>) =
+    static member ColorMask (attachmentMasks : aval<seq<Symbol * ColorMask>>) =
         attachmentMasks 
         |> AVal.map Map.ofSeq
         |> SceneAttribute.AttachmentColorWriteMask
         
-    static member ColorMask (attachmentMasks : #seq<Symbol * ColorMask>) =
+    static member ColorMask (attachmentMasks : aval<list<Symbol * ColorMask>>) =
+        attachmentMasks 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentColorWriteMask
+        
+    static member ColorMask (attachmentMasks : aval<array<Symbol * ColorMask>>) =
+        attachmentMasks 
+        |> AVal.map Map.ofSeq
+        |> SceneAttribute.AttachmentColorWriteMask
+        
+    static member ColorMask (attachmentMasks : seq<Symbol * ColorMask>) =
         attachmentMasks 
         |> Map.ofSeq
         |> AVal.constant
@@ -563,74 +622,74 @@ type Sg private() =
         if capture then SceneAttribute.On(AMap.single kind (SceneEventHandler.capture (fun e -> action (unbox e); true)))
         else SceneAttribute.On(AMap.single kind (SceneEventHandler.bubble (fun e -> action (unbox e); true)))
             
-    static member inline OnPointerMove(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerMove, capture, action)
-    static member inline OnPointerMove(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerMove, false, action)
-    static member inline OnPointerMove(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerMove, capture, action)
-    static member inline OnPointerMove(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerMove, false, action)
+    static member OnPointerMove(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerMove, capture, action)
+    static member OnPointerMove(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerMove, false, action)
+    static member OnPointerMove(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerMove, capture, action)
+    static member OnPointerMove(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerMove, false, action)
         
-    static member inline OnPointerDown(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerDown, capture, action)
-    static member inline OnPointerDown(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerDown, false, action)
-    static member inline OnPointerDown(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerDown, capture, action)
-    static member inline OnPointerDown(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerDown, false, action)
+    static member OnPointerDown(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerDown, capture, action)
+    static member OnPointerDown(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerDown, false, action)
+    static member OnPointerDown(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerDown, capture, action)
+    static member OnPointerDown(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerDown, false, action)
         
-    static member inline OnPointerUp(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerUp, capture, action)
-    static member inline OnPointerUp(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerUp, false, action)
-    static member inline OnPointerUp(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerUp, capture, action)
-    static member inline OnPointerUp(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerUp, false, action)
+    static member OnPointerUp(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerUp, capture, action)
+    static member OnPointerUp(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.PointerUp, false, action)
+    static member OnPointerUp(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerUp, capture, action)
+    static member OnPointerUp(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerUp, false, action)
         
-    static member inline OnClick(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Click, capture, action)
-    static member inline OnClick(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Click, false, action)
-    static member inline OnClick(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Click, capture, action)
-    static member inline OnClick(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Click, false, action)
+    static member OnClick(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Click, capture, action)
+    static member OnClick(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.Click, false, action)
+    static member OnClick(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Click, capture, action)
+    static member OnClick(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.Click, false, action)
         
-    static member inline OnDoubleClick(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleClick, capture, action)
-    static member inline OnDoubleClick(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleClick, false, action)
-    static member inline OnDoubleClick(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleClick, capture, action)
-    static member inline OnDoubleClick(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleClick, false, action)
-        
-        
-    static member inline OnPointerLeave (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerLeave, false, action)
-    static member inline OnPointerEnter (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerEnter, false, action)
-        
-    static member inline OnScroll(capture : bool, action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, capture, action)
-    static member inline OnScroll(action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, false, action)
-    static member inline OnScroll(capture : bool, action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, capture, action)
-    static member inline OnScroll(action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, false, action)
-        
-    static member inline OnFocusLeave (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusLeave, false, action)
-    static member inline OnFocusEnter (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusEnter, false, action)
+    static member OnDoubleClick(capture : bool, action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleClick, capture, action)
+    static member OnDoubleClick(action : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.DoubleClick, false, action)
+    static member OnDoubleClick(capture : bool, action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleClick, capture, action)
+    static member OnDoubleClick(action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.DoubleClick, false, action)
         
         
-    static member inline OnKeyDown(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyDown, capture, action)
-    static member inline OnKeyDown(action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyDown, false, action)
-    static member inline OnKeyDown(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyDown, capture, action)
-    static member inline OnKeyDown(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyDown, false, action)
+    static member OnPointerLeave (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerLeave, false, action)
+    static member OnPointerEnter (action : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.PointerEnter, false, action)
         
-    static member inline OnKeyUp(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyUp, capture, action)
-    static member inline OnKeyUp(action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyUp, false, action)
-    static member inline OnKeyUp(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, capture, action)
-    static member inline OnKeyUp(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, false, action)
+    static member OnScroll(capture : bool, action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, capture, action)
+    static member OnScroll(action : SceneWheelEvent -> bool) = Sg.On(SceneEventKind.Scroll, false, action)
+    static member OnScroll(capture : bool, action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, capture, action)
+    static member OnScroll(action : SceneWheelEvent -> unit) = Sg.On(SceneEventKind.Scroll, false, action)
         
-    static member inline OnKeyInput(capture : bool, action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, capture, action)
-    static member inline OnKeyInput(action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, false, action)
-    static member inline OnKeyInput(capture : bool, action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, capture, action)
-    static member inline OnKeyInput(action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, false, action)
+    static member OnFocusLeave (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusLeave, false, action)
+    static member OnFocusEnter (action : SceneEvent -> unit) = Sg.On(SceneEventKind.FocusEnter, false, action)
+        
+        
+    static member OnKeyDown(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyDown, capture, action)
+    static member OnKeyDown(action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyDown, false, action)
+    static member OnKeyDown(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyDown, capture, action)
+    static member OnKeyDown(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyDown, false, action)
+        
+    static member OnKeyUp(capture : bool, action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyUp, capture, action)
+    static member OnKeyUp(action : SceneKeyboardEvent -> bool) = Sg.On(SceneEventKind.KeyUp, false, action)
+    static member OnKeyUp(capture : bool, action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, capture, action)
+    static member OnKeyUp(action : SceneKeyboardEvent -> unit) = Sg.On(SceneEventKind.KeyUp, false, action)
+        
+    static member OnKeyInput(capture : bool, action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, capture, action)
+    static member OnKeyInput(action : SceneInputEvent -> bool) = Sg.On(SceneEventKind.KeyInput, false, action)
+    static member OnKeyInput(capture : bool, action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, capture, action)
+    static member OnKeyInput(action : SceneInputEvent -> unit) = Sg.On(SceneEventKind.KeyInput, false, action)
    
    
-    static member inline OnTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, capture, callback)
-    static member inline OnTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, false, callback)
-    static member inline OnTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, capture, callback)
-    static member inline OnTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, false, callback)
+    static member OnTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, capture, callback)
+    static member OnTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.Tap, false, callback)
+    static member OnTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, capture, callback)
+    static member OnTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.Tap, false, callback)
 
-    static member inline OnDoubleTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
-    static member inline OnDoubleTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, false, callback)
-    static member inline OnDoubleTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
-    static member inline OnDoubleTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, false, callback)
+    static member OnDoubleTap(capture : bool, callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
+    static member OnDoubleTap(callback : SceneTapEvent -> unit) = Sg.On(SceneEventKind.DoubleTap, false, callback)
+    static member OnDoubleTap(capture : bool, callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, capture, callback)
+    static member OnDoubleTap(callback : SceneTapEvent -> bool) = Sg.On(SceneEventKind.DoubleTap, false, callback)
 
-    static member inline OnLongPress(capture : bool, callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, capture, callback)
-    static member inline OnLongPress(callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, false, callback)
-    static member inline OnLongPress(capture : bool, callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.LongPress, capture, callback)
-    static member inline OnLongPress(callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.LongPress, false, callback)
+    static member OnLongPress(capture : bool, callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, capture, callback)
+    static member OnLongPress(callback : ScenePointerEvent -> unit) = Sg.On(SceneEventKind.LongPress, false, callback)
+    static member OnLongPress(capture : bool, callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.LongPress, capture, callback)
+    static member OnLongPress(callback : ScenePointerEvent -> bool) = Sg.On(SceneEventKind.LongPress, false, callback)
 
     static member Render (fvc : int) =
         DirectDrawNode(DrawCallInfo(FaceVertexCount = fvc, InstanceCount = 1)) :> ISceneNode

@@ -77,7 +77,7 @@ module RenderObject =
                     Seq.empty
             }
 
-        let o = RenderObject.Create()
+        let o = RenderObject()
         lock traversalStates (fun () -> traversalStates.Add(o, state))
         o.BlendState <- state.Blend
         o.DepthState <- state.Depth
@@ -303,7 +303,7 @@ module SgAdapter =
         member x.StencilWriteMaskBack(e : WrapperNode, _scope : Ag.Scope) = e.Node?StencilWriteMaskBack <- e.State.Stencil.WriteMaskBack
 
         member x.CullMode(e : WrapperNode, _scope : Ag.Scope) = e.Node?CullMode <- e.State.Rasterizer.CullMode
-        member x.FrontFace(e : WrapperNode, _scope : Ag.Scope) = e.Node?FrontFace <- e.State.Rasterizer.FrontFace
+        member x.FrontFace(e : WrapperNode, _scope : Ag.Scope) = e.Node?FrontFace <- e.State.Rasterizer.FrontFacing
         member x.FillMode(e : WrapperNode, _scope : Ag.Scope) = e.Node?FillMode <- e.State.Rasterizer.FillMode
         member x.Multisample(e : WrapperNode, _scope : Ag.Scope) = e.Node?Multisample <- e.State.Rasterizer.Multisample
         member x.ConservativeRaster(e : WrapperNode, _scope : Ag.Scope) = e.Node?ConservativeRaster <- e.State.Rasterizer.ConservativeRaster

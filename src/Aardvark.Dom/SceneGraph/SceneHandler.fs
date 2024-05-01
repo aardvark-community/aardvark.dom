@@ -716,7 +716,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                     let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
                                     let m = FShade.Effect.toModule cfg effect
                                     let vertex = 
-                                        m.entries |> List.find (fun e -> 
+                                        m.Entries |> List.find (fun e -> 
                                             e.decorations |> List.exists (function 
                                                 | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
                                                 | _ -> false
@@ -878,7 +878,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         let frameTimeWatch = System.Diagnostics.Stopwatch()
         let mutable frameTimeStats = Stats(30)
 
-        let inline getInfo (size : V2i) =
+        let getInfo (size : V2i) =
             {
                 Signature = signature
                 Size = size
@@ -909,7 +909,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
                 let pickBuffer = outputInfo.PickTexture
-                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved, ImageTrafo.Identity)
+                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved)
                 else runtime.Copy(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
                 
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)

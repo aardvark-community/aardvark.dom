@@ -56,6 +56,21 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
     member x.Position = localPosition
     member x.Normal = localNormal
     
+    member x.ViewPickRay =
+        let dir = projTrafo.Backward.TransformPosProj(V3d(ndc.XY, -1.0)) |> Vec.normalize
+        Ray3d(V3d.Zero, dir)
+        
+    member x.WorldPickRay =
+        let near = viewProj.Backward.TransformPosProj(V3d(ndc.XY, -1.0))
+        let far = viewProj.Backward.TransformPosProj(V3d(ndc.XY, 0.0))
+        Ray3d(near, Vec.normalize (far - near))
+        
+    member x.PickRay =
+        let mvp = AVal.force modelTrafo * viewProj
+        let near = mvp.Backward.TransformPosProj(V3d(ndc.XY, -1.0))
+        let far = mvp.Backward.TransformPosProj(V3d(ndc.XY, 0.0))
+        Ray3d(near, Vec.normalize (far - near))
+    
     member x.Transformed(trafo : Trafo3d) =
         SceneEventLocation(
             modelTrafo, 

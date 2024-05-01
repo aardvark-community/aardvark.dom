@@ -522,6 +522,8 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
             )
             
             TabIndex 0
+            Draggable false
+            Style [ Css.UserSelect "none" ]
             OnPointerDown(handlePointerEvent SceneEventKind.PointerDown, true)
             OnPointerUp(handlePointerEvent SceneEventKind.PointerUp, true)
             OnPointerMove(handlePointerEvent SceneEventKind.PointerMove, true)

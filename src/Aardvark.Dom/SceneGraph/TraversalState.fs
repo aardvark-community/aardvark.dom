@@ -327,7 +327,7 @@ module SceneAttribute =
         
         
         | SceneAttribute.CullMode v -> { state with Rasterizer = { state.Rasterizer with CullMode = v } }
-        | SceneAttribute.FrontFace v -> { state with Rasterizer = { state.Rasterizer with FrontFace = v } }
+        | SceneAttribute.FrontFace v -> { state with Rasterizer = { state.Rasterizer with FrontFacing = v } }
         | SceneAttribute.FillMode v -> { state with Rasterizer = { state.Rasterizer with FillMode = v } }
         | SceneAttribute.Multisample v -> { state with Rasterizer = { state.Rasterizer with Multisample = v } }
         | SceneAttribute.ConservativeRaster v -> { state with Rasterizer = { state.Rasterizer with ConservativeRaster = v } }

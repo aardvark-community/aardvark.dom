@@ -71,7 +71,7 @@ type EnvExtensions private() =
 
 
 module App =    
-    let start (ctx : DomContext) (app : App<'model, 'amodel, 'msg>) =
+    let startAndGetEnv (ctx : DomContext) (app : App<'model, 'amodel, 'msg>) =
         let mutable model = app.initial
         let amodel = app.unpersist.init model
 
@@ -130,4 +130,8 @@ module App =
                 DomNode.Element(tag, att, AList.append cs customChildren)
             | _ -> view
         
+        view, shutdown, env
+ 
+    let start (ctx : DomContext) (app : App<'model, 'amodel, 'msg>) =
+        let view, shutdown, _ = startAndGetEnv ctx app
         view, shutdown

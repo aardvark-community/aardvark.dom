@@ -71,7 +71,10 @@ module AttributeMap =
         |> AMap.ofAVal
         |> AttributeMap
         
- 
+    let bind (mapping : 'a -> AttributeMap) (value : aval<'a>) =
+        value |> AMap.bind (fun v ->
+            (mapping v).Content
+        ) |> AttributeMap
 
 
 
