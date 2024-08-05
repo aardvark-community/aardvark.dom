@@ -65,7 +65,6 @@ module RenderObject =
     let traversalStates = System.Runtime.CompilerServices.ConditionalWeakTable<IRenderObject, TraversalState>()
 
     let ofTraversalState (state : TraversalState) =
-        
 
         let provider (atts : HashMap<string, BufferView>) =
             { new IAttributeProvider with
@@ -77,7 +76,7 @@ module RenderObject =
                     Seq.empty
             }
 
-        let o = RenderObject.Create()
+        let o = RenderObject()
         lock traversalStates (fun () -> traversalStates.Add(o, state))
         o.BlendState <- state.Blend
         o.DepthState <- state.Depth
@@ -90,7 +89,7 @@ module RenderObject =
         o.RasterizerState <- state.Rasterizer
         o.RenderPass <- state.Pass
         o.StencilState <- state.Stencil
-        o.Surface <- Surface.FShadeSimple state.Shader
+        o.Surface <- Surface.Effect state.Shader
         o.Uniforms <- new TraversalStateUniformProvider(state)
         o
 
@@ -274,7 +273,7 @@ module SgAdapter =
                     sg.Node?FaceVertexCount <- AVal.constant 0
 
         member x.Surface(sg : WrapperNode, _scope : Ag.Scope) =
-            sg.Node?Surface <- Surface.FShadeSimple sg.State.Shader
+            sg.Node?Surface <- Surface.Effect sg.State.Shader
 
         member x.CameraLocation(e : WrapperNode, _scope : Ag.Scope) =
             e.Node?CameraLocation <- AVal.map getViewPosition e.State.View
@@ -303,7 +302,7 @@ module SgAdapter =
         member x.StencilWriteMaskBack(e : WrapperNode, _scope : Ag.Scope) = e.Node?StencilWriteMaskBack <- e.State.Stencil.WriteMaskBack
 
         member x.CullMode(e : WrapperNode, _scope : Ag.Scope) = e.Node?CullMode <- e.State.Rasterizer.CullMode
-        member x.FrontFace(e : WrapperNode, _scope : Ag.Scope) = e.Node?FrontFace <- e.State.Rasterizer.FrontFace
+        member x.FrontFacing(e : WrapperNode, _scope : Ag.Scope) = e.Node?FrontFacing <- e.State.Rasterizer.FrontFacing
         member x.FillMode(e : WrapperNode, _scope : Ag.Scope) = e.Node?FillMode <- e.State.Rasterizer.FillMode
         member x.Multisample(e : WrapperNode, _scope : Ag.Scope) = e.Node?Multisample <- e.State.Rasterizer.Multisample
         member x.ConservativeRaster(e : WrapperNode, _scope : Ag.Scope) = e.Node?ConservativeRaster <- e.State.Rasterizer.ConservativeRaster

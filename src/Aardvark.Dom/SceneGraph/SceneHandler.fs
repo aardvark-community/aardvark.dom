@@ -709,14 +709,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | :? RenderObject as o ->
                     let pickId = getId(t)
                     match o.Surface with
-                    | Surface.FShadeSimple eff ->
+                    | Surface.Effect eff ->
                         let newShaders =
                             lazy (
                                 let hasAllInputs (effect : FShade.Effect) =
-                                    let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
-                                    let m = FShade.Effect.toModule cfg effect
+                                    let m = Effect.link newSignature o.Mode false effect
+
                                     let vertex = 
-                                        m.entries |> List.find (fun e -> 
+                                        m.Entries |> List.find (fun e -> 
                                             e.decorations |> List.exists (function 
                                                 | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
                                                 | _ -> false
@@ -760,7 +760,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                             
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
-                        r.Surface <- Surface.FShadeSimple newEffect
+                        r.Surface <- Surface.Effect newEffect
                         r :> IRenderObject, true
                     | s ->
                         Log.warn "cannot change surface: %A" s
@@ -909,7 +909,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
                 let pickBuffer = outputInfo.PickTexture
-                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved, ImageTrafo.Identity)
+                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved)
                 else runtime.Copy(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
                 
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
