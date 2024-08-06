@@ -670,7 +670,7 @@ type Sg private() =
         
         let config =
             {
-                TextConfig.font = match font with | Some f -> f | None -> DefaultFonts.Hack.Regular.Font
+                TextConfig.font = match font with | Some f -> f | None -> DefaultFonts.Hack.Regular
                 TextConfig.color = match color with | Some c -> AVal.force c | None -> C4b.White
                 TextConfig.align = defaultArg align TextAlignment.Left
                 TextConfig.flipViewDependent = true
