@@ -7,20 +7,16 @@ open FSharp.Data.Adaptive
 open Aardvark.Application
 open System.Runtime.CompilerServices
 
-type Font = Aardvark.Rendering.Text.Font
+type Font = Aardvark.Base.Fonts.Font
 type ShapeList = Aardvark.Rendering.Text.ShapeList
-type CodePoint = Aardvark.Rendering.Text.CodePoint
-type Glyph = Aardvark.Rendering.Text.Glyph
+type CodePoint = Aardvark.Base.Fonts.CodePoint
+type Glyph = Aardvark.Base.Fonts.Glyph
 type TextAlignment = Aardvark.Rendering.Text.TextAlignment
 type ConcreteShape = Aardvark.Rendering.Text.ConcreteShape
 type TextConfig = Aardvark.Rendering.Text.TextConfig
-module Font = Aardvark.Rendering.Text.Font
+module Font = Aardvark.Base.Fonts.Font
 module ShapeList = Aardvark.Rendering.Text.ShapeList
-
-type private HackType = Aardvark.FontProvider.FontSquirrelProvider< "Hack" >
-    
-type DefaultFonts private() =
-    static member Hack = HackType.Font
+module DefaultFonts = Aardvark.Rendering.Text.DefaultFonts
 
 module private SceneGraphShapeUtilities =
     open Aardvark.Rendering.Text
@@ -158,7 +154,7 @@ module private SceneGraphShapeUtilities =
         shapes.Mode <- IndexedGeometryMode.TriangleList
         
         shapes.DepthState <- { shapes.DepthState with Bias = AVal.constant DepthBias.None }
-        shapes.Surface <- Surface.FShadeSimple cache.Effect
+        shapes.Surface <- Surface.Effect cache.Effect
         shapes :> IRenderObject |> ASet.single
 
     type ShapeNode(content : aval<ShapeList>) =
@@ -733,7 +729,7 @@ type Sg private() =
         
         let config =
             {
-                TextConfig.font = match font with | Some f -> f | None -> DefaultFonts.Hack
+                TextConfig.font = match font with | Some f -> f | None -> DefaultFonts.Hack.Regular
                 TextConfig.color = match color with | Some c -> AVal.force c | None -> C4b.White
                 TextConfig.align = defaultArg align TextAlignment.Left
                 TextConfig.flipViewDependent = true

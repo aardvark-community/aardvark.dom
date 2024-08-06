@@ -1,17 +1,18 @@
-framework: netstandard2.1, net6.0
-source https://api.nuget.org/v3/index.json
+framework: auto-detect
 storage: none
+source https://api.nuget.org/v3/index.json
 
-nuget FSharp.Core >= 6.0.1 lowest_matching: true
-nuget Aardvark.Build ~> 1.0.19
-nuget Aardvark.Base ~> 5.2.21
-nuget Giraffe ~> 6.0.0
-nuget Aardvark.SceneGraph ~> 5.4.10-prerelease0001
-nuget Aardvark.Rendering.GL ~> 5.4.10-prerelease0001
-nuget Aardvark.Application.Slim.GL ~> 5.4.10-prerelease0001
-nuget Aardvark.Rendering.Vulkan ~> 5.4.10-prerelease0001
-nuget Aardvark.Application.Slim.Vulkan ~> 5.4.10-prerelease0001
-nuget Aardvark.Rendering.Text ~> 5.4.10-prerelease0001
-nuget Adaptify.Core ~> 1.1.9
-nuget Adaptify.MSBuild ~> 1.1.9
-nuget Aardvark.FontProvider ~> 0.0.7
+nuget FSharp.Core                       >= 8.0.0 lowest_matching: true
+nuget Aardvark.Build                    ~> 1.0.25
+
+nuget Aardvark.SceneGraph               ~> 5.5.0
+nuget Aardvark.Rendering.GL             ~> 5.5.0
+nuget Aardvark.Application.Slim.GL      ~> 5.5.0
+nuget Aardvark.Rendering.Vulkan         ~> 5.5.0
+nuget Aardvark.Application.Slim.Vulkan  ~> 5.5.0
+nuget Aardvark.Rendering.Text           ~> 5.5.0
+
+nuget Adaptify.Core                     ~> 1.1.9
+nuget Adaptify.MSBuild                  ~> 1.1.9
+
+nuget Giraffe                           ~> 7.0.0

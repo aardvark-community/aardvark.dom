@@ -709,12 +709,12 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | :? RenderObject as o ->
                     let pickId = getId(t)
                     match o.Surface with
-                    | Surface.FShadeSimple eff ->
+                    | Surface.Effect eff ->
                         let newShaders =
                             lazy (
                                 let hasAllInputs (effect : FShade.Effect) =
-                                    let cfg = newSignature.EffectConfig(Range1d(-1.0, 1.0), false)
-                                    let m = FShade.Effect.toModule cfg effect
+                                    let m = Effect.link newSignature o.Mode false effect
+
                                     let vertex = 
                                         m.Entries |> List.find (fun e -> 
                                             e.decorations |> List.exists (function 
@@ -760,7 +760,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                             
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
-                        r.Surface <- Surface.FShadeSimple newEffect
+                        r.Surface <- Surface.Effect newEffect
                         r :> IRenderObject, true
                     | s ->
                         Log.warn "cannot change surface: %A" s
