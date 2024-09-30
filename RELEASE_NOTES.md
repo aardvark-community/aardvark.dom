@@ -1,3 +1,6 @@
+### 1.0.1
+* net8.0 updates
+
 ### 1.0.0-prerelease0040
 * updated rendering packages
 * added `App.startAndGetEnv`
