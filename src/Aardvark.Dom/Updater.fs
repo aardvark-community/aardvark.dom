@@ -472,6 +472,7 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
     let samples = 
         let att = AMap.force attributes.Content 
         match HashMap.tryFind "data-samples" att with
+        | Some (AttributeValue.Int s) -> s
         | Some (AttributeValue.String v) ->
             match System.Int32.TryParse v with
             | (true, s) -> s

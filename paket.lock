@@ -83,7 +83,7 @@ NUGET
       FSharp.Core (>= 8.0)
     Aardvark.Base.TypeProviders (4.5.15)
       FSharp.Core (>= 4.2.3)
-    Aardvark.Build (1.0.25)
+    Aardvark.Build (2.0.3)
     Aardvark.FontProvider (0.1)
       Aardvark.Base.Fonts (>= 5.3)
       FSharp.Core (>= 8.0.100)

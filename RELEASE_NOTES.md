@@ -1,3 +1,5 @@
+- Fixed render control samples attribute
+
 ### 1.0.1
 * net8.0 updates 
 

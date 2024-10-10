@@ -3,7 +3,7 @@ storage: none
 source https://api.nuget.org/v3/index.json
 
 nuget FSharp.Core                       >= 8.0.0 lowest_matching: true
-nuget Aardvark.Build                    ~> 1.0.25
+nuget Aardvark.Build                    ~> 2.0.3
 
 nuget Aardvark.SceneGraph               ~> 5.5.1
 nuget Aardvark.Rendering.GL             ~> 5.5.1
