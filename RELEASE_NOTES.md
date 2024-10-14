@@ -1,4 +1,5 @@
 - Fixed render control samples attribute
+- Fixed multisampled raw download
 
 ### 1.0.1
 * net8.0 updates 
