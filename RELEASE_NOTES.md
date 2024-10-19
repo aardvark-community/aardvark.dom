@@ -1,5 +1,7 @@
-- Fixed render control samples attribute
-- Fixed multisampled raw download
+### 1.0.2
+* geometric (IIntersectable) picking now respects `Sg.Active`
+* Fixed render control samples attribute
+* Fixed multisampled raw download
 
 ### 1.0.1
 * net8.0 updates 

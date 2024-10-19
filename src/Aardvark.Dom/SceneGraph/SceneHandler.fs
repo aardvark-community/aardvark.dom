@@ -1033,18 +1033,21 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             
             
                 let tryIntersect (skipPickThrough : bool) (tmin : float) (tmax : float) (state : TraversalState) (i : IIntersectable, trafo : Trafo3d) =
-                    let mutable r = 0.0
-                    let mutable n = V3d.Zero
-                    let mutable hit = V3d.Zero
-                    let skip =
-                        if skipPickThrough then state.PickThrough
-                        else false
-                    let localRay = ray.Transformed(trafo.Backward)
-                    if not skip && i.Intersects(localRay, tmin, tmax, &r, &hit, &n) then
-                        let worldPoint = trafo.Forward.TransformPos hit
-                        let depth = vp.Forward.TransformPosProj(worldPoint).Z
-                        let vn = Vec.normalize (v.Backward.TransposedTransformDir (trafo.Backward.TransposedTransformDir n))
-                        Some (r, (state, depth, v.Forward.TransformPos worldPoint, vn))
+                    if AVal.force state.Active then
+                        let mutable r = 0.0
+                        let mutable n = V3d.Zero
+                        let mutable hit = V3d.Zero
+                        let skip =
+                            if skipPickThrough then state.PickThrough
+                            else false
+                        let localRay = ray.Transformed(trafo.Backward)
+                        if not skip && i.Intersects(localRay, tmin, tmax, &r, &hit, &n) then
+                            let worldPoint = trafo.Forward.TransformPos hit
+                            let depth = vp.Forward.TransformPosProj(worldPoint).Z
+                            let vn = Vec.normalize (v.Backward.TransposedTransformDir (trafo.Backward.TransposedTransformDir n))
+                            Some (r, (state, depth, v.Forward.TransformPos worldPoint, vn))
+                        else
+                            None
                     else
                         None
             
