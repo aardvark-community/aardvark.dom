@@ -1,3 +1,6 @@
+### 1.0.4
+* SceneHandler now used RGBA32F for rendering Pick Information (better compatibility)
+
 ### 1.0.3
 * MS rendering now uses Renderbuffers (better compatibility)
 
