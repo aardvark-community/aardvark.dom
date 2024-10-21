@@ -285,7 +285,7 @@ let testApp (_runtime : IRuntime) =
             renderControl  {
                 // HTML attributes
                 Style [Width "100%"; Height "600px"; Background "#202124"] 
-                Samples 1
+                Samples 4
                 Quality 50
                 TabIndex 0
                 let mutable myHandler = None

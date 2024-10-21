@@ -575,10 +575,10 @@ type private SceneHandlerFramebuffers =
     {
         PickableFramebuffer         : IFramebuffer
         NonPickableFramebuffer      : IFramebuffer
-        PickTexture                 : IBackendTexture
+        PickBuffer                 : IRenderbuffer
         PickTextureResolved         : IBackendTexture
         PickFramebufferResolved     : IFramebuffer
-        Textures                    : list<IBackendTexture>
+        Disposables                 : list<System.IDisposable>
 
     }
 
@@ -806,8 +806,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 | Some o ->
                     runtime.DeleteFramebuffer o.PickableFramebuffer
                     runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                    runtime.DeleteFramebuffer o.PickFramebufferResolved
                     //for f in o.PickLevelFramebuffers do runtime.DeleteFramebuffer f
-                    for t in o.Textures do runtime.DeleteTexture t
+                    for t in o.Disposables do t.Dispose()
                 | None ->
                     ()
                     
@@ -817,13 +818,29 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Some ds -> Map.add DefaultSemantic.DepthStencil ds res
                     | None -> res
                     
-                let textures =
-                    semantics |> Map.map (fun _ a ->
-                        if newSignature.LayerCount > 1 then runtime.CreateTexture2DArray(size, a, 1, newSignature.Samples, newSignature.LayerCount)
-                        else runtime.CreateTexture2D(size, a, 1, newSignature.Samples)    
-                    )
-                let outputs =
-                    textures |> Map.map (fun _ t -> t.[TextureAspect.Color, 0, *] :> IFramebufferOutput)
+                let buffers, outputs =
+                    let buffers =
+                        semantics |> Map.map (fun _ a ->
+                            runtime.CreateRenderbuffer(size, a, newSignature.Samples)    
+                        )
+                    let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
+                    buffers, outputs
+                    // if newSignature.Samples > 1 then
+                    //     let buffers =
+                    //         semantics |> Map.map (fun _ a ->
+                    //             runtime.CreateRenderbuffer(size, a, newSignature.Samples)    
+                    //         )
+                    //     let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
+                    //     Map.empty, outputs
+                    // else
+                    //     let textures =
+                    //         semantics |> Map.map (fun _ a ->
+                    //             if newSignature.LayerCount > 1 then runtime.CreateTexture2DArray(size, a, 1, newSignature.Samples, newSignature.LayerCount)
+                    //             else runtime.CreateTexture2D(size, a, 1, newSignature.Samples)
+                    //         )
+                    //     let outputs =
+                    //         textures |> Map.map (fun _ t -> t.[TextureAspect.Color, 0, *] :> IFramebufferOutput)
+                    //     textures, outputs
                 let nf = runtime.CreateFramebuffer(signature, outputs)
                 let pf = runtime.CreateFramebuffer(newSignature, outputs)
                 
@@ -848,9 +865,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                         PickableFramebuffer         = pf
                         NonPickableFramebuffer      = nf
                         PickFramebufferResolved     = pickResolved
-                        PickTexture                 = textures.[pickBuffer]
+                        PickBuffer                  = buffers.[pickBuffer]
                         PickTextureResolved         = pickResolvedTex
-                        Textures                    = pickResolvedTex :: (textures |> Map.toList |> List.map snd)
+                        Disposables                 = pickResolvedTex :: (buffers |> Map.toList |> List.map (fun (_, b) -> b :> System.IDisposable))
                         //RenderOutline               = sTex
                         //CreateSelection             = rSel
                         //DisposeSelection            = dSel
@@ -908,9 +925,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 clear.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
-                let pickBuffer = outputInfo.PickTexture
-                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved)
-                else runtime.Copy(pickBuffer.[TextureAspect.Color, 0, *], outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
+                let pickBuffer = outputInfo.PickBuffer
+                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer, outputInfo.PickTextureResolved)
+                else runtime.Copy(pickBuffer, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
                 
                 pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
                 viewportSize <- outputInfo.PickTextureResolved.Size.XY
@@ -935,7 +952,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | Some o ->
                 runtime.DeleteFramebuffer o.PickableFramebuffer
                 runtime.DeleteFramebuffer o.NonPickableFramebuffer
-                for t in o.Textures do runtime.DeleteTexture t
+                for t in o.Disposables do t.Dispose()
                 fbos <- None
             | None ->
                 ()

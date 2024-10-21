@@ -1,3 +1,6 @@
+### 1.0.3
+* MS rendering now uses Renderbuffers (better compatibility)
+
 ### 1.0.2
 * geometric (IIntersectable) picking now respects `Sg.Active`
 * Fixed render control samples attribute

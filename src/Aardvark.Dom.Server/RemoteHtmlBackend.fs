@@ -234,11 +234,11 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                                                     let mutable bg = None
 
                                                     match e.TryGetProperty "width" with
-                                                    | (true, p) -> s.X <- max 1 (p.GetInt32())
+                                                    | (true, p) -> s.X <- max 1 (int (p.GetDouble()))
                                                     | _ -> ()
                                             
                                                     match e.TryGetProperty "height" with
-                                                    | (true, p) -> s.Y <- max 1 (p.GetInt32())
+                                                    | (true, p) -> s.Y <- max 1 (int (p.GetDouble()))
                                                     | _ -> ()
                                                         
                                                     match e.TryGetProperty "background" with
