@@ -1,3 +1,6 @@
+### 1.0.5
+* fixed Effect-IDs avoiding wrong cache-hits
+
 ### 1.0.4
 * SceneHandler now used RGBA32F for rendering Pick Information (better compatibility)
 

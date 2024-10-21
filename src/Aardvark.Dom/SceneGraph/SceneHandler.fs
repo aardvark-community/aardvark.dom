@@ -119,15 +119,15 @@ module internal PickShader =
     let pickId(v : Vertex) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let d = (2.0 * v.d - 1.0) |> Bitwise.FloatBitsToInt
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat d, 0.0) }
+            let d = (2.0 * v.d - 1.0) 
+            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
         }
         
     let pickIdNoNormal(v : Vertex) =
         fragment {
             let n32 = 0
-            let d = (2.0 * v.d - 1.0) |> Bitwise.FloatBitsToInt
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat d, 0.0) }
+            let d = (2.0 * v.d - 1.0) 
+            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
         }
 
     let vertexPickEffect = Effect.ofFunction pickVertex
@@ -762,7 +762,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                 newShader.Shaders
                             )
                             
-                        let newEffect = FShade.Effect("pick_" + eff.Id, newShaders, [])
+                        let newEffect = FShade.Effect("fpick_" + eff.Id, newShaders, [])
                             
                         let r = RenderObject.Clone o
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
