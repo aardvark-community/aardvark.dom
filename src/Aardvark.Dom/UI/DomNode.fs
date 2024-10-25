@@ -506,9 +506,9 @@ module RenderControl =
     type Info = Info
 
     type OnReady = OnReady of (IEventHandler -> unit)
-    
 
-type RenderControlBuilder() =
+
+type RenderControlBuilderExt() =
     static member wrap (sg : Aardvark.SceneGraph.ISg) =
         SgAdapter.Node(sg) :> ISceneNode
 
@@ -580,25 +580,25 @@ type RenderControlBuilder() =
         x.Yield(ASet.single node)
 
     member inline x.Yield(node : Aardvark.SceneGraph.ISg) : RenderControlBuilder<unit> =
-        x.Yield(ASet.single (RenderControlBuilder.wrap node))
+        x.Yield(ASet.single (RenderControlBuilderExt.wrap node))
 
     member inline x.Yield(node : aval<seq<ISceneNode>>) : RenderControlBuilder<unit> =
         x.Yield(ASet.ofAVal node)
         
     member inline x.Yield(node : aval<seq<Aardvark.SceneGraph.ISg>>) : RenderControlBuilder<unit> =
-        x.Yield(ASet.ofAVal node |> ASet.map RenderControlBuilder.wrap)
+        x.Yield(ASet.ofAVal node |> ASet.map RenderControlBuilderExt.wrap)
 
     member inline x.Yield(node : aval<ISceneNode>) : RenderControlBuilder<unit> =
         x.Yield(node |> ASet.bind ASet.single)
         
     member inline x.Yield(node : aval<Aardvark.SceneGraph.ISg>) : RenderControlBuilder<unit>=
-        x.Yield(node |> ASet.bind (RenderControlBuilder.wrap >> ASet.single))
+        x.Yield(node |> ASet.bind (RenderControlBuilderExt.wrap >> ASet.single))
         
     member inline x.Yield(node : aval<option<ISceneNode>>) : RenderControlBuilder<unit> =
         x.Yield(node |> ASet.bind (function Some v -> ASet.single v | None -> ASet.empty))
         
     member inline x.Yield(node : aval<option<Aardvark.SceneGraph.ISg>>) : RenderControlBuilder<unit> =
-        x.Yield(node |> ASet.bind (function Some v -> ASet.single (RenderControlBuilder.wrap v) | None -> ASet.empty))
+        x.Yield(node |> ASet.bind (function Some v -> ASet.single (RenderControlBuilderExt.wrap v) | None -> ASet.empty))
         
     member inline x.Yield(att : Attribute) =
         fun (state : RenderControlBuilderState) -> state.Append (AttributeMap.single att)
@@ -624,6 +624,10 @@ type RenderControlBuilder() =
     member inline x.Yield(att : RenderControlBuilder<unit>) =
         att
 
+
+type RenderControlBuilder() =
+    inherit RenderControlBuilderExt()
+    
     member inline x.Run(run : RenderControlBuilder<unit>) =
         let getContent (info : RenderControlInfo) =
             let state = RenderControlBuilderState(info)
@@ -732,7 +736,7 @@ type NodeBuilder =
     member inline x.Delay([<InlineIfLambda>] action : unit -> NodeBuilderState) = 
         action
 
-    member inline x.Run(run : unit -> NodeBuilderState) =
+    member inline x.Run([<InlineIfLambda>] run : unit -> NodeBuilderState) =
         let state = run()
         DomNode.Element(x.Tag, AttributeMap (state.attributes.ToAMap()), state.children.ToAList())
 

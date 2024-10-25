@@ -9,11 +9,13 @@
   <ItemGroup>
     <None Include="paket.references" />
     <None Include="paket.template" />
-    <Compile Include="Route.fs" />
-    <Compile Include="Server.fs" />
+    <Compile Include="Utilites.fs" />
+    <Compile Include="OrbitController\OrbitState.fs" />
+    <Compile Include="OrbitController\OrbitController.fs" />
+    <Compile Include="OrbitController\RenderControlExtensions.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Aardvark.Dom.Server\Aardvark.Dom.Server.fsproj" />
+    <ProjectReference Include="..\Aardvark.Dom.Elm\Aardvark.Dom.Elm.fsproj" />
     <ProjectReference Include="..\Aardvark.Dom\Aardvark.Dom.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

@@ -1,3 +1,8 @@
+### 1.0.6
+* added simple utility for starting a server
+* added `Aardvark.Dom.Utilites` providing a simple OrbitController
+* added PickRays to SceneEvent
+
 ### 1.0.5
 * fixed Effect-IDs avoiding wrong cache-hits
 

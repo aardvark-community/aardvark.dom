@@ -134,6 +134,10 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     member x.Position = location.Position
     member x.Normal = location.Normal
     
+    member x.ViewPickRay = location.ViewPickRay
+    member x.WorldPickRay = location.WorldPickRay
+    member x.PickRay = location.PickRay
+    
     member x.Transformed(trafo : Trafo3d) =
         x.WithLocation(location.Transformed(trafo))
 

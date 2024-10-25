@@ -13,6 +13,7 @@ open Aardvark.Dom.Remote
 open Aardvark.Rendering
 open Aardvark.Application.Slim
 open Demo
+open Aardvark.Dom.Utilities
 
 module Shader =
     open FShade
@@ -24,7 +25,10 @@ module Shader =
     
     let withViewPos (v : Effects.Vertex) =
         fragment {
-            return { vp = Vec.xyz (uniform.ProjTrafoInv * v.pos) }
+            let vp = uniform.ProjTrafoInv * v.pos
+            let vp = vp.XYZ / vp.W
+            let vp = vp + V3d(0.1, 0.0, 0.0)
+            return { vp = vp.XYZ }
         }
     
 let testApp (_runtime : IRuntime) =
@@ -288,6 +292,14 @@ let testApp (_runtime : IRuntime) =
                 Samples 4
                 Quality 50
                 TabIndex 0
+                
+                SimpleOrbitController {
+                    Location = V3d(3,4,5)
+                    Center = V3d.Zero
+                    RotateButton = Button.Left
+                    PanButton = Button.Middle 
+                }
+                
                 let mutable myHandler = None
                 RenderControl.OnReady (fun handler ->
                     myHandler <- Some handler
@@ -352,9 +364,9 @@ let testApp (_runtime : IRuntime) =
                 let! time = RenderControl.Time
 
                 // apply a camera
-                let view = CameraView.lookAt (V3d(3,4,5)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant
+                //let view = CameraView.lookAt (V3d(3,4,5)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant
                 let proj = size |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
-                Sg.View view
+                //Sg.View view
                 Sg.Proj proj
 
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
@@ -365,7 +377,7 @@ let testApp (_runtime : IRuntime) =
                 // setup transformation and shaders
                 
                 Scale 3.0
-                Trafo (rotationTrafo rotActive time)
+                //Trafo (rotationTrafo rotActive time)
                 Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }  
   
                 // scene      
@@ -411,6 +423,15 @@ let testApp (_runtime : IRuntime) =
                         }
                         Translate(0.5, 0.0, 0.0)
                         Primitives.Teapot(C4b.Green)
+                    }
+                    
+                    sg {
+                        Sg.Shader {
+                            DefaultSurfaces.trafo
+                            DefaultSurfaces.simpleLighting
+                        }
+                        Translate(1.5, 0.0, 0.0)
+                        Primitives.Teapot(C4b.Yellow)
                     }
 
                     sg {

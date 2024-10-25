@@ -96,7 +96,39 @@ module RenderObject =
 
 type ISceneNode =
     abstract GetObjects : TraversalState -> aset<IRenderObject> * aset<PickObject>
+    
     abstract GetRenderObjects : TraversalState -> aset<IRenderObject>
+            
+module rec HKNKs =
+        
+        type SceneAttribute =
+        | Uniforms of HashMap<string, aval<obj>>
+        | Model of aval<Trafo3d>
+        | Index of option<BufferView>
+        | VertexAttributes of HashMap<string, BufferView>
+        | InstanceAttributes of HashMap<string, BufferView>
+        | Mode of IndexedGeometryMode
+        | DepthState of DepthState
+        | Active of aval<bool>
+        // ...
+        
+        type ISg =
+            abstract GetRenderObjects : TraversalState -> aset<IRenderObject>
+            
+        type Applicator(attributes : list<SceneAttribute>, children : aset<ISg>) =
+            member x.GetRenderObjects(state : TraversalState) =
+                let mutable childState = TraversalState.push state
+                
+                for a in attributes do
+                    childState <- SceneAttribute.apply a childState
+           
+                children |> ASet.collect (fun c -> c.GetRenderObjects childState)
+            
+            
+            
+            
+        module SceneAttribute =
+            let apply (a : SceneAttribute) (s : TraversalState) = s
     
 type DirectDrawNode(call : aval<list<DrawCallInfo>>) =
     member x.Call = call

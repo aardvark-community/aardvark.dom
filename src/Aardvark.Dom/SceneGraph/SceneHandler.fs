@@ -569,12 +569,65 @@ module internal BlitExtensions =
         member x.BlitFramebuffer(src : IFramebuffer, dst : IFramebuffer) =
             x.Copy(src, dst)
                 
-        member x.ReadPixel(src : IFramebuffer, pixel : V2i) : V4i =
+        // member x.ReadPixel(src : IFramebuffer, pixel : V2i) : V4i =
+        //     let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<float32>
+        //     use ptr = fixed img.Data
+        //     let iptr = NativePtr.ofNativeInt<int> (NativePtr.toNativeInt ptr)
+        //     V4i(NativePtr.get iptr 0, NativePtr.get iptr 1, NativePtr.get iptr 2, NativePtr.get iptr 3)
+        //     //V4i img.Volume.Data
+        
+        member x.ReadPickInfo(src : IFramebuffer, projTrafo : Trafo3d, pixel : V2i) =
             let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<float32>
             use ptr = fixed img.Data
             let iptr = NativePtr.ofNativeInt<int> (NativePtr.toNativeInt ptr)
-            V4i(NativePtr.get iptr 0, NativePtr.get iptr 1, NativePtr.get iptr 2, NativePtr.get iptr 3)
-            //V4i img.Volume.Data
+            
+            let i0 = int img.Volume.Origin
+            let i1 = i0 + int img.Volume.DZ
+            let i2 = i1 + int img.Volume.DZ
+            let i3 = i2 + int img.Volume.DZ
+            // let pickIdWithRealPosition(v : Vertex) =
+            //     fragment {
+            //         let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            //         let len = Vec.length v.pvp
+            //         let dir = Normal32.encode (v.pvp / len) |> int
+            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            //     }
+            //     
+            // let pickId(v : Vertex) =
+            //     fragment {
+            //         let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            //         let d = (2.0 * v.d - 1.0) 
+            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
+            //     }
+            //     
+            // let pickIdNoNormal(v : Vertex) =
+            //     fragment {
+            //         let n32 = 0
+            //         let d = (2.0 * v.d - 1.0) 
+            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
+            //     }
+            let id = NativePtr.get iptr i0
+            if id > 0 then
+                let normal = Normal32.decode (NativePtr.get iptr i1)
+                let depth = NativePtr.get ptr i2 |> float
+                
+                let tc = (V2d pixel + V2d.Half) / V2d src.Size
+                let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
+                let viewPos = projTrafo.Backward.TransformPosProj ndc
+                Some (id, viewPos, normal)
+            elif id < 0 then
+                let normal = Normal32.decode (NativePtr.get iptr i1)
+                let direction = Normal32.decode (NativePtr.get iptr i2)
+                let distance = NativePtr.get ptr i3
+                let viewPos = direction * float distance
+                Some (-id, viewPos, normal)
+            else
+                None
+                
+            
+            
+            
+            
         
         
 type private SceneHandlerFramebuffers =
@@ -660,37 +713,51 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     let read (projTrafo : Trafo3d) (pixel : V2i) =
         match pickTexture with
         | Some (pickTexture, pickFbo) when pixel.AllGreaterOrEqual 0 && pixel.AllSmaller pickTexture.Size.XY ->
-            let value = runtime.ReadPixel(pickFbo, pixel)
-            
-            let id = value.X
-            transact (fun () -> hoverId.Value <- id)
-            if id > 0 then
+            match runtime.ReadPickInfo(pickFbo, projTrafo, pixel) with
+            | Some (id, viewPos, normal) ->
+                transact (fun () -> hoverId.Value <- id)
                 match scopes.TryGetValue id with
                 | true, scope ->
-                    let n = value.Y |> Normal32.decode
-                    let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
-                    let tc = (V2d pixel + V2d.Half) / V2d pickTexture.Size.XY
-                    let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
-                    let viewPos = projTrafo.Backward.TransformPosProj ndc
-                    
-                    Some (scope, float depth, viewPos, n)
-                | _ ->
-                    None
-            elif id < 0 then
-                let id = -id
-                match scopes.TryGetValue id with
-                | true, scope ->
-                    let n = value.Y |> Normal32.decode
-                    let vd = value.Z |> Normal32.decode
-                    let vl = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.W|]).[0] |> float
-                    
-                    let viewPos = vd * vl
                     let depth = projTrafo.TransformPosProj(viewPos).Z
-                    Some (scope, float depth, viewPos, n)
+                    Some (scope, float depth, viewPos, normal)
                 | _ ->
                     None
-            else
+                
+            | None ->
+                transact (fun () -> hoverId.Value <- 0)
                 None
+            //
+            // let value = runtime.ReadPixel(pickFbo, pixel)
+            //
+            // let id = value.X
+            // transact (fun () -> hoverId.Value <- id)
+            // if id > 0 then
+            //     match scopes.TryGetValue id with
+            //     | true, scope ->
+            //         let n = value.Y |> Normal32.decode
+            //         let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
+            //         let tc = (V2d pixel + V2d.Half) / V2d pickTexture.Size.XY
+            //         let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
+            //         let viewPos = projTrafo.Backward.TransformPosProj ndc
+            //         
+            //         Some (scope, float depth, viewPos, n)
+            //     | _ ->
+            //         None
+            // elif id < 0 then
+            //     let id = -id
+            //     match scopes.TryGetValue id with
+            //     | true, scope ->
+            //         let n = value.Y |> Normal32.decode
+            //         let vd = value.Z |> Normal32.decode
+            //         let vl = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.W|]).[0] |> float
+            //         
+            //         let viewPos = vd * vl
+            //         let depth = projTrafo.TransformPosProj(viewPos).Z
+            //         Some (scope, float depth, viewPos, n)
+            //     | _ ->
+            //         None
+            // else
+            //     None
         | _ ->
             None
              
