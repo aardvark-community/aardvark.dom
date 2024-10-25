@@ -1,5 +1,5 @@
 type project
-id Aardvark.Dom.Utilites
+id Aardvark.Dom.Utilities
 authors Aardvark Platform Team
 owners Aardvark Platform Team
 projectUrl http://github.com/aardvark-community

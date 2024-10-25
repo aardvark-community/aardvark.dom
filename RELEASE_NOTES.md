@@ -1,3 +1,6 @@
+### 1.0.7
+* fixed `Aardvark.Dom.Utilites` package name typo
+
 ### 1.0.6
 * added simple utility for starting a server
 * added `Aardvark.Dom.Utilites` providing a simple OrbitController
