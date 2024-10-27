@@ -1,3 +1,6 @@
+### 1.0.8
+* added SimpleFreeFlyController
+
 ### 1.0.7
 * fixed `Aardvark.Dom.Utilites` package name typo
 

@@ -5,14 +5,20 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
+    <LocalAdaptify>true</LocalAdaptify>
   </PropertyGroup>
   <ItemGroup>
     <None Include="paket.references" />
     <None Include="paket.template" />
     <Compile Include="Utilites.fs" />
     <Compile Include="OrbitController\OrbitState.fs" />
+    <Compile Include="OrbitController\OrbitState.g.fs" />
     <Compile Include="OrbitController\OrbitController.fs" />
     <Compile Include="OrbitController\RenderControlExtensions.fs" />
+    <Compile Include="FreeFlyController\FreeFlyModel.fs" />
+    <Compile Include="FreeFlyController\FreeFlyModel.g.fs" />
+    <Compile Include="FreeFlyController\FreeFlyController.fs" />
+    <Compile Include="FreeFlyController\FreeFlyControlExtensions.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Elm\Aardvark.Dom.Elm.fsproj" />

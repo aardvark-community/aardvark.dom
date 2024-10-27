@@ -293,12 +293,18 @@ let testApp (_runtime : IRuntime) =
                 Quality 50
                 TabIndex 0
                 
-                SimpleOrbitController {
+                SimpleFreeFlyController {
                     Location = V3d(3,4,5)
-                    Center = V3d.Zero
-                    RotateButton = Button.Left
-                    PanButton = Button.Middle 
+                    LookAt = V3d.Zero
+                    Sky = V3d.OOI
                 }
+                
+                // SimpleOrbitController {
+                //     Location = V3d(3,4,5)
+                //     Center = V3d.Zero
+                //     RotateButton = Button.Left
+                //     PanButton = Button.Middle 
+                // }
                 
                 let mutable myHandler = None
                 RenderControl.OnReady (fun handler ->
