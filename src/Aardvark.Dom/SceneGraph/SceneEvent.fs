@@ -32,6 +32,11 @@ type SceneEventKind =
 type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
     
     let ndc = projTrafo.TransformPosProj viewPos
+    
+    let ndc2d =
+        let tc = pixel / V2d viewportSize
+        V2d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y)
+    
     //let ndc = V3d(2.0 * pixel.X / float viewportSize.X - 1.0, 1.0 - 2.0 * pixel.Y / float viewportSize.Y, depth)
     let viewProj = viewTrafo * projTrafo
     let worldPosition = viewTrafo.Backward.TransformPosProj viewPos
@@ -57,20 +62,26 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
     member x.Normal = localNormal
     
     member x.ViewPickRay =
-        let dir = projTrafo.Backward.TransformPosProj(V3d(ndc.XY, -1.0)) |> Vec.normalize
-        Ray3d(V3d.Zero, dir)
+        let near = projTrafo.Backward.TransformPosProj(V3d(ndc2d, -1.0))
+        let far = projTrafo.Backward.TransformPosProj(V3d(ndc2d, 0.0))
+        Ray3d(near, Vec.normalize (far - near))
         
     member x.WorldPickRay =
-        let near = viewProj.Backward.TransformPosProj(V3d(ndc.XY, -1.0))
-        let far = viewProj.Backward.TransformPosProj(V3d(ndc.XY, 0.0))
+        let near = viewProj.Backward.TransformPosProj(V3d(ndc2d, -1.0))
+        let far = viewProj.Backward.TransformPosProj(V3d(ndc2d, 0.0))
         Ray3d(near, Vec.normalize (far - near))
         
-    member x.PickRay =
+    member x.ModelPickRay =
         let mvp = AVal.force modelTrafo * viewProj
-        let near = mvp.Backward.TransformPosProj(V3d(ndc.XY, -1.0))
-        let far = mvp.Backward.TransformPosProj(V3d(ndc.XY, 0.0))
+        let near = mvp.Backward.TransformPosProj(V3d(ndc2d, -1.0))
+        let far = mvp.Backward.TransformPosProj(V3d(ndc2d, 0.0))
         Ray3d(near, Vec.normalize (far - near))
     
+    member x.PickRay =
+        let near = local2World.Backward.TransformPosProj(viewProj.Backward.TransformPosProj(V3d(ndc2d, -1.0)))
+        let far = local2World.Backward.TransformPosProj(viewProj.Backward.TransformPosProj(V3d(ndc2d, 0.0)))
+        Ray3d(near, Vec.normalize (far - near))
+        
     member x.Transformed(trafo : Trafo3d) =
         SceneEventLocation(
             modelTrafo, 
