@@ -832,8 +832,29 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                         let newEffect = FShade.Effect("fpick_" + eff.Id, newShaders, [])
                             
                         let r = RenderObject.Clone o
+                        
+                        let newBlendState =
+                            let newModes = 
+                                o.BlendState.AttachmentMode |> AVal.map (fun map ->
+                                    Map.add pickBuffer BlendMode.None map    
+                                )
+                            let newWrites =
+                                o.BlendState.AttachmentWriteMask |> AVal.map (fun map ->
+                                    Map.add pickBuffer ColorMask.All map
+                                )
+                            
+                            {
+                                Mode = o.BlendState.Mode
+                                AttachmentMode = newModes
+                                AttachmentWriteMask = newWrites
+                                ConstantColor = o.BlendState.ConstantColor
+                                ColorWriteMask = o.BlendState.ColorWriteMask
+                            }
+                        
+                        
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
                         r.Surface <- Surface.Effect newEffect
+                        r.BlendState <- newBlendState
                         r :> IRenderObject, true
                     | s ->
                         Log.warn "cannot change surface: %A" s

@@ -1,3 +1,6 @@
+### 1.0.10
+* disabled blending for PickBuffer
+
 ### 1.0.9
 * SceneEvent pick-rays are now really independent of pick-depth
 

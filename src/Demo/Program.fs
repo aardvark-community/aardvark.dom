@@ -428,6 +428,7 @@ let testApp (_runtime : IRuntime) =
                             Shader.withViewPos
                         }
                         Translate(0.5, 0.0, 0.0)
+                        Sg.BlendMode BlendMode.Blend
                         Primitives.Teapot(C4b.Green)
                     }
                     
