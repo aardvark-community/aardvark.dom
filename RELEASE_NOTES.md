@@ -1,3 +1,6 @@
+### 1.0.11
+* again using integer pick-buffer to better support WebGL/GLES
+
 ### 1.0.10
 * disabled blending for PickBuffer
 

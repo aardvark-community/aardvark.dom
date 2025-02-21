@@ -82,7 +82,7 @@ module internal PickShader =
     type Fragment =
         {
             [<Color>] c : V4d
-            [<Semantic("PickId")>] id : V4d
+            [<Semantic("PickId")>] id : V4i
         }
         
     let pickVertex (v : Effects.Vertex) =
@@ -113,21 +113,21 @@ module internal PickShader =
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
             let len = Vec.length v.pvp
             let dir = Normal32.encode (v.pvp / len) |> int
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            return { c = v.c; id = V4i(-uniform.PickId, n32, dir, Bitwise.FloatBitsToInt len) }
         }
         
     let pickId(v : Vertex) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
             let d = (2.0 * v.d - 1.0) 
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
+            return { c = v.c; id = V4i(uniform.PickId, n32, Bitwise.FloatBitsToInt d, Bitwise.FloatBitsToInt 0.0) }
         }
         
     let pickIdNoNormal(v : Vertex) =
         fragment {
             let n32 = 0
             let d = (2.0 * v.d - 1.0) 
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
+            return { c = v.c; id = V4i(uniform.PickId, n32, Bitwise.FloatBitsToInt d, Bitwise.FloatBitsToInt 0.0) }
         }
 
     let vertexPickEffect = Effect.ofFunction pickVertex
@@ -577,8 +577,9 @@ module internal BlitExtensions =
         //     //V4i img.Volume.Data
         
         member x.ReadPickInfo(src : IFramebuffer, projTrafo : Trafo3d, pixel : V2i) =
-            let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<float32>
+            let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<int>
             use ptr = fixed img.Data
+            let fptr = NativePtr.ofNativeInt<float32> (NativePtr.toNativeInt ptr)
             let iptr = NativePtr.ofNativeInt<int> (NativePtr.toNativeInt ptr)
             
             let i0 = int img.Volume.Origin
@@ -609,7 +610,7 @@ module internal BlitExtensions =
             let id = NativePtr.get iptr i0
             if id > 0 then
                 let normal = Normal32.decode (NativePtr.get iptr i1)
-                let depth = NativePtr.get ptr i2 |> float
+                let depth = NativePtr.get fptr i2 |> float
                 
                 let tc = (V2d pixel + V2d.Half) / V2d src.Size
                 let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
@@ -618,7 +619,7 @@ module internal BlitExtensions =
             elif id < 0 then
                 let normal = Normal32.decode (NativePtr.get iptr i1)
                 let direction = Normal32.decode (NativePtr.get iptr i2)
-                let distance = NativePtr.get ptr i3
+                let distance = NativePtr.get fptr i3
                 let viewPos = direction * float distance
                 Some (-id, viewPos, normal)
             else
@@ -768,7 +769,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         let pickId = signature.ColorAttachmentSlots
 
         let colorAttachments =
-            Map.add pickId { Name = pickBuffer; Format = TextureFormat.Rgba32f } signature.ColorAttachments
+            Map.add pickId { Name = pickBuffer; Format = TextureFormat.Rgba32i } signature.ColorAttachments
 
         let newSignature =
             runtime.CreateFramebufferSignature(colorAttachments, signature.DepthStencilAttachment, signature.Samples, signature.LayerCount, signature.PerLayerUniforms)
@@ -829,7 +830,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                 newShader.Shaders
                             )
                             
-                        let newEffect = FShade.Effect("fpick_" + eff.Id, newShaders, [])
+                        let newEffect = FShade.Effect("ipick_" + eff.Id, newShaders, [])
                             
                         let r = RenderObject.Clone o
                         
@@ -939,8 +940,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let pf = runtime.CreateFramebuffer(newSignature, outputs)
                 
                 let pickResolvedTex, pickResolved =
-                    let tex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, 1)
-                    let s = runtime.CreateFramebufferSignature([pickBuffer, TextureFormat.Rgba32f])
+                    let tex = runtime.CreateTexture2D(size, TextureFormat.Rgba32i, 1, 1)
+                    let s = runtime.CreateFramebufferSignature([pickBuffer, TextureFormat.Rgba32i])
                     //let fbo = runtime.CreateFramebuffer(s, [pickBuffer, tex.[TextureAspect.Color, 0, *] :> IFramebufferOutput])
                     
                     //let levelFbos =
