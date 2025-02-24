@@ -5,10 +5,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
     <OutputPath>..\..\bin\$(Configuration)\</OutputPath>
+    <LocalAdaptify>true</LocalAdaptify>
   </PropertyGroup>
   <ItemGroup>
     <None Include="paket.references" />
     <Compile Include="Model.fs" />
+    <Compile Include="Model.g.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
