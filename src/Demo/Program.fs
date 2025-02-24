@@ -1,4 +1,6 @@
-﻿open System.Threading
+﻿module Program
+
+open System.Threading
 open System.Threading.Tasks
 open System.Text.Json
 open Microsoft.AspNetCore.Builder
