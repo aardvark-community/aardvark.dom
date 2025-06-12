@@ -1,3 +1,6 @@
+### 1.0.12
+* SceneHandler again uses RGBA32F for rendering Pick Information (better compatibility)
+
 ### 1.0.11
 * again using integer pick-buffer to better support WebGL/GLES
 
