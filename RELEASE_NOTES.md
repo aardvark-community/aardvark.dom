@@ -1,3 +1,6 @@
+### 1.0.15
+* fixed aardvark.registerSelector again
+
 ### 1.0.14
 * fixed aardvark.registerSelector
 

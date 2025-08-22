@@ -239,7 +239,7 @@ type AbstractRemoteHtmlBackend(server : IServer, eventListeners : Dict<int64, Di
 
         member x.NewId() = newId()
         member x.Register(selector, id) =
-            code.AppendLine $"aardvark.registerSelector(\"{selector}\", {id});"
+            code.AppendLine $"aardvark.registerSelector({id}, \"{selector}\");"
         
         member x.Delay(action : IHtmlBackend<int64> -> unit) = x.Delay(action)
         member x.Run(thing : obj) = x.Run thing
