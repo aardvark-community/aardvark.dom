@@ -24,6 +24,13 @@
         table[id] = element;
     };
     
+    aardvark.registerSelector = (id, selector) => {
+        if (id === 0) return;
+        const res = document.querySelector(selector);
+        if(!res) return;
+        aardvark.register(id, res);
+    };
+    
     aardvark.delete = (id, n) => {
         if(id === 0) return;
         delete table[id];

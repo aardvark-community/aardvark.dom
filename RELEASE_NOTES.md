@@ -1,3 +1,6 @@
+### 1.0.14
+* fixed aardvark.registerSelector
+
 ### 1.0.13
 * added IHtmlBackend.NewId/Register for better interop with existing HTML elements
 
