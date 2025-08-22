@@ -21,6 +21,8 @@ type UpdateState<'a> =
     }
 
 type IHtmlBackend<'a> =
+    abstract NewId : unit -> 'a
+    abstract Register : selector : string * id : 'a -> unit
     abstract Execute : self : option<'a> * channels : array<IChannel -> Task<unit>> * js : (array<string> -> list<string>) -> IDisposable
     abstract Root : 'a
     abstract CreateTextElement : unit -> 'a
@@ -100,6 +102,21 @@ type Updater<'a>(runtime : IRuntime, id : 'a) =
         //| DomNode.RenderControl(attributes, getScene) ->
         //    RenderControlUpdater<'a>(id, attributes, getScene) :> Updater<'a>
 
+    
+    static member Create(selector : string, runtime : IRuntime, node : DomNode, code : IHtmlBackend<'a>) =
+        let id = code.NewId()
+        code.Register(selector, id)
+        
+        match node with
+        | DomNode.Text value -> 
+            TextUpdater(runtime, id, value) :> Updater<'a>
+        | DomNode.VoidElement(tag, attributes) ->
+            VoidUpdater(runtime, id, tag, attributes) :> Updater<'a>
+        | DomNode.Element(tag, attributes, children) ->
+            ElementUpdater(runtime, id, tag, attributes, children) :> Updater<'a>
+        | DomNode.RenderControl(getContent) ->
+            RenderControlUpdater<'a>(runtime, id, getContent) :> Updater<'a>
+    
     static member internal New(runtime : IRuntime, node : DomNode, code : IHtmlBackend<'a>) : Updater<'a> =
         match node with
         | DomNode.Text value -> 

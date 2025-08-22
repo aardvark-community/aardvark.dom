@@ -1,3 +1,6 @@
+### 1.0.13
+* added IHtmlBackend.NewId/Register for better interop with existing HTML elements
+
 ### 1.0.12
 * SceneHandler again uses RGBA32F for rendering Pick Information (better compatibility)
 
