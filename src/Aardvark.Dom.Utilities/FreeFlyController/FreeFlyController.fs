@@ -1,16 +1,26 @@
 namespace Aardvark.Dom.Utilities.FreeFlyController
 
+open FSharp.Data.Adaptive
 open Aardvark.Base
 open Aardvark.Dom
 
 type FreeFlyMessage =
-    | AddMoveVec of direction : V3i
+    | AddMoveVec of source : string * direction : V3d
+    | SetMoveVec of source : string * direction : V3d
+    | AddTurnVec of source : string * direction : V2d
+    | SetTurnVec of source : string * direction : V2d
+    | SetSprintFactor of factor : float
     | AddMomentum of direction : V3d
     | AddTargetTurn of turn : V2d
     | AdjustMoveSpeed of factor : float
     | Rendered
     
 module FreeFlyController =
+    
+    let inline private isTinyAux<'a, 'b when ('a or 'b) : (static member IsTiny : 'a * float -> bool)> (foo : 'b) (v : 'a) (eps : float) =
+        ((^a or ^b) : (static member IsTiny : 'a * float -> bool) (v, eps))
+    let inline isTiny v eps = isTinyAux Unchecked.defaultof<Fun> v eps
+    
     
     let private sw = System.Diagnostics.Stopwatch.StartNew()
     let inline private now() = sw.Elapsed
@@ -21,10 +31,33 @@ module FreeFlyController =
         else
             newModel
     
+    let inline private addVec (source : string) (v : 'a) (map : HashMap<string, 'a>) =
+        map |> HashMap.alter source (fun old ->
+            let newValue = 
+                match old with
+                | Some old -> old + v
+                | None -> v
+            if isTiny newValue 1E-8 then None
+            else Some newValue
+        )
+    
     let update (model : FreeFlyState) (msg : FreeFlyMessage) =
         match msg with
-        | AddMoveVec v ->
-            { model with MoveVec = model.MoveVec + v }
+        | SetSprintFactor f ->
+            { model with SprintFactor = f }
+        | AddMoveVec(source, v) ->
+            { model with MoveVectors = addVec source v model.MoveVectors }
+            |> withStartTime model
+        | SetMoveVec(source, v) ->
+            let newMoveVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.MoveVectors else HashMap.add source v model.MoveVectors
+            { model with MoveVectors = newMoveVecs}
+            |> withStartTime model
+        | AddTurnVec(source, v) ->
+            { model with TurnVectors = addVec source v model.TurnVectors }
+            |> withStartTime model
+        | SetTurnVec(source, v) ->
+            let newTurnVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.TurnVectors else HashMap.add source v model.TurnVectors
+            { model with TurnVectors = newTurnVecs }
             |> withStartTime model
         | AddMomentum v ->
             { model with Momentum = model.Momentum + v }
@@ -46,7 +79,7 @@ module FreeFlyController =
                 let targetMove =
                     model.Momentum * model.MoveSpeed * dt.TotalSeconds
                 let moveLocal =
-                    V3d model.MoveVec * model.MoveSpeed * dt.TotalSeconds
+                    V3d model.MoveVec * model.MoveSpeed * model.SprintFactor * dt.TotalSeconds
                 
                 let moveVec = targetMove + moveLocal
                 
@@ -58,9 +91,11 @@ module FreeFlyController =
                 let rotSkyAngle = model.TargetTurn.X * (30.0 * dt.TotalSeconds |> min 1.0)
                 let rotRightAngle = model.TargetTurn.Y * (30.0 * dt.TotalSeconds |> min 1.0)
                        
+                let turn = model.TurnVec * dt.TotalSeconds
+                       
                 let rotation =
-                    Rot3d.Rotation(model.Sky, rotSkyAngle) *
-                    Rot3d.Rotation(right, rotRightAngle)
+                    Rot3d.Rotation(model.Sky, rotSkyAngle + turn.X) *
+                    Rot3d.Rotation(right, rotRightAngle + turn.Y)
                  
                 
                 { model with
@@ -100,17 +135,47 @@ module FreeFlyController =
                     env.Emit [ AddTargetTurn(V2d(tx, ty)) ]
             )
             
+            Dom.OnGamepadAxisChange(fun e ->
+                match e.AxisName with
+                | "LeftStickX" ->
+                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Right", V3d.IOO * e.Value) ]
+                | "LeftStickY" ->
+                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Forward", V3d.OON * e.Value) ]
+                | "RightStickX" ->
+                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnHorizontal", V2d(-e.Value, 0.0)) ]
+                | "RightStickY" ->
+                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnVertical", V2d(0.0, -e.Value)) ]
+                | _ ->
+                    ()
+            )
+            
+            Dom.OnGamepadButtonDown(fun e ->
+                match e.ButtonName with
+                | "LB" -> env.Emit [FreeFlyMessage.SetSprintFactor 0.5 ]
+                | "RB" -> env.Emit [FreeFlyMessage.SetSprintFactor 2.0 ]
+                | "LT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.ONO) ]
+                | "RT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.OIO) ]
+                | _ -> ()
+            )
+            Dom.OnGamepadButtonUp(fun e ->
+                match e.ButtonName with
+                | "RB" | "LB" -> env.Emit [FreeFlyMessage.SetSprintFactor 1.0 ]
+                | "LT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.OIO) ]
+                | "RT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.ONO) ]
+                | _ -> ()
+            )
+            
             Dom.OnKeyDown (fun e ->
                 if not e.Repeat then
                     match e.Key with
                     | "W" | "w" ->
-                        env.Emit [FreeFlyMessage.AddMoveVec V3i.OOI ]
+                        env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.OOI) ]
                     | "S" | "s" ->
-                        env.Emit [FreeFlyMessage.AddMoveVec V3i.OON ]
+                        env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.OON) ]
                     | "A" | "a" ->
-                        env.Emit [FreeFlyMessage.AddMoveVec V3i.NOO ]
+                        env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.NOO) ]
                     | "D" | "d" ->
-                        env.Emit [FreeFlyMessage.AddMoveVec V3i.IOO ]
+                        env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.IOO) ]
                     | "ArrowUp" when e.Shift ->
                         env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
                     | "ArrowDown" when e.Shift ->
@@ -126,13 +191,13 @@ module FreeFlyController =
             Dom.OnKeyUp (fun e ->
                 match e.Key with
                 | "W" | "w" ->
-                    env.Emit [FreeFlyMessage.AddMoveVec V3i.OON ]
+                    env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.OON) ]
                 | "S" | "s" ->
-                    env.Emit [FreeFlyMessage.AddMoveVec V3i.OOI ]
+                    env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.OOI) ]
                 | "A" | "a" ->
-                    env.Emit [FreeFlyMessage.AddMoveVec V3i.IOO ]
+                    env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.IOO) ]
                 | "D" | "d" ->
-                    env.Emit [FreeFlyMessage.AddMoveVec V3i.NOO ]
+                    env.Emit [FreeFlyMessage.AddMoveVec("keyboard", V3d.NOO) ]
                 | _ ->
                     ()
             )

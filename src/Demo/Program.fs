@@ -53,6 +53,11 @@ let testApp (_runtime : IRuntime) =
                 Color "white"
                 FontFamily "monospace"
             ]
+        
+        
+            Dom.OnGamepadAxisChange(fun e ->
+                printfn "%s/%s: %.3f" e.ControllerId  e.AxisName e.Value 
+            )
 
             input {
                 Type "checkbox"
@@ -606,6 +611,7 @@ module Elm =
                 Dom.OnMouseUp(fun e -> env.Emit (Up e.Button))
                 Dom.OnContextMenu(ignore, preventDefault = true)
 
+                
                 //model.Count |> AVal.map (fun v ->
                 //    div {
                 //        Attribute(
@@ -754,6 +760,9 @@ module List =
 [<EntryPoint>]
 let main _ =
     Aardvark.Init()
+    let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
+    use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
+    
     let app = new OpenGlApplication()
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
@@ -774,6 +783,8 @@ let main _ =
         )
         .Build()
         .Run()
+       
+        
     0
 
 

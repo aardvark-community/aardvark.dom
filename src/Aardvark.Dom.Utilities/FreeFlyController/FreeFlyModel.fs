@@ -1,6 +1,7 @@
 namespace Aardvark.Dom.Utilities.FreeFlyController
 
 open System
+open FSharp.Data.Adaptive
 open Aardvark.Base
 open Adaptify
 open Aardvark.Rendering
@@ -17,16 +18,30 @@ type FreeFlyState =
         MoveSpeed : float
         Damping : float
         
-        MoveVec : V3i
+        [<NonAdaptive>]
+        MoveVectors : HashMap<string, V3d>
+        
+        [<NonAdaptive>]
+        TurnVectors : HashMap<string, V2d>
+        
+        SprintFactor : float
+        
         Momentum : V3d
         TargetTurn : V2d
         Camera : CameraView
     }
     
+    member x.MoveVec =
+        (V3d.Zero, x.MoveVectors) ||> HashMap.fold (fun a _ b -> a + b)
+    
+    member x.TurnVec =
+        (V2d.Zero, x.TurnVectors) ||> HashMap.fold (fun a _ b -> a + b)
+    
     member x.IsAnimating =
         not (Fun.IsTiny(x.Momentum, 1E-8)) ||
+        not (Fun.IsTiny(x.MoveVec, 1E-8)) ||
         not (Fun.IsTiny(x.TargetTurn, 1E-8)) ||
-        x.MoveVec <> V3i.Zero
+        not (Fun.IsTiny(x.TurnVec, 1E-8))
     
     
 module FreeFlyState =

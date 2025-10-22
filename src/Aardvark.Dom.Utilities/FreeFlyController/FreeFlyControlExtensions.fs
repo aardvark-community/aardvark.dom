@@ -13,6 +13,7 @@ type SimpleFreeFlyConfig =
         Location : V3d
         LookAt : V3d
         Sky : V3d
+        MoveSpeed : float
     }
 
 type SimpleFreeFlyController = SimpleFreeFlyController of SimpleFreeFlyConfig
@@ -29,10 +30,12 @@ module RenderControlFreeFlyExtensions =
                 Sky = config.Sky
                 Forward = Vec.normalize (config.LookAt - config.Location)
                 
-                MoveSpeed = 1.0
+                MoveSpeed = config.MoveSpeed
                 Damping = 20.0
                 
-                MoveVec = V3i.Zero
+                SprintFactor = 1.0
+                MoveVectors = HashMap.empty
+                TurnVectors = HashMap.empty
                 Momentum = V3d.Zero
                 TargetTurn = V2d.Zero
                 Camera = CameraView.lookAt config.Location config.LookAt config.Sky

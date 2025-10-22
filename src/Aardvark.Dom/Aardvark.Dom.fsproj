@@ -10,6 +10,7 @@
     <None Include="paket.references" />
     <None Include="paket.template" />
     <Compile Include="Events.fs" />
+    <Compile Include="Gamepad.fs" />
     <Compile Include="SceneGraph\BVH.fs" />
     <Compile Include="SceneGraph\Intersectable.fs" />
     <Compile Include="SceneGraph\SceneEvent.fs" />

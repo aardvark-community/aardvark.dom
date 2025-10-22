@@ -831,6 +831,51 @@ type Dom private() =
             ?preventDefault = preventDefault
         )
 
+
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> unit, ?useCapture : bool) =
+        Dom.On(
+            "gamepadaxischange", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> bool, ?useCapture : bool) = 
+        Dom.On(
+            "gamepadaxischange", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> unit, ?useCapture : bool) = 
+        Dom.On(
+            "gamepadbuttondown", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> bool, ?useCapture : bool) = 
+        Dom.On(
+            "gamepadbuttondown", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> unit, ?useCapture : bool) = 
+        Dom.On(
+            "gamepadbuttonup", 
+            callback, 
+            ?useCapture = useCapture
+        )
+        
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> bool, ?useCapture : bool) = 
+        Dom.On(
+            "gamepadbuttonup", 
+            callback, 
+            ?useCapture = useCapture
+        )
+
+
+
 [<AbstractClass; Sealed; AutoOpen>]
 type RenderControl private() =
     static member inline Samples(samples : int) =
