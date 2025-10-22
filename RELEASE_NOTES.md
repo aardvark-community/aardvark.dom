@@ -1,3 +1,6 @@
+### 1.0.16
+* added basic Gamepad support
+
 ### 1.0.15
 * fixed aardvark.registerSelector again
 
