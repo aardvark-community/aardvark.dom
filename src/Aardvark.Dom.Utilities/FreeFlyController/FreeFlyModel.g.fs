@@ -1,5 +1,5 @@
-//c8ab11bf-3ed7-6b89-3cfc-c288b2dc1fe8
-//4e9bbf49-d0bb-365a-176c-57a8251402ac
+//b841fe2c-1784-1633-d11c-00c10f21ba42
+//d811ab86-5635-6d86-e798-8e0cc43bbba6
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -12,15 +12,14 @@ open Adaptify
 open Aardvark.Dom.Utilities.FreeFlyController
 [<System.Diagnostics.CodeAnalysis.SuppressMessage("NameConventions", "*")>]
 type AdaptiveFreeFlyState(value : FreeFlyState) =
-    let mutable _MoveVec_ = FSharp.Data.Adaptive.cval(value.MoveVec)
-    let mutable _IsAnimating_ = FSharp.Data.Adaptive.cval(value.IsAnimating)
     let mutable _TurnVec_ = FSharp.Data.Adaptive.cval(value.TurnVec)
+    let mutable _IsAnimating_ = FSharp.Data.Adaptive.cval(value.IsAnimating)
+    let mutable _MoveVec_ = FSharp.Data.Adaptive.cval(value.MoveVec)
     let _LastRender_ = FSharp.Data.Adaptive.cval(value.LastRender)
     let _Position_ = FSharp.Data.Adaptive.cval(value.Position)
     let _Sky_ = FSharp.Data.Adaptive.cval(value.Sky)
     let _Forward_ = FSharp.Data.Adaptive.cval(value.Forward)
-    let _MoveSpeed_ = FSharp.Data.Adaptive.cval(value.MoveSpeed)
-    let _Damping_ = FSharp.Data.Adaptive.cval(value.Damping)
+    let _Config_ = FSharp.Data.Adaptive.cval(value.Config)
     let _SprintFactor_ = FSharp.Data.Adaptive.cval(value.SprintFactor)
     let _Momentum_ = FSharp.Data.Adaptive.cval(value.Momentum)
     let _TargetTurn_ = FSharp.Data.Adaptive.cval(value.TargetTurn)
@@ -33,29 +32,27 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
         if Microsoft.FSharp.Core.Operators.not((FSharp.Data.Adaptive.ShallowEqualityComparer<FreeFlyState>.ShallowEquals(value, __value))) then
             __value <- value
             __adaptive.MarkOutdated()
-            _MoveVec_.Value <- value.MoveVec
-            _IsAnimating_.Value <- value.IsAnimating
             _TurnVec_.Value <- value.TurnVec
+            _IsAnimating_.Value <- value.IsAnimating
+            _MoveVec_.Value <- value.MoveVec
             _LastRender_.Value <- value.LastRender
             _Position_.Value <- value.Position
             _Sky_.Value <- value.Sky
             _Forward_.Value <- value.Forward
-            _MoveSpeed_.Value <- value.MoveSpeed
-            _Damping_.Value <- value.Damping
+            _Config_.Value <- value.Config
             _SprintFactor_.Value <- value.SprintFactor
             _Momentum_.Value <- value.Momentum
             _TargetTurn_.Value <- value.TargetTurn
             _Camera_.Value <- value.Camera
     member __.Current = __adaptive
-    member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
-    member __.IsAnimating = _IsAnimating_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
     member __.TurnVec = _TurnVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
+    member __.IsAnimating = _IsAnimating_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
+    member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.LastRender = _LastRender_ :> FSharp.Data.Adaptive.aval<System.TimeSpan>
     member __.Position = _Position_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.Sky = _Sky_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.Forward = _Forward_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
-    member __.MoveSpeed = _MoveSpeed_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
-    member __.Damping = _Damping_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
+    member __.Config = _Config_ :> FSharp.Data.Adaptive.aval<FreeFlyConfig>
     member __.MoveVectors = __value.MoveVectors
     member __.TurnVectors = __value.TurnVectors
     member __.SprintFactor = _SprintFactor_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>

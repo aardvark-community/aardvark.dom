@@ -1,5 +1,5 @@
 //23ab9d32-1f9c-2ae0-3bbd-78730d28d2fc
-//a7847903-a973-1463-d1e9-349d77f8a8c9
+//f8c4462a-042c-2ef1-d791-98747fca12f7
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -12,8 +12,8 @@ open Adaptify
 open Aardvark.Dom.Utilities.OrbitController
 [<System.Diagnostics.CodeAnalysis.SuppressMessage("NameConventions", "*")>]
 type AdaptiveOrbitState(value : OrbitState) =
-    let mutable _super_ = FSharp.Data.Adaptive.cval(value.super)
     let mutable _animationRunning_ = FSharp.Data.Adaptive.cval(value.animationRunning)
+    let mutable _super_ = FSharp.Data.Adaptive.cval(value.super)
     let _sky_ = FSharp.Data.Adaptive.cval(value.sky)
     let _center_ = FSharp.Data.Adaptive.cval(value.center)
     let _phi_ = FSharp.Data.Adaptive.cval(value.phi)
@@ -46,8 +46,8 @@ type AdaptiveOrbitState(value : OrbitState) =
         if Microsoft.FSharp.Core.Operators.not((FSharp.Data.Adaptive.ShallowEqualityComparer<OrbitState>.ShallowEquals(value, __value))) then
             __value <- value
             __adaptive.MarkOutdated()
-            _super_.Value <- value.super
             _animationRunning_.Value <- value.animationRunning
+            _super_.Value <- value.super
             _sky_.Value <- value.sky
             _center_.Value <- value.center
             _phi_.Value <- value.phi
@@ -73,8 +73,8 @@ type AdaptiveOrbitState(value : OrbitState) =
             _speed_.Value <- value.speed
             _pick_.Value <- value.pick
     member __.Current = __adaptive
-    member __.super = _super_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.int>
     member __.animationRunning = _animationRunning_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
+    member __.super = _super_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.int>
     member __.sky = _sky_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.center = _center_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.phi = _phi_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>

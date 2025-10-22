@@ -12,6 +12,7 @@ type FreeFlyMessage =
     | SetSprintFactor of factor : float
     | AddMomentum of direction : V3d
     | AddTargetTurn of turn : V2d
+    | UpdateConfig of cfg : FreeFlyConfig
     | AdjustMoveSpeed of factor : float
     | Rendered
     
@@ -65,8 +66,10 @@ module FreeFlyController =
         | AddTargetTurn t ->
             { model with TargetTurn = model.TargetTurn + t }
             |> withStartTime model
+        | UpdateConfig cfg ->
+            { model with Config = cfg }
         | AdjustMoveSpeed f ->
-            { model with MoveSpeed = model.MoveSpeed * f }
+            { model with Config = { model.Config with MoveSpeed = model.Config.MoveSpeed * f } }
         | Rendered ->
             if model.IsAnimating then
                 let now = now()
@@ -77,9 +80,9 @@ module FreeFlyController =
                 
                 
                 let targetMove =
-                    model.Momentum * model.MoveSpeed * dt.TotalSeconds
+                    model.Momentum * model.Config.MoveSpeed * dt.TotalSeconds
                 let moveLocal =
-                    V3d model.MoveVec * model.MoveSpeed * model.SprintFactor * dt.TotalSeconds
+                    V3d model.MoveVec * model.Config.MoveSpeed * model.SprintFactor * dt.TotalSeconds
                 
                 let moveVec = targetMove + moveLocal
                 
@@ -91,7 +94,7 @@ module FreeFlyController =
                 let rotSkyAngle = model.TargetTurn.X * (30.0 * dt.TotalSeconds |> min 1.0)
                 let rotRightAngle = model.TargetTurn.Y * (30.0 * dt.TotalSeconds |> min 1.0)
                        
-                let turn = model.TurnVec * dt.TotalSeconds
+                let turn = model.TurnVec * model.Config.TurnSpeed * dt.TotalSeconds
                        
                 let rotation =
                     Rot3d.Rotation(model.Sky, rotSkyAngle + turn.X) *
@@ -103,7 +106,7 @@ module FreeFlyController =
                     LastRender = now
                     Position = model.Position + move
                     Forward = rotation.Transform model.Forward 
-                    Momentum = model.Momentum * 0.5 ** (model.Damping * dt.TotalSeconds)
+                    Momentum = model.Momentum * 0.5 ** (model.Config.Damping * dt.TotalSeconds)
                 } |> FreeFlyState.withCamera
             else
                 model
@@ -136,30 +139,30 @@ module FreeFlyController =
             )
             
             Dom.OnGamepadAxisChange(fun e ->
+                let v = float (sign e.Value) * (abs e.Value ** 2.0)
                 match e.AxisName with
                 | "LeftStickX" ->
-                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Right", V3d.IOO * e.Value) ]
+                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Right", V3d.IOO * v * 1.5) ]
                 | "LeftStickY" ->
-                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Forward", V3d.OON * e.Value) ]
+                    env.Emit [FreeFlyMessage.SetMoveVec($"{e.ControllerId}Forward", V3d.OON * v * 1.5) ]
                 | "RightStickX" ->
-                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnHorizontal", V2d(-e.Value, 0.0)) ]
+                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnHorizontal", V2d(-v, 0.0)) ]
                 | "RightStickY" ->
-                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnVertical", V2d(0.0, -e.Value)) ]
+                    env.Emit [FreeFlyMessage.SetTurnVec($"{e.ControllerId}TurnVertical", V2d(0.0, -v)) ]
                 | _ ->
                     ()
             )
             
             Dom.OnGamepadButtonDown(fun e ->
                 match e.ButtonName with
-                | "LB" -> env.Emit [FreeFlyMessage.SetSprintFactor 0.5 ]
-                | "RB" -> env.Emit [FreeFlyMessage.SetSprintFactor 2.0 ]
+                | "LB" -> env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5) ]
+                | "RB" -> env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5 ]
                 | "LT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.ONO) ]
                 | "RT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.OIO) ]
                 | _ -> ()
             )
             Dom.OnGamepadButtonUp(fun e ->
                 match e.ButtonName with
-                | "RB" | "LB" -> env.Emit [FreeFlyMessage.SetSprintFactor 1.0 ]
                 | "LT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.OIO) ]
                 | "RT" -> env.Emit [FreeFlyMessage.AddMoveVec($"{e.ControllerId}Up", V3d.ONO) ]
                 | _ -> ()

@@ -7,6 +7,20 @@ open Adaptify
 open Aardvark.Rendering
 open Aardvark.Dom
 
+type FreeFlyConfig =
+    {
+        MoveSpeed : float
+        Damping : float
+        TurnSpeed : float
+    }
+
+    static member Default =
+        {
+            MoveSpeed = 1.5
+            Damping = 20.0
+            TurnSpeed = 1.5
+        }
+
 [<ModelType>]
 type FreeFlyState =
     {
@@ -15,8 +29,7 @@ type FreeFlyState =
         Sky : V3d
         Forward : V3d
         
-        MoveSpeed : float
-        Damping : float
+        Config : FreeFlyConfig
         
         [<NonAdaptive>]
         MoveVectors : HashMap<string, V3d>

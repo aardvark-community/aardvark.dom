@@ -304,7 +304,7 @@ let testApp (_runtime : IRuntime) =
                     Location = V3d(3,4,5)
                     LookAt = V3d.Zero
                     Sky = V3d.OOI
-                    MoveSpeed = 1.5
+                    Config = None
                 }
                 
                 // SimpleOrbitController {

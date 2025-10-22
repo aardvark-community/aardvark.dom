@@ -13,7 +13,7 @@ type SimpleFreeFlyConfig =
         Location : V3d
         LookAt : V3d
         Sky : V3d
-        MoveSpeed : float
+        Config : option<FreeFlyConfig>
     }
 
 type SimpleFreeFlyController = SimpleFreeFlyController of SimpleFreeFlyConfig
@@ -25,13 +25,11 @@ module RenderControlFreeFlyExtensions =
     
         let mutable state =
             {
+                Config = defaultArg config.Config FreeFlyConfig.Default
                 LastRender = TimeSpan.Zero
                 Position = config.Location
                 Sky = config.Sky
                 Forward = Vec.normalize (config.LookAt - config.Location)
-                
-                MoveSpeed = config.MoveSpeed
-                Damping = 20.0
                 
                 SprintFactor = 1.0
                 MoveVectors = HashMap.empty

@@ -1,3 +1,6 @@
+### 1.0.17
+* improved Gamepad support in FreeFlyController
+
 ### 1.0.16
 * added basic Gamepad support 
 
