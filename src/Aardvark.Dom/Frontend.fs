@@ -123,6 +123,55 @@ module Dom =
     let menuitem = NodeBuilder "menuitem"
     let multicol = NodeBuilder "multicol"
 
+    // Missing HTML5 semantic and structural elements
+    let nav = NodeBuilder "nav"
+    let th = NodeBuilder "th"
+    let article = NodeBuilder "article"
+    let aside = NodeBuilder "aside"
+    let section = NodeBuilder "section"
+    let header = NodeBuilder "header"
+    let footer = NodeBuilder "footer"
+    let main = NodeBuilder "main"
+    let figure = NodeBuilder "figure"
+    let figcaption = NodeBuilder "figcaption"
+    let hgroup = NodeBuilder "hgroup"
+
+    // Missing HTML5 text-level semantic elements
+    let mark = NodeBuilder "mark"
+    let time = NodeBuilder "time"
+    let dfn = NodeBuilder "dfn"
+    let var = NodeBuilder "var"
+    let kbd = NodeBuilder "kbd"
+    let ruby = NodeBuilder "ruby"
+    let rt = NodeBuilder "rt"
+    let rp = NodeBuilder "rp"
+    let bdi = NodeBuilder "bdi"
+    let wbr = NodeBuilder "wbr"
+
+    // Missing HTML5 edit elements
+    let ins = NodeBuilder "ins"
+    let del = NodeBuilder "del"
+
+    // Missing HTML5 multimedia elements
+    let video = NodeBuilder "video"
+    let audio = NodeBuilder "audio"
+    let source = NodeBuilder "source"
+    let track = NodeBuilder "track"
+
+    // Missing HTML5 graphics and embedded content
+    let canvas = NodeBuilder "canvas"
+    let object = NodeBuilder "object"
+    let svg = NodeBuilder "svg"
+    let math = NodeBuilder "math"
+
+    // Missing HTML5 interactive elements
+    let dialog = NodeBuilder "dialog"
+
+    // Missing HTML5 scripting elements
+    let template = NodeBuilder "template"
+    let slot = NodeBuilder "slot"
+    let noscript = NodeBuilder "noscript"
+
 [<AbstractClass; Sealed; AutoOpen>]
 type Dom private() =
     
