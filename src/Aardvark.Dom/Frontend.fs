@@ -832,46 +832,52 @@ type Dom private() =
         )
 
 
-    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> unit, ?useCapture : bool) =
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> unit, ?useCapture : bool, ?preventDefault : bool) =
         Dom.On(
             "gamepadaxischange", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
         
-    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> bool, ?useCapture : bool) = 
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "gamepadaxischange", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
         
-    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> unit, ?useCapture : bool) = 
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "gamepadbuttondown", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
         
-    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> bool, ?useCapture : bool) = 
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "gamepadbuttondown", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
         
-    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> unit, ?useCapture : bool) = 
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "gamepadbuttonup", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
         
-    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> bool, ?useCapture : bool) = 
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
         Dom.On(
             "gamepadbuttonup", 
             callback, 
-            ?useCapture = useCapture
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
         )
 
 
