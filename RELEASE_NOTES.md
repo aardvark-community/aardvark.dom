@@ -1,3 +1,6 @@
+### 1.0.18
+* FreeFlyController now installs touchsticks for touch-devices
+
 ### 1.0.17
 * improved Gamepad support in FreeFlyController
 
