@@ -15,6 +15,7 @@
     <Compile Include="OrbitController\OrbitState.g.fs" />
     <Compile Include="OrbitController\OrbitController.fs" />
     <Compile Include="OrbitController\RenderControlExtensions.fs" />
+    <EmbeddedResource Include="FreeFlyController\virtual-touch-sticks.js" />
     <Compile Include="FreeFlyController\FreeFlyModel.fs" />
     <Compile Include="FreeFlyController\FreeFlyModel.g.fs" />
     <Compile Include="FreeFlyController\FreeFlyController.fs" />

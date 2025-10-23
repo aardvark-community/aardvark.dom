@@ -17,7 +17,14 @@ type FreeFlyMessage =
     | Rendered
     
 module FreeFlyController =
-    
+
+    let private virtualTouchSticksJs =
+        let ass = typeof<FreeFlyMessage>.Assembly
+        let resourceName = $"{ass.GetName().Name}.FreeFlyController.virtual-touch-sticks.js"
+        use s = ass.GetManifestResourceStream resourceName
+        use r = new System.IO.StreamReader(s)
+        r.ReadToEnd()
+
     let inline private isTinyAux<'a, 'b when ('a or 'b) : (static member IsTiny : 'a * float -> bool)> (foo : 'b) (v : 'a) (eps : float) =
         ((^a or ^b) : (static member IsTiny : 'a * float -> bool) (v, eps))
     let inline isTiny v eps = isTinyAux Unchecked.defaultof<Fun> v eps
@@ -113,25 +120,28 @@ module FreeFlyController =
 
     let getAttributes (env : Env<FreeFlyMessage>) =
         att {
-            
+
+            // Install virtual touch sticks
+            Dom.OnBoot(virtualTouchSticksJs)
+
             Dom.OnMouseWheel(fun e ->
                 env.Emit [FreeFlyMessage.AddMomentum (V3d(0.0, 0.0, -0.1 * e.DeltaY))]
             )
             
             let mutable rotDown = false
             Dom.OnPointerDown((fun e ->
-                if e.Button = Button.Left then
+                if e.PointerType = PointerType.Mouse && e.Button = Button.Left then
                     rotDown <- true
                 
             ), pointerCapture = true)
             
             Dom.OnPointerUp((fun e ->
-                if e.Button = Button.Left then
+                if e.PointerType = PointerType.Mouse && e.Button = Button.Left then
                     rotDown <- false
             ), pointerCapture = true)
             
             Dom.OnPointerMove(fun e ->
-                if rotDown then
+                if e.PointerType = PointerType.Mouse && rotDown then
                     let tx = -0.005 * e.MovementX
                     let ty = -0.005 * e.MovementY
                     

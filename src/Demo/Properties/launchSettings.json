@@ -2,11 +2,11 @@
   "profiles": {
     "Demo": {
       "commandName": "Project",
-      "launchBrowser": true,
+      "launchBrowser": false,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
-      "applicationUrl": "https://localhost:53674;http://localhost:53675"
+      "applicationUrl": "https://*:53674;http://*:53675"
     }
   }
 }
