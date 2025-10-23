@@ -1,9 +1,9 @@
 (function() {
     const container = document.body;
-    const gamepadLib = window.aardvark.gamepad;
+    const gamepadLib = window.gamepadEvents;
 
     if (!gamepadLib) {
-        console.error('GamepadEventLibrary not found');
+        console.error('GamepadEventLibrary not found at window.gamepadEvents');
         return;
     }
 
