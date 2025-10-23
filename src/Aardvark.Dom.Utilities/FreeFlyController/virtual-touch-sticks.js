@@ -2,10 +2,12 @@
     const container = __THIS__;
     const gamepadLib = window.gamepadEvents;
 
-    if (!gamepadLib) {
+    
+    if (!gamepadLib || !container) {
         console.error('GamepadEventLibrary not found at window.gamepadEvents');
         return;
     }
+    gamepadLib.setGlobalTarget(container);
 
     // Register virtual controller
     const controllerId = gamepadLib.registerController('virtual-touch-controller');
@@ -149,12 +151,12 @@
                 // Emit gamepad axis events
                 if (touchState.side === 'left') {
                     // Left stick controls movement (axes 0 and 1)
-                    gamepadLib.dispatchAxisEvent(controllerId, 0, values.x);
-                    gamepadLib.dispatchAxisEvent(controllerId, 1, values.y);
+                    gamepadLib.dispatchAxisEvent(controllerId, 0, values.x, container);
+                    gamepadLib.dispatchAxisEvent(controllerId, 1, values.y, container);
                 } else {
                     // Right stick controls camera (axes 2 and 3)
-                    gamepadLib.dispatchAxisEvent(controllerId, 2, values.x);
-                    gamepadLib.dispatchAxisEvent(controllerId, 3, values.y);
+                    gamepadLib.dispatchAxisEvent(controllerId, 2, values.x, container);
+                    gamepadLib.dispatchAxisEvent(controllerId, 3, values.y, container);
                 }
             }
         }
@@ -174,11 +176,11 @@
 
                 // Reset axes to zero
                 if (touchState.side === 'left') {
-                    gamepadLib.dispatchAxisEvent(controllerId, 0, 0);
-                    gamepadLib.dispatchAxisEvent(controllerId, 1, 0);
+                    gamepadLib.dispatchAxisEvent(controllerId, 0, 0, container);
+                    gamepadLib.dispatchAxisEvent(controllerId, 1, 0, container);
                 } else {
-                    gamepadLib.dispatchAxisEvent(controllerId, 2, 0);
-                    gamepadLib.dispatchAxisEvent(controllerId, 3, 0);
+                    gamepadLib.dispatchAxisEvent(controllerId, 2, 0, container);
+                    gamepadLib.dispatchAxisEvent(controllerId, 3, 0, container);
                 }
             }
 

@@ -130,18 +130,18 @@ module FreeFlyController =
             
             let mutable rotDown = false
             Dom.OnPointerDown((fun e ->
-                if e.Button = Button.Left then
+                if e.PointerType = PointerType.Mouse && e.Button = Button.Left then
                     rotDown <- true
                 
             ), pointerCapture = true)
             
             Dom.OnPointerUp((fun e ->
-                if e.Button = Button.Left then
+                if e.PointerType = PointerType.Mouse && e.Button = Button.Left then
                     rotDown <- false
             ), pointerCapture = true)
             
             Dom.OnPointerMove(fun e ->
-                if rotDown then
+                if e.PointerType = PointerType.Mouse && rotDown then
                     let tx = -0.005 * e.MovementX
                     let ty = -0.005 * e.MovementY
                     
