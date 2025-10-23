@@ -1,5 +1,5 @@
 (function() {
-    const container = document.body;
+    const container = __THIS__;
     const gamepadLib = window.gamepadEvents;
 
     if (!gamepadLib) {
