@@ -989,7 +989,8 @@ type Css private() =
     static member inline BackgroundSize(value : string) = StyleProperty("background-size", value)
     static member inline BackgroundOrigin(value : string) = StyleProperty("background-origin", value)
     static member inline BackgroundClip(value : string) = StyleProperty("background-clip", value)
-
+    static member inline Outline(value : string) = StyleProperty("outline", value)
+    
     static member inline FontSize(value : int) =
         StyleProperty("font-size", sprintf "%dpx" value)
 

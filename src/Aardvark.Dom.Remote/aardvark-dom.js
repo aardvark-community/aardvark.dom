@@ -870,8 +870,8 @@
           }
         }
 
-        var deadzone = 0.15;
-        var changeThreshold = 0.05;
+        var deadzone = 0.12;
+        var changeThreshold = 0.005;
         for (var j = 0; j < gamepad.axes.length; j++) {
           var rawValue = gamepad.axes[j];
           var value = Math.abs(rawValue) < deadzone ? 0 : rawValue;
@@ -1141,7 +1141,7 @@
         var zoneRect = touchZone.getBoundingClientRect();
         var relativeX = x - zoneRect.left;
         var relativeY = y - zoneRect.top;
-        stick.style.cssText = 'position: absolute; left: ' + relativeX + 'px; top: ' + relativeY + 'px; width: 120px; height: 120px; transform: translate(-50%, -50%); pointer-events: none;';
+        stick.style.cssText = 'position: absolute; left: ' + relativeX + 'px; top: ' + relativeY + 'px; width: 140px; height: 140px; transform: translate(-50%, -50%); pointer-events: none;';
 
         var base = document.createElement('div');
         base.style.cssText = 'width: 100%; height: 100%; background: radial-gradient(circle at 30% 30%, rgba(220,220,230,0.3), rgba(200,200,210,0.4)); border: 3px solid rgba(255,255,255,0.4); border-radius: 50%; position: relative; box-shadow: 0 2px 15px rgba(0,0,0,0.2);';

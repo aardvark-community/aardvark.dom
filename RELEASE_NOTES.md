@@ -1,3 +1,6 @@
+### 1.0.19
+* enhanced FreeFlyController
+
 ### 1.0.18
 * FreeFlyController now installs touchsticks for touch-devices
 

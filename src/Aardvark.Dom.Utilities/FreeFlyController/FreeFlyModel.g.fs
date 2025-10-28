@@ -1,5 +1,5 @@
-//b841fe2c-1784-1633-d11c-00c10f21ba42
-//b8a54279-1bbc-1700-7a2c-c3942300307b
+//7e59030d-0ed1-bc59-d934-9a224fa2005e
+//7df38e55-59d5-5dca-45f9-2e92ff456d1f
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -22,6 +22,8 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
     let _Config_ = FSharp.Data.Adaptive.cval(value.Config)
     let _SprintFactor_ = FSharp.Data.Adaptive.cval(value.SprintFactor)
     let _Momentum_ = FSharp.Data.Adaptive.cval(value.Momentum)
+    let _TargetMoveLocal_ = FSharp.Data.Adaptive.cval(value.TargetMoveLocal)
+    let _TargetMoveGlobal_ = FSharp.Data.Adaptive.cval(value.TargetMoveGlobal)
     let _TargetTurn_ = FSharp.Data.Adaptive.cval(value.TargetTurn)
     let _Camera_ = FSharp.Data.Adaptive.cval(value.Camera)
     let mutable __value = value
@@ -42,8 +44,11 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
             _Config_.Value <- value.Config
             _SprintFactor_.Value <- value.SprintFactor
             _Momentum_.Value <- value.Momentum
+            _TargetMoveLocal_.Value <- value.TargetMoveLocal
+            _TargetMoveGlobal_.Value <- value.TargetMoveGlobal
             _TargetTurn_.Value <- value.TargetTurn
             _Camera_.Value <- value.Camera
+            ()
     member __.Current = __adaptive
     member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.TurnVec = _TurnVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
@@ -57,6 +62,9 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
     member __.TurnVectors = __value.TurnVectors
     member __.SprintFactor = _SprintFactor_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.Momentum = _Momentum_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
+    member __.TargetMoveLocal = _TargetMoveLocal_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
+    member __.TargetMoveGlobal = _TargetMoveGlobal_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.TargetTurn = _TargetTurn_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
     member __.Camera = _Camera_ :> FSharp.Data.Adaptive.aval<Aardvark.Rendering.CameraView>
+    member __.Handler = __value.Handler
 

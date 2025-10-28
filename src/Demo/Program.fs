@@ -295,7 +295,7 @@ let testApp (_runtime : IRuntime) =
             let rotActive = cval true
             renderControl  {
                 // HTML attributes
-                Style [Width "100%"; Height "600px"; Background "#202124"] 
+                Style [Width "100%"; Height "600px"; Background "#202124"; Outline "none"] 
                 Samples 4
                 Quality 50
                 TabIndex 0
