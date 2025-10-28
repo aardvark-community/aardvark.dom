@@ -382,6 +382,12 @@ let testApp (_runtime : IRuntime) =
                 let proj = size |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
                 //Sg.View view
                 Sg.Proj proj
+                
+                gizmo {
+                    Gizmo.Top 0
+                    Gizmo.Left 0
+                }
+                
 
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
                 Dom.Style [Css.Cursor "crosshair"]

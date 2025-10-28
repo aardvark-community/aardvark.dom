@@ -1,3 +1,6 @@
+### 1.0.20
+* added simple Gizmo-Overlay to Aardvark.Dom.Utilities
+
 ### 1.0.19
 * enhanced FreeFlyController
 

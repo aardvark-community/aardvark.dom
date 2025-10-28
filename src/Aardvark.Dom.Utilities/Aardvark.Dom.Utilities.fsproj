@@ -8,6 +8,7 @@
     <LocalAdaptify>true</LocalAdaptify>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Gizmo.fs" />
     <None Include="paket.references" />
     <None Include="paket.template" />
     <Compile Include="Utilites.fs" />

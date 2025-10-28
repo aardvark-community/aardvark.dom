@@ -444,6 +444,7 @@ module NodeBuilderHelpers =
         let mutable view = None
         let mutable proj = None
         let scene = SceneNodeBuilderState()
+        do scene.Append [Sg.Uniform("ViewportSize", info.ViewportSize)]
         
         let mutable onReady : list<IEventHandler -> unit> = []
 
