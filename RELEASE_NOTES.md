@@ -1,3 +1,6 @@
+### 1.0.21
+* fixed gizmo overlay event handling for non-fullscreen canvases
+
 ### 1.0.20
 * added simple Gizmo-Overlay to Aardvark.Dom.Utilities
 

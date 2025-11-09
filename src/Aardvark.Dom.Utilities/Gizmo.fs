@@ -272,7 +272,7 @@ module Gizmo =
             let tryGetSphere (e : ScenePointerEvent) =
                 let ndc = 
                     let trafo = AVal.force newTrafo
-                    let tc = V2d e.Original.ClientPosition / e.Original.ClientRect.Size
+                    let tc = (V2d e.Original.ClientPosition - e.Original.ClientRect.Min) / e.Original.ClientRect.Size
                     let ndc = V2d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y)
                     trafo.Backward.TransformPos(V3d(ndc, -1.0)).XY
                     
