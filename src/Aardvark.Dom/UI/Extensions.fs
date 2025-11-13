@@ -164,6 +164,86 @@ module NodeBuilderHelpers =
                 s, { attributes = AttributeTable.Empty; children = NodeList n }
             
         abstract Run : ('s -> 's * AttributeMap * alist<DomNode>) -> 'x
+      
+    [<AbstractClass>]
+    type StateVoidNodeBuilder<'s, 'x>() =
+        
+        member inline x.Yield(att : Attribute) =
+            fun (s : 's) -> s, AttributeTable [att]
+        
+        member inline x.Yield(att : list<Attribute>) =
+            fun (s : 's) -> s, AttributeTable att
+
+        member inline x.Yield(att : AttributeMap) =
+            fun (s : 's) -> s, AttributeTable att
+
+        member inline x.Yield(att : aval<#seq<Attribute>>) =
+            fun (s : 's) -> s, AttributeTable (AttributeMap.ofSeqA att)
+        
+        member inline x.Yield(att : aval<Attribute>) =
+            fun (s : 's) -> s, AttributeTable (AttributeMap.ofAVal att)
+
+        member inline x.Yield(att : aval<option<Attribute>>) =
+            fun (s : 's) -> s, AttributeTable (AttributeMap.ofOptionA att)
+
+        member inline x.For(elements : seq<'a>, [<InlineIfLambda>] action : 'a -> 's -> 's * AttributeTable) =
+            fun (s : 's) -> 
+                let mutable state = s
+                let mutable res = AttributeTable.Empty
+                for e in elements do
+                    let s1, r = action e state
+                    state <- s1
+                    res <- AttributeTable.Combine(res, r)
+
+                state, res
+
+        member inline x.While([<InlineIfLambda>] guard : unit -> bool, [<InlineIfLambda>] action : 's -> 's * AttributeTable) =
+            fun (s : 's) -> 
+                let mutable state = s
+                let mutable res = AttributeTable.Empty
+                while guard() do
+                    let s1, r = action state
+                    state <- s1
+                    res <- AttributeTable.Combine(res, r)
+                state, res
+
+
+        member x.TryFinally(action : 's -> 's * AttributeTable, comp : unit -> unit) =
+            fun s ->
+                try action s
+                finally comp()
+
+        member inline x.Zero() =
+            fun (s : 's) -> s, AttributeTable.Empty
+
+        member inline x.Combine(l : 's -> 's * AttributeTable, r : 's -> 's * AttributeTable) =   
+            fun (s : 's) -> 
+                let s, l = l s
+                let s, r = r s
+                s, AttributeTable.Combine(l, r)
+
+        member inline x.Delay([<InlineIfLambda>] action : unit -> 's -> 's * AttributeTable) = 
+            action ()
+
+        member inline x.Run(run : 's -> 's * AttributeTable) =
+        
+            let materialize (s : 's) =
+                let s, bs = run s
+                s, AttributeMap (bs.ToAMap())
+
+            x.Run materialize
+
+        member x.Yield(action : 's -> 's) =
+            fun (s : 's) ->
+                action s, AttributeTable.Empty
+            
+        member x.Bind(action : 's -> 's * 'a, cont : 'a -> 's -> 's * AttributeTable) =
+            fun (s : 's) ->
+                let s, a = action s
+                cont a s
+            
+        abstract Run : ('s -> 's * AttributeMap) -> 'x
+      
         
     module NodeBuilderState =
         let empty =

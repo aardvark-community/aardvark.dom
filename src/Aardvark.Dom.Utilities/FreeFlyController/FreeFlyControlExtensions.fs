@@ -25,6 +25,7 @@ module RenderControlFreeFlyExtensions =
     
         let mutable state =
             {
+                PanMove = false
                 Config = defaultArg config.Config FreeFlyConfig.Default
                 LastRender = TimeSpan.Zero
                 Position = config.Location

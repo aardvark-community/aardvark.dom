@@ -52,6 +52,9 @@ type FreeFlyState =
         [<NonAdaptive>]
         TurnVectors : HashMap<string, V2d>
         
+        [<NonAdaptive>]
+        PanMove : bool
+        
         SprintFactor : float
         
         Momentum : V3d
@@ -66,8 +69,9 @@ type FreeFlyState =
     }
     
     member x.MoveVec =
-        (V3d.Zero, x.MoveVectors) ||> HashMap.fold (fun a _ b -> a + b)
-    
+        let v = (V3d.Zero, x.MoveVectors) ||> HashMap.fold (fun a _ b -> a + b)
+        if x.PanMove then v.XZY else v
+        
     member x.TurnVec =
         (V2d.Zero, x.TurnVectors) ||> HashMap.fold (fun a _ b -> a + b)
     

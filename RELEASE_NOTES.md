@@ -1,3 +1,6 @@
+### 1.0.22
+* fixed FreeFlyController bug with hanging keys
+
 ### 1.0.21
 * fixed gizmo overlay event handling for non-fullscreen canvases
 
