@@ -21,6 +21,8 @@ type FreeFlyMessage =
     | Rendered
     | SetEventHandler of handler : IEventHandler
     | FlyTo of location : V3d * forward : V3d
+    | AnimationFinished
+    | SetEnabled of bool
     
 module FreeFlyController =
 
@@ -55,82 +57,16 @@ module FreeFlyController =
             else Some newValue
         )
     
-    let update (model : FreeFlyState) (msg : FreeFlyMessage) =
+    let update (env : Env<FreeFlyMessage>) (model : FreeFlyState) (msg : FreeFlyMessage) =
+        
+        let inline checkAnimationFinished (m : FreeFlyState) =
+            if model.IsAnimating && not m.IsAnimating then
+                env.Emit [AnimationFinished]
+            m
+        
         match msg with
-        | SetPanMove p ->
-            { model with PanMove = p }
-        | FlyTo(location, newForward) ->
-            
-            let cam = model.Camera
-            let sky = cam.Sky
-            let currentRight = cam.Right
-            let currentForward = cam.Forward
-            let currentUp = cam.Up
-                
-            let dx =
-                let r = currentRight - Vec.dot currentRight sky * sky |> Vec.normalize
-                let o = currentForward - Vec.dot currentForward sky * sky |> Vec.normalize
-                let n = newForward - Vec.dot newForward sky * sky |> Vec.normalize
-                let x = Vec.dot r n
-                let y = Vec.dot o n
-                atan2 y x - Constant.PiHalf
-                
-            let rot = M33d.Rotation(sky, dx)
-            let currentForward = rot * currentForward
-            let currentRight = rot * currentRight
-            let currentUp = rot * currentUp
-            
-            let dy =
-                let o = currentForward - Vec.dot currentForward currentRight * currentRight |> Vec.normalize
-                let n = newForward - Vec.dot newForward currentRight * currentRight |> Vec.normalize
-                let u = currentUp - Vec.dot currentUp currentRight * currentRight |> Vec.normalize
-                
-                let y = Vec.dot u n
-                let z = Vec.dot o n
-                atan2 z -y - Constant.PiHalf
-            
-            { model with
-                TargetTurn = model.TargetTurn + V2d(dx, dy)
-                TargetMoveGlobal = location - model.Position
-            }
-            |> withStartTime model
-            
-            
-            
-        | SetEventHandler h ->
-            { model with Handler = Some h }
-        | AddTargetMoveGlobal m ->
-            { model with TargetMoveGlobal = model.TargetMoveGlobal + m }
-            |> withStartTime model
-        | AddTargetMove m ->
-            { model with TargetMoveLocal = model.TargetMoveLocal + m }
-            |> withStartTime model
-        | SetSprintFactor f ->
-            { model with SprintFactor = f }
-        | AddMoveVec(source, v) ->
-            { model with MoveVectors = addVec source v model.MoveVectors }
-            |> withStartTime model
-        | SetMoveVec(source, v) ->
-            let newMoveVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.MoveVectors else HashMap.add source v model.MoveVectors
-            { model with MoveVectors = newMoveVecs}
-            |> withStartTime model
-        | AddTurnVec(source, v) ->
-            { model with TurnVectors = addVec source v model.TurnVectors }
-            |> withStartTime model
-        | SetTurnVec(source, v) ->
-            let newTurnVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.TurnVectors else HashMap.add source v model.TurnVectors
-            { model with TurnVectors = newTurnVecs }
-            |> withStartTime model
-        | AddMomentum v ->
-            { model with Momentum = model.Momentum + v }
-            |> withStartTime model
-        | AddTargetTurn t ->
-            { model with TargetTurn = model.TargetTurn + t }
-            |> withStartTime model
-        | UpdateConfig cfg ->
-            { model with Config = cfg }
-        | AdjustMoveSpeed f ->
-            { model with Config = { model.Config with MoveSpeed = model.Config.MoveSpeed * f } }
+        | SetEnabled e ->
+            { model with Enabled = e }
         | Rendered ->
             if model.IsAnimating then
                 let now = now()
@@ -164,7 +100,6 @@ module FreeFlyController =
                     Rot3d.Rotation(model.Sky, rotSkyAngle + turn.X) *
                     Rot3d.Rotation(right, rotRightAngle + turn.Y)
                  
-                
                 { model with
                     TargetMoveLocal = model.TargetMoveLocal - dstMove
                     TargetMoveGlobal = model.TargetMoveGlobal - dstMoveGlobal
@@ -173,10 +108,101 @@ module FreeFlyController =
                     Position = model.Position + move
                     Forward = rotation.Transform model.Forward 
                     Momentum = model.Momentum * 0.5 ** (model.Config.Damping * dt.TotalSeconds)
-                } |> FreeFlyState.withCamera
+                }
+                |> FreeFlyState.withCamera
+                |> checkAnimationFinished
             else
                 model
-
+        | _ ->
+            if model.Enabled then
+                match msg with
+                | SetPanMove p ->
+                    { model with PanMove = p }
+                | FlyTo(location, newForward) ->
+                    
+                    let cam = model.Camera
+                    let sky = cam.Sky
+                    let currentRight = cam.Right
+                    let currentForward = cam.Forward
+                    let currentUp = cam.Up
+                        
+                    let dx =
+                        let r = currentRight - Vec.dot currentRight sky * sky |> Vec.normalize
+                        let o = currentForward - Vec.dot currentForward sky * sky |> Vec.normalize
+                        let n = newForward - Vec.dot newForward sky * sky |> Vec.normalize
+                        let x = Vec.dot r n
+                        let y = Vec.dot o n
+                        atan2 y x - Constant.PiHalf
+                        
+                    let rot = M33d.Rotation(sky, dx)
+                    let currentForward = rot * currentForward
+                    let currentRight = rot * currentRight
+                    let currentUp = rot * currentUp
+                    
+                    let dy =
+                        let o = currentForward - Vec.dot currentForward currentRight * currentRight |> Vec.normalize
+                        let n = newForward - Vec.dot newForward currentRight * currentRight |> Vec.normalize
+                        let u = currentUp - Vec.dot currentUp currentRight * currentRight |> Vec.normalize
+                        
+                        let y = Vec.dot u n
+                        let z = Vec.dot o n
+                        atan2 z -y - Constant.PiHalf
+                    
+                    { model with
+                        TargetTurn = model.TargetTurn + V2d(dx, dy)
+                        TargetMoveGlobal = location - model.Position
+                    }
+                    |> withStartTime model
+                    
+                | AnimationFinished ->
+                    model
+                    
+                | SetEventHandler h ->
+                    { model with Handler = Some h }
+                | AddTargetMoveGlobal m ->
+                    { model with TargetMoveGlobal = model.TargetMoveGlobal + m }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | AddTargetMove m ->
+                    { model with TargetMoveLocal = model.TargetMoveLocal + m }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | SetSprintFactor f ->
+                    { model with SprintFactor = f }
+                | AddMoveVec(source, v) ->
+                    { model with MoveVectors = addVec source v model.MoveVectors }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | SetMoveVec(source, v) ->
+                    let newMoveVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.MoveVectors else HashMap.add source v model.MoveVectors
+                    { model with MoveVectors = newMoveVecs}
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | AddTurnVec(source, v) ->
+                    { model with TurnVectors = addVec source v model.TurnVectors }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | SetTurnVec(source, v) ->
+                    let newTurnVecs = if Fun.IsTiny(v, 1E-8) then HashMap.remove source model.TurnVectors else HashMap.add source v model.TurnVectors
+                    { model with TurnVectors = newTurnVecs }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | AddMomentum v ->
+                    { model with Momentum = model.Momentum + v }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | AddTargetTurn t ->
+                    { model with TargetTurn = model.TargetTurn + t }
+                    |> withStartTime model
+                    |> checkAnimationFinished
+                | UpdateConfig cfg ->
+                    { model with Config = cfg }
+                | AdjustMoveSpeed f ->
+                    { model with Config = { model.Config with MoveSpeed = model.Config.MoveSpeed * f } }
+                | Rendered | SetEnabled _ ->
+                    failwith "impossible"
+            else
+                model
     let getAttributes (model : AdaptiveFreeFlyState) (env : Env<FreeFlyMessage>) =
         renderControlExt {
 
@@ -332,7 +358,7 @@ module FreeFlyController =
                         | "PageUp" ->
                             env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
                         | "PageDown" ->
-                            env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]    
+                            env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]
                         | _ ->
                             ()
             )

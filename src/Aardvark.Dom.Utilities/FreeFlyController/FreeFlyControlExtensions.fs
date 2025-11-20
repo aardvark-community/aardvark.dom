@@ -14,6 +14,7 @@ type SimpleFreeFlyConfig =
         LookAt : V3d
         Sky : V3d
         Config : option<FreeFlyConfig>
+        AnimationFinished : option<unit -> unit>
     }
 
 type SimpleFreeFlyController = SimpleFreeFlyController of SimpleFreeFlyConfig
@@ -25,6 +26,7 @@ module RenderControlFreeFlyExtensions =
     
         let mutable state =
             {
+                Enabled = true
                 PanMove = false
                 Config = defaultArg config.Config FreeFlyConfig.Default
                 LastRender = TimeSpan.Zero
@@ -64,8 +66,16 @@ module RenderControlFreeFlyExtensions =
                 while true do
                     let! msgs = coll.Take()
                     for msg in msgs do
-                        state <- FreeFlyController.update state msg
+                        state <- FreeFlyController.update env state msg
                         transact (fun () -> astate.Update state)
+                        
+                        match msg with
+                        | FreeFlyMessage.AnimationFinished ->
+                            match config.AnimationFinished with
+                            | Some f -> f()
+                            | None -> ()
+                        | _ ->
+                            ()
 
                     
             }
@@ -78,14 +88,11 @@ module RenderControlFreeFlyExtensions =
                 Dom.OnKeyDown(fun e ->
                     if e.Key = " " then
                         env.Emit [ FreeFlyMessage.FlyTo(config.Location, Vec.normalize (config.LookAt - config.Location)) ]
-                        
                 )
                 
                 Dom.OnGamepadButtonDown(fun e ->
                     if e.ButtonName = "Select" || e.ButtonName = "Start" then
                         env.Emit [ FreeFlyMessage.FlyTo(config.Location, Vec.normalize (config.LookAt - config.Location)) ]
-                        
-                        
                 )
                 
                 Sg.View view

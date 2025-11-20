@@ -1,3 +1,8 @@
+### 1.0.23
+* FreeFlyState.Enabled flag 
+* FreeFlyController AnimationFinished message
+* AnimationFinished Event for SimpleFreeFlyController
+
 ### 1.0.22
 * fixed FreeFlyController bug with hanging keys
 

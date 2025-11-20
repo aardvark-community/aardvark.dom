@@ -305,6 +305,9 @@ let testApp (_runtime : IRuntime) =
                     LookAt = V3d.Zero
                     Sky = V3d.OOI
                     Config = None
+                    AnimationFinished = Some (fun () ->
+                        printfn "animation finished"
+                    )
                 }
                 
                 // SimpleOrbitController {

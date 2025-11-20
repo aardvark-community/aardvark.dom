@@ -39,6 +39,7 @@ type FreeFlyConfig =
 [<ModelType>]
 type FreeFlyState =
     {
+        Enabled : bool
         LastRender : TimeSpan
         Position : V3d
         Sky : V3d
@@ -76,12 +77,12 @@ type FreeFlyState =
         (V2d.Zero, x.TurnVectors) ||> HashMap.fold (fun a _ b -> a + b)
     
     member x.IsAnimating =
-        not (Fun.IsTiny(x.Momentum, 1E-8)) ||
-        not (Fun.IsTiny(x.MoveVec, 1E-8)) ||
-        not (Fun.IsTiny(x.TargetTurn, 1E-8)) ||
-        not (Fun.IsTiny(x.TurnVec, 1E-8)) ||
-        not (Fun.IsTiny(x.TargetMoveLocal, 1E-8)) ||
-        not (Fun.IsTiny(x.TargetMoveGlobal, 1E-8))
+        not (Fun.IsTiny(x.Momentum, 1E-4)) ||
+        not (Fun.IsTiny(x.MoveVec, 1E-4)) ||
+        not (Fun.IsTiny(x.TargetTurn, 1E-4)) ||
+        not (Fun.IsTiny(x.TurnVec, 1E-4)) ||
+        not (Fun.IsTiny(x.TargetMoveLocal, 1E-4)) ||
+        not (Fun.IsTiny(x.TargetMoveGlobal, 1E-4))
     
     
 module FreeFlyState =
