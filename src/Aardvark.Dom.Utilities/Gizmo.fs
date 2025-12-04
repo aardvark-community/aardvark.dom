@@ -205,7 +205,7 @@ module Gizmo =
                                 content |> AVal.map (fun text ->
                                     let s = textConfig.Layout text
                                     let center = s.bounds.Center
-                                    let scale = 1.3 * sphereRadius / s.bounds.Size.NormMax
+                                    let scale = 1.3 * sphereRadius / (1.5*s.bounds.SizeY)
                                     center, scale
                                 )
 
