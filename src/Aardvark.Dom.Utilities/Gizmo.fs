@@ -36,11 +36,12 @@ type GizmoConfig =
         ZHoverColor : aval<C4b>
         TextColor : aval<C4b>
         TextHoverColor : aval<C4b>
+        TextLabels : aval<string * string * string * string * string * string>
         Size : aval<V2i>
     }
     
     static member Default =
-        
+
         let hexColor (v : uint32) =
             C4b(byte (v >>> 16), byte (v >>> 8), byte v)
         {
@@ -56,6 +57,7 @@ type GizmoConfig =
             GizmoConfig.ZHoverColor = AVal.constant (hexColor 0x7BA8D4u)
             GizmoConfig.TextColor = AVal.constant C4b.White
             GizmoConfig.TextHoverColor = AVal.constant C4b.White
+            GizmoConfig.TextLabels = AVal.constant ("+X", "-X", "+Y", "-Y", "+Z", "-Z")
         }
     static member TopRight = { GizmoConfig.Default with Anchor = AVal.constant GizmoAnchor.TopRight }
     static member TopLeft = { GizmoConfig.Default with Anchor = AVal.constant GizmoAnchor.TopLeft }
@@ -131,15 +133,18 @@ module Gizmo =
             let xp = hover |> AVal.bind (function Some v when v = V3i.IOO -> config.XHoverColor | _ -> config.XColor)
             let yp = hover |> AVal.bind (function Some v when v = V3i.OIO -> config.YHoverColor | _ -> config.YColor)
             let zp = hover |> AVal.bind (function Some v when v = V3i.OOI -> config.ZHoverColor | _ -> config.ZColor)
-            
+
+            let (xPosLabel, xNegLabel, yPosLabel, yNegLabel, zPosLabel, zNegLabel) =
+                AVal.force config.TextLabels
+
             let spheres =
                 [
-                    V3i.IOO, "+X", xp
-                    V3i.NOO, "-X", (hover |> AVal.bind (function Some v when v = V3i.NOO -> config.XHoverColor | _ -> config.XColor))
-                    V3i.OIO, "+Y", yp
-                    V3i.ONO, "-Y", (hover |> AVal.bind (function Some v when v = V3i.ONO -> config.YHoverColor | _ -> config.YColor))
-                    V3i.OOI, "+Z", zp
-                    V3i.OON, "-Z", (hover |> AVal.bind (function Some v when v = V3i.OON -> config.ZHoverColor | _ -> config.ZColor))
+                    V3i.IOO, xPosLabel, xp
+                    V3i.NOO, xNegLabel, (hover |> AVal.bind (function Some v when v = V3i.NOO -> config.XHoverColor | _ -> config.XColor))
+                    V3i.OIO, yPosLabel, yp
+                    V3i.ONO, yNegLabel, (hover |> AVal.bind (function Some v when v = V3i.ONO -> config.YHoverColor | _ -> config.YColor))
+                    V3i.OOI, zPosLabel, zp
+                    V3i.OON, zNegLabel, (hover |> AVal.bind (function Some v when v = V3i.OON -> config.ZHoverColor | _ -> config.ZColor))
                 ]
             let sphereRadius = 0.35
             
@@ -387,6 +392,7 @@ module GizmoExtensions =
         | ZHoverColor of aval<C4b>
         | TextColor of aval<C4b>
         | TextHoverColor of aval<C4b>
+        | TextLabels of aval<string * string * string * string * string * string>
         | Size of aval<V2i>
     
     type private Acc = ListCollector<GizmoAttribute> -> ListCollector<GizmoAttribute>
@@ -460,6 +466,8 @@ module GizmoExtensions =
                     state <- { state with TextColor = c }
                 | GizmoAttribute.TextHoverColor c ->
                     state <- { state with TextHoverColor = c }
+                | GizmoAttribute.TextLabels labels ->
+                    state <- { state with TextLabels = labels }
             
             
             
@@ -526,11 +534,16 @@ module GizmoExtensions =
         static member TextHoverColor(color : C4b) = GizmoAttribute.TextHoverColor(AVal.constant color)
         static member TextColor(color : aval<C4b>) = GizmoAttribute.TextColor color
         static member TextHoverColor(color : aval<C4b>) = GizmoAttribute.TextHoverColor color
-    
+
+        static member TextLabels(xPos : string, xNeg : string, yPos : string, yNeg : string, zPos : string, zNeg : string) =
+            GizmoAttribute.TextLabels(AVal.constant (xPos, xNeg, yPos, yNeg, zPos, zNeg))
+        static member TextLabels(labels : aval<string * string * string * string * string * string>) =
+            GizmoAttribute.TextLabels labels
+
         static member Size(size : V2i) = GizmoAttribute.Size (AVal.constant size)
         static member Size(size : aval<V2i>) = GizmoAttribute.Size size
-        
-        
+
+
         static member Size(size : int) = GizmoAttribute.Size (AVal.constant (V2i(size, size)))
         static member Size(size : aval<int>) = GizmoAttribute.Size (size |> AVal.map (fun s -> V2i(s,s)))
     
