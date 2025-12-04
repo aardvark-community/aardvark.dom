@@ -389,6 +389,7 @@ let testApp (_runtime : IRuntime) =
                 gizmo {
                     Gizmo.Top 0
                     Gizmo.Left 0
+                    Gizmo.TextLabels("E", "W", "N", "S", "+Z", "-Z")
                 }
                 
 

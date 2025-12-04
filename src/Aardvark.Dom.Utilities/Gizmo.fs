@@ -36,11 +36,17 @@ type GizmoConfig =
         ZHoverColor : aval<C4b>
         TextColor : aval<C4b>
         TextHoverColor : aval<C4b>
+        XPosLabel : aval<string>
+        XNegLabel : aval<string>
+        YPosLabel : aval<string>
+        YNegLabel : aval<string>
+        ZPosLabel : aval<string>
+        ZNegLabel : aval<string>
         Size : aval<V2i>
     }
     
     static member Default =
-        
+
         let hexColor (v : uint32) =
             C4b(byte (v >>> 16), byte (v >>> 8), byte v)
         {
@@ -56,6 +62,12 @@ type GizmoConfig =
             GizmoConfig.ZHoverColor = AVal.constant (hexColor 0x7BA8D4u)
             GizmoConfig.TextColor = AVal.constant C4b.White
             GizmoConfig.TextHoverColor = AVal.constant C4b.White
+            GizmoConfig.XPosLabel = AVal.constant "+X"
+            GizmoConfig.XNegLabel = AVal.constant "-X"
+            GizmoConfig.YPosLabel = AVal.constant "+Y"
+            GizmoConfig.YNegLabel = AVal.constant "-Y"
+            GizmoConfig.ZPosLabel = AVal.constant "+Z"
+            GizmoConfig.ZNegLabel = AVal.constant "-Z"
         }
     static member TopRight = { GizmoConfig.Default with Anchor = AVal.constant GizmoAnchor.TopRight }
     static member TopLeft = { GizmoConfig.Default with Anchor = AVal.constant GizmoAnchor.TopLeft }
@@ -131,15 +143,15 @@ module Gizmo =
             let xp = hover |> AVal.bind (function Some v when v = V3i.IOO -> config.XHoverColor | _ -> config.XColor)
             let yp = hover |> AVal.bind (function Some v when v = V3i.OIO -> config.YHoverColor | _ -> config.YColor)
             let zp = hover |> AVal.bind (function Some v when v = V3i.OOI -> config.ZHoverColor | _ -> config.ZColor)
-            
+
             let spheres =
                 [
-                    V3i.IOO, "+X", xp
-                    V3i.NOO, "-X", (hover |> AVal.bind (function Some v when v = V3i.NOO -> config.XHoverColor | _ -> config.XColor))
-                    V3i.OIO, "+Y", yp
-                    V3i.ONO, "-Y", (hover |> AVal.bind (function Some v when v = V3i.ONO -> config.YHoverColor | _ -> config.YColor))
-                    V3i.OOI, "+Z", zp
-                    V3i.OON, "-Z", (hover |> AVal.bind (function Some v when v = V3i.OON -> config.ZHoverColor | _ -> config.ZColor))
+                    V3i.IOO, config.XPosLabel, xp
+                    V3i.NOO, config.XNegLabel, (hover |> AVal.bind (function Some v when v = V3i.NOO -> config.XHoverColor | _ -> config.XColor))
+                    V3i.OIO, config.YPosLabel, yp
+                    V3i.ONO, config.YNegLabel, (hover |> AVal.bind (function Some v when v = V3i.ONO -> config.YHoverColor | _ -> config.YColor))
+                    V3i.OOI, config.ZPosLabel, zp
+                    V3i.OON, config.ZNegLabel, (hover |> AVal.bind (function Some v when v = V3i.OON -> config.ZHoverColor | _ -> config.ZColor))
                 ]
             let sphereRadius = 0.35
             
@@ -162,7 +174,7 @@ module Gizmo =
                     
                     
                     
-                    let text (color : aval<C4b>) (content : string) (sphereCenter : V3d) (offset : float) =
+                    let text (color : aval<C4b>) (content : aval<string>) (sphereCenter : V3d) (offset : float) =
                         Sg.Delay (fun state ->
                             let textConfig =
                                 {
@@ -172,34 +184,40 @@ module Gizmo =
                                     flipViewDependent = false
                                     renderStyle = RenderStyle.NoBoundary
                                 }
-                            let shape = textConfig.Layout content
-                                
-                            let center =
-                                shape.bounds.Center //+ shape.renderTrafo.Forward.C3.XY
-                            
-                            let scale = 1.3 * sphereRadius / shape.bounds.Size.NormMax
-                            
+
                             let billboard =
                                 state.View |> AVal.map (fun v ->
-                                    Trafo3d.FromBasis(v.Backward.C0.XYZ, v.Backward.C1.XYZ, v.Backward.C2.XYZ, v.Backward.C2.XYZ * offset)    
+                                    Trafo3d.FromBasis(v.Backward.C0.XYZ, v.Backward.C1.XYZ, v.Backward.C2.XYZ, v.Backward.C2.XYZ * offset)
                                 )
-                            
+
                             let shape =
-                                color |> AVal.map (fun c ->
-                                    { shape with
+                                (content, color) ||> AVal.map2 (fun text c ->
+                                    let s = textConfig.Layout text
+                                    { s with
                                         concreteShapes =
-                                            shape.concreteShapes |> List.map (fun cs ->
+                                            s.concreteShapes |> List.map (fun cs ->
                                                 { cs with color = c }
                                             )
                                     }
                                 )
-                            
+
+                            let centerAndScale =
+                                content |> AVal.map (fun text ->
+                                    let s = textConfig.Layout text
+                                    let center = s.bounds.Center
+                                    let scale = 1.3 * sphereRadius / (1.5*s.bounds.SizeY)
+                                    center, scale
+                                )
+
                             sg {
-                                Sg.Translate(-center.X, -center.Y, 0.0)
-                                Sg.Scale(scale)
-                                Sg.Trafo billboard
-                                Sg.Translate(sphereCenter)
-                                
+                                let trafo =
+                                    (centerAndScale, billboard) ||> AVal.map2 (fun (center, scale) bb ->
+                                        Trafo3d.Translation(-center.X, -center.Y, 0.0) *
+                                        Trafo3d.Scale(scale) *
+                                        bb *
+                                        Trafo3d.Translation(sphereCenter)
+                                    )
+                                Sg.Trafo trafo
                                 Aardvark.Dom.Sg.Shape shape
                             }
                         )
@@ -387,6 +405,7 @@ module GizmoExtensions =
         | ZHoverColor of aval<C4b>
         | TextColor of aval<C4b>
         | TextHoverColor of aval<C4b>
+        | TextLabels of aval<string> * aval<string> * aval<string> * aval<string> * aval<string> * aval<string>
         | Size of aval<V2i>
     
     type private Acc = ListCollector<GizmoAttribute> -> ListCollector<GizmoAttribute>
@@ -460,6 +479,8 @@ module GizmoExtensions =
                     state <- { state with TextColor = c }
                 | GizmoAttribute.TextHoverColor c ->
                     state <- { state with TextHoverColor = c }
+                | GizmoAttribute.TextLabels (xPos, xNeg, yPos, yNeg, zPos, zNeg) ->
+                    state <- { state with XPosLabel = xPos; XNegLabel = xNeg; YPosLabel = yPos; YNegLabel = yNeg; ZPosLabel = zPos; ZNegLabel = zNeg }
             
             
             
@@ -526,11 +547,16 @@ module GizmoExtensions =
         static member TextHoverColor(color : C4b) = GizmoAttribute.TextHoverColor(AVal.constant color)
         static member TextColor(color : aval<C4b>) = GizmoAttribute.TextColor color
         static member TextHoverColor(color : aval<C4b>) = GizmoAttribute.TextHoverColor color
-    
+
+        static member TextLabels(xPos : string, xNeg : string, yPos : string, yNeg : string, zPos : string, zNeg : string) =
+            GizmoAttribute.TextLabels(AVal.constant xPos, AVal.constant xNeg, AVal.constant yPos, AVal.constant yNeg, AVal.constant zPos, AVal.constant zNeg)
+        static member TextLabels(xPos : aval<string>, xNeg : aval<string>, yPos : aval<string>, yNeg : aval<string>, zPos : aval<string>, zNeg : aval<string>) =
+            GizmoAttribute.TextLabels(xPos, xNeg, yPos, yNeg, zPos, zNeg)
+
         static member Size(size : V2i) = GizmoAttribute.Size (AVal.constant size)
         static member Size(size : aval<V2i>) = GizmoAttribute.Size size
-        
-        
+
+
         static member Size(size : int) = GizmoAttribute.Size (AVal.constant (V2i(size, size)))
         static member Size(size : aval<int>) = GizmoAttribute.Size (size |> AVal.map (fun s -> V2i(s,s)))
     
