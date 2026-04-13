@@ -1,3 +1,6 @@
+### 1.0.24
+* fixed BVH picking not dispatching events when pixel readback returns nothing
+
 ### 1.0.23
 * FreeFlyState.Enabled flag 
 * FreeFlyController AnimationFinished message

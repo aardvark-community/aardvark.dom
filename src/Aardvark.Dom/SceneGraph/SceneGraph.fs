@@ -215,10 +215,12 @@ type Applicator(attributes : list<SceneAttribute>, children : aset<ISceneNode>) 
                 let childState = x.GetChildState state
                 match self with
                 | Some (model, res) ->
-                    let trafo = { state with Model = model @ state.Model } |> TraversalState.modelTrafo
-                    let pick = 
+                    let pickModel = model @ state.Model
+                    let trafo = { state with Model = pickModel } |> TraversalState.modelTrafo
+                    let pickState = { childState with Model = pickModel }
+                    let pick =
                         res |> ASet.bind (fun i ->
-                            ASet.single (PickObject(state, i, trafo))
+                            ASet.single (PickObject(pickState, i, trafo))
                         )
                     let render =
                         children |> ASet.collect (fun c -> c.GetRenderObjects childState)
