@@ -29,19 +29,19 @@ type SceneEventKind =
     | KeyUp
     | KeyInput
     
-type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
-    
+type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d, partIndex : int) =
+
     let ndc = projTrafo.TransformPosProj viewPos
-    
+
     let ndc2d =
         let tc = pixel / V2d viewportSize
         V2d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y)
-    
+
     //let ndc = V3d(2.0 * pixel.X / float viewportSize.X - 1.0, 1.0 - 2.0 * pixel.Y / float viewportSize.Y, depth)
     let viewProj = viewTrafo * projTrafo
     let worldPosition = viewTrafo.Backward.TransformPosProj viewPos
     let worldNormal = viewTrafo.Forward.Transposed.TransformDir viewNormal |> Vec.normalize
-    
+
     let localPosition = local2World.Backward.TransformPosProj worldPosition
     let localNormal = local2World.Forward.Transposed.TransformDir worldNormal |> Vec.normalize
 
@@ -60,42 +60,55 @@ type SceneEventLocation(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewT
     member x.ModelNormal = (AVal.force modelTrafo).Forward.Transposed.TransformDir worldNormal |> Vec.normalize
     member x.Position = localPosition
     member x.Normal = localNormal
-    
+    /// Sub-entity index inside the picked render object. Sourced from the pick
+    /// buffer's alpha slot (Mode A only): either the user shader's
+    /// Semantic("PartIndex") output, or gl_InstanceId as a default. 0 when the
+    /// hit came from a BVH-based intersectable, from Mode-B picking, or from a
+    /// synthetic non-pick location (focus, key, "no-hit" fallback).
+    member x.PartIndex = partIndex
+
     member x.ViewPickRay =
         let near = projTrafo.Backward.TransformPosProj(V3d(ndc2d, -1.0))
         let far = projTrafo.Backward.TransformPosProj(V3d(ndc2d, 0.0))
         Ray3d(near, Vec.normalize (far - near))
-        
+
     member x.WorldPickRay =
         let near = viewProj.Backward.TransformPosProj(V3d(ndc2d, -1.0))
         let far = viewProj.Backward.TransformPosProj(V3d(ndc2d, 0.0))
         Ray3d(near, Vec.normalize (far - near))
-        
+
     member x.ModelPickRay =
         let mvp = AVal.force modelTrafo * viewProj
         let near = mvp.Backward.TransformPosProj(V3d(ndc2d, -1.0))
         let far = mvp.Backward.TransformPosProj(V3d(ndc2d, 0.0))
         Ray3d(near, Vec.normalize (far - near))
-    
+
     member x.PickRay =
         let near = local2World.Backward.TransformPosProj(viewProj.Backward.TransformPosProj(V3d(ndc2d, -1.0)))
         let far = local2World.Backward.TransformPosProj(viewProj.Backward.TransformPosProj(V3d(ndc2d, 0.0)))
         Ray3d(near, Vec.normalize (far - near))
-        
+
     member x.Transformed(trafo : Trafo3d) =
         SceneEventLocation(
-            modelTrafo, 
-            trafo * local2World, 
-            viewTrafo, 
-            projTrafo, 
-            pixel, 
-            viewportSize, 
-            viewPos, 
-            viewNormal
+            modelTrafo,
+            trafo * local2World,
+            viewTrafo,
+            projTrafo,
+            pixel,
+            viewportSize,
+            viewPos,
+            viewNormal,
+            partIndex
         )
 
+    new(modelTrafo : aval<Trafo3d>, local2World : Trafo3d, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
+        SceneEventLocation(modelTrafo, local2World, viewTrafo, projTrafo, pixel, viewportSize, viewPos, viewNormal, 0)
+
+    new(modelTrafo : aval<Trafo3d>, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d, partIndex : int) =
+        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, viewPos, viewNormal, partIndex)
+
     new(modelTrafo : aval<Trafo3d>, viewTrafo : Trafo3d, projTrafo : Trafo3d, pixel : V2d, viewportSize : V2i, viewPos : V3d, viewNormal : V3d) =
-        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, viewPos, viewNormal)
+        SceneEventLocation(modelTrafo, Trafo3d.Identity, viewTrafo, projTrafo, pixel, viewportSize, viewPos, viewNormal, 0)
 
 type IEventHandler =
     abstract HasPointerCapture : state : obj * pointerId : int -> bool
@@ -144,7 +157,8 @@ type SceneEvent(context : IEventHandler, self : obj, target : obj, kind : SceneE
     member x.ModelNormal = location.ModelNormal
     member x.Position = location.Position
     member x.Normal = location.Normal
-    
+    member x.PartIndex = location.PartIndex
+
     member x.ViewPickRay = location.ViewPickRay
     member x.WorldPickRay = location.WorldPickRay
     member x.PickRay = location.PickRay

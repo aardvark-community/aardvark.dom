@@ -1,3 +1,8 @@
+### 1.0.25
+* SceneEventLocation/SceneEvent now carry a PartIndex (sub-entity id for batched picks)
+* pick shader writes PartIndex to the previously-unused alpha slot in Mode A; user shaders can override via Semantic("PickPartIndex"), default is gl_InstanceID
+* BVH-based picking and Mode-B (real-position) picking report PartIndex = 0
+
 ### 1.0.24
 * fixed BVH picking not dispatching events when pixel readback returns nothing
 
