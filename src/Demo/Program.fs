@@ -22,14 +22,14 @@ module Shader =
     
     type Fragment =
         {
-            [<Semantic("PickViewPosition")>] vp : V3d
+            [<Semantic("PickViewPosition")>] vp : V3f
         }
-    
+
     let withViewPos (v : Effects.Vertex) =
         fragment {
             let vp = uniform.ProjTrafoInv * v.pos
             let vp = vp.XYZ / vp.W
-            let vp = vp + V3d(0.1, 0.0, 0.0)
+            let vp = vp + V3f(0.1f, 0.0f, 0.0f)
             return { vp = vp.XYZ }
         }
     

@@ -21,28 +21,28 @@ module RenderObject =
 
 
         member x.TryGetUniform(name : string) =
-            match HashMap.tryFind name state.Uniforms with
-            | None ->
+            match HashMap.tryFindV name state.Uniforms with
+            | ValueNone ->
                 match name with
-                | "NormalMatrix" -> normalMatrixCache.Invoke model.Value :> IAdaptiveValue |> Some
-                | "ModelTrafo" -> model.Value :> IAdaptiveValue |> Some
-                | "ModelTrafoInv" -> invCache.Invoke model.Value :> IAdaptiveValue |> Some
-                | "ViewTrafo" -> state.View :> IAdaptiveValue |> Some
-                | "ProjTrafo" -> state.Proj :> IAdaptiveValue |> Some
-                | "ViewTrafoInv" -> invCache.Invoke state.View :> IAdaptiveValue |> Some
-                | "ProjTrafoInv" -> invCache.Invoke state.Proj :> IAdaptiveValue |> Some
-                | "ViewProjTrafo" -> (state.View,state.Proj) ||> AVal.map2 (*) :> IAdaptiveValue |> Some
-                | "CameraLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> Some
-                | "LightLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> Some
-                | _ ->  
+                | "NormalMatrix" -> normalMatrixCache.Invoke model.Value :> IAdaptiveValue |> ValueSome
+                | "ModelTrafo" -> model.Value :> IAdaptiveValue |> ValueSome
+                | "ModelTrafoInv" -> invCache.Invoke model.Value :> IAdaptiveValue |> ValueSome
+                | "ViewTrafo" -> state.View :> IAdaptiveValue |> ValueSome
+                | "ProjTrafo" -> state.Proj :> IAdaptiveValue |> ValueSome
+                | "ViewTrafoInv" -> invCache.Invoke state.View :> IAdaptiveValue |> ValueSome
+                | "ProjTrafoInv" -> invCache.Invoke state.Proj :> IAdaptiveValue |> ValueSome
+                | "ViewProjTrafo" -> (state.View,state.Proj) ||> AVal.map2 (*) :> IAdaptiveValue |> ValueSome
+                | "CameraLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> ValueSome
+                | "LightLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> ValueSome
+                | _ ->
                     if name.StartsWith "Has" then
-                        let result = 
+                        let result =
                             let attName = name.Substring 3
                             HashMap.containsKey attName state.VertexAttributes ||
                             HashMap.containsKey attName state.InstanceAttributes
-                        AVal.constant result :> IAdaptiveValue |> Some
+                        AVal.constant result :> IAdaptiveValue |> ValueSome
                     else
-                        None
+                        ValueNone
             | value ->
                 value
 
@@ -54,7 +54,7 @@ module RenderObject =
                 
     type AdapterUniformProvider(state : TraversalState) =
         member x.TryGetUniform(name : string) =
-            HashMap.tryFind name state.Uniforms
+            HashMap.tryFindV name state.Uniforms
 
         interface IUniformProvider with
             member x.Dispose() =
@@ -71,7 +71,7 @@ module RenderObject =
                 member x.Dispose() =
                     ()
                 member x.TryGetAttribute(name) =
-                    HashMap.tryFind (string name) atts
+                    HashMap.tryFindV (string name) atts
                 member x.All =
                     Seq.empty
             }
@@ -80,7 +80,7 @@ module RenderObject =
         lock traversalStates (fun () -> traversalStates.Add(o, state))
         o.BlendState <- state.Blend
         o.DepthState <- state.Depth
-        o.DrawCalls <- DrawCalls.Direct (AVal.constant [])
+        o.DrawCalls <- DrawCalls.Direct (AVal.constant [||])
         o.Indices <- state.Index
         o.InstanceAttributes <- provider state.InstanceAttributes
         o.VertexAttributes <- provider state.VertexAttributes
@@ -130,7 +130,7 @@ module rec HKNKs =
         module SceneAttribute =
             let apply (a : SceneAttribute) (s : TraversalState) = s
     
-type DirectDrawNode(call : aval<list<DrawCallInfo>>) =
+type DirectDrawNode(call : aval<DrawCallInfo[]>) =
     member x.Call = call
 
     interface ISceneNode with
@@ -150,9 +150,11 @@ type DirectDrawNode(call : aval<list<DrawCallInfo>>) =
                 o.DrawCalls <- DrawCalls.Direct call
                 ASet.single (o :> IRenderObject)
 
-    new(call : aval<DrawCallInfo>) = DirectDrawNode(AVal.mapNonAdaptive List.singleton call)
-    new(calls : list<DrawCallInfo>) = DirectDrawNode(AVal.constant calls)
-    new(call : DrawCallInfo) = DirectDrawNode(AVal.constant [call])
+    new(call : aval<DrawCallInfo>) = DirectDrawNode(AVal.mapNonAdaptive Array.singleton call)
+    new(calls : list<DrawCallInfo>) = DirectDrawNode(AVal.constant (calls |> List.toArray))
+    new(calls : aval<list<DrawCallInfo>>) = DirectDrawNode(calls |> AVal.map List.toArray)
+    new(calls : array<DrawCallInfo>) = DirectDrawNode(AVal.constant calls)
+    new(call : DrawCallInfo) = DirectDrawNode(AVal.constant [|call|])
 
 type IndirectDrawNode(buffer : aval<IndirectBuffer>) =
     member x.Buffer = buffer
@@ -274,7 +276,7 @@ module SgAdapter =
                 let elementSize = System.Runtime.InteropServices.Marshal.SizeOf view.ElementType
                 view.Buffer |> AVal.map (fun b ->
                     match b with
-                        | :? INativeBuffer as b -> (b.SizeInBytes - nativeint view.Offset) / nativeint elementSize |> int
+                        | :? INativeBuffer as b -> (b.SizeInBytes - uint64 view.Offset) / uint64 elementSize |> int
                         | _ -> failwithf "[Sg] could not determine buffer-size: %A" b
                 )
                 

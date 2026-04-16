@@ -13,35 +13,35 @@ open Microsoft.FSharp.NativeInterop
 
 [<ReflectedDefinition>]
 module internal Normal32 =
-    let private sgn (v : V2d) = V2d((if v.X >= 0.0 then 1.0 else -1.0), (if v.Y >= 0.0 then 1.0 else -1.0))
-    let private clamp (v : V2d) =
-        V2d(
-            (if v.X < -1.0 then -1.0 elif v.X > 1.0 then 1.0 else v.X),
-            (if v.Y < -1.0 then -1.0 elif v.Y > 1.0 then 1.0 else v.Y)
+    let private sgn (v : V2f) = V2f((if v.X >= 0.0f then 1.0f else -1.0f), (if v.Y >= 0.0f then 1.0f else -1.0f))
+    let private clamp (v : V2f) =
+        V2f(
+            (if v.X < -1.0f then -1.0f elif v.X > 1.0f then 1.0f else v.X),
+            (if v.Y < -1.0f then -1.0f elif v.Y > 1.0f then 1.0f else v.Y)
         )
 
-    let decode (v : int) : V3d =
+    let decode (v : int) : V3f =
         if v = 0 then
-            V3d.Zero
+            V3f.Zero
         else
-            let e = V2d(float (uint32 v >>> 16) / 65535.0, float (v &&& 0xFFFF) / 65535.0) * 2.0 - V2d.II
-            let v = V3d(e, 1.0 - abs e.X - abs e.Y)
-            if v.Z < 0.0 then V3d(V2d(1.0 - abs v.Y, 1.0 - abs v.X) * sgn v.XY, v.Z) |> Vec.normalize
+            let e = V2f(float32 (uint32 v >>> 16) / 65535.0f, float32 (v &&& 0xFFFF) / 65535.0f) * 2.0f - V2f.II
+            let v = V3f(e, 1.0f - abs e.X - abs e.Y)
+            if v.Z < 0.0f then V3f(V2f(1.0f - abs v.Y, 1.0f - abs v.X) * sgn v.XY, v.Z) |> Vec.normalize
             else v |> Vec.normalize
 
-    let encode (v : V3d) : int =
-        if v.X = 0.0 && v.Y = 0.0 && v.Z = 0.0 then
+    let encode (v : V3f) : int =
+        if v.X = 0.0f && v.Y = 0.0f && v.Z = 0.0f then
             0
         else
-            let p = v.XY * (1.0 / (abs v.X + abs v.Y + abs v.Z))
-            let p = 
-                if v.Z <= 0.0 then clamp (V2d(1.0 - abs p.Y, 1.0 - abs p.X) * sgn p)
+            let p = v.XY * (1.0f / (abs v.X + abs v.Y + abs v.Z |> float32))
+            let p =
+                if v.Z <= 0.0f then clamp (V2f(1.0f - abs p.Y, 1.0f - abs p.X) * sgn p)
                 else clamp p
-        
-            let x0 = floor ((p.X * 0.5 + 0.5) * 65535.0) |> int
-            let y0 = floor ((p.Y * 0.5 + 0.5) * 65535.0) |> int
-            
-            let mutable bestDot = 0.0
+
+            let x0 = floor ((p.X * 0.5f + 0.5f) * 65535.0f) |> int
+            let y0 = floor ((p.Y * 0.5f + 0.5f) * 65535.0f) |> int
+
+            let mutable bestDot = 0.0f
             let mutable best = 0
 
             for dx in 0 .. 1 do
@@ -64,39 +64,39 @@ module internal PickShader =
         member x.Selected : int = uniform?Selected
 
         member x.Levels : int = uniform?Levels
-        member x.Distance : float = uniform?Distance
+        member x.Distance : float32 = uniform?Distance
         
         member x.LevelSizes : Arr<16 N, V2i> = uniform?LevelSizes
         member x.LevelPixelSizes : Arr<16 N, V2i> = uniform?LevelPixelSizes
 
     type VertexIn =
         {
-            [<Color>] c : V4d
-            [<Position>] pos : V4d
-            [<Normal>] n : V3d
+            [<Color>] c : V4f
+            [<Position>] pos : V4f
+            [<Normal>] n : V3f
             [<InstanceId>] instanceId : int
         }
 
     type Vertex =
         {
-            [<Color>] c : V4d
-            [<Position>] pos : V4d
-            [<Semantic("ViewSpaceNormal")>] vn : V3d
-            [<Semantic("PickViewPosition")>] pvp : V3d
+            [<Color>] c : V4f
+            [<Position>] pos : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+            [<Semantic("PickViewPosition")>] pvp : V3f
             [<Semantic("PickPartIndex")>] pi : int
-            [<Depth>] d : float
-            [<FragCoord>] fc : V4d
+            [<Depth>] d : float32
+            [<FragCoord>] fc : V4f
         }
 
     type Fragment =
         {
-            [<Color>] c : V4d
-            [<Semantic("PickId")>] id : V4d
+            [<Color>] c : V4f
+            [<Semantic("PickId")>] id : V4f
         }
 
     let pickVertex (v : VertexIn) =
         vertex {
-            let vn = uniform.ModelViewTrafoInv.Transposed * V4d(v.n, 0.0) |> Vec.xyz |> Vec.normalize
+            let vn = uniform.ModelViewTrafoInv.Transposed * V4f(v.n, 0.0f) |> Vec.xyz |> Vec.normalize
 
             return {
                 c = v.c
@@ -104,13 +104,13 @@ module internal PickShader =
                 pvp = uniform.ModelViewTrafo * v.pos |> Vec.xyz
                 vn = vn
                 pi = v.instanceId
-                d = 0.0
-                fc = V4d.Zero
+                d = 0.0f
+                fc = V4f.Zero
             }
         }
 
     [<GLSLIntrinsic("gl_FragCoord")>]
-    let fragCoord() : V4d = onlyInShaderCode "fragcoord"
+    let fragCoord() : V4f = onlyInShaderCode "fragcoord"
 
     let pickIdBefore(v : Vertex) =
         fragment {
@@ -118,30 +118,30 @@ module internal PickShader =
             return { v with d = d }
         }
 
-    // Mode B: all four V4d slots are occupied (id, normal, direction, length).
+    // Mode B: all four V4f slots are occupied (id, normal, direction, length).
     // No room for PartIndex — batched picking must use pickEffect / pickEffectNoNormal.
     let pickIdWithRealPosition(v : Vertex) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
             let len = Vec.length v.pvp
             let dir = Normal32.encode (v.pvp / len) |> int
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
         }
 
-    // Mode A: alpha slot carries PartIndex (user-supplied via "PartIndex" semantic,
+    // Mode A: alpha slot carries PartIndex (user-supplied via "PickPartIndex" semantic,
     // defaults to gl_InstanceId via pickVertex).
     let pickId(v : Vertex) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let d = (2.0 * v.d - 1.0)
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
+            let d = (2.0f * v.d - 1.0f)
+            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
         }
 
     let pickIdNoNormal(v : Vertex) =
         fragment {
             let n32 = 0
-            let d = (2.0 * v.d - 1.0)
-            return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
+            let d = (2.0f * v.d - 1.0f)
+            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
         }
 
     let vertexPickEffect = Effect.ofFunction pickVertex
@@ -159,14 +159,14 @@ module internal PickShader =
         
     let binary (v : Vertex) =
         fragment {
-            let mutable r = 0.0
+            let mutable r = 0.0f
             let px = V2i v.fc.XY
             let s = pickSampler.Size
             if uniform.Selected >= 0 && px.X < s.X && px.Y < s.Y then
                 let id = pickSampler.[px].X
-                if id = uniform.Selected then 
-                    r <- 1.0
-            return V4d(r, r, r, r)
+                if id = uniform.Selected then
+                    r <- 1.0f
+            return V4f(r, r, r, r)
         }
         
     let quadTree =
@@ -178,7 +178,7 @@ module internal PickShader =
         }
         
     [<ReflectedDefinition>]
-    let enqueue (value : V4d) (heap : ref<Arr<_, V4d>>) (cnt : int) =
+    let enqueue (value : V4f) (heap : ref<Arr<_, V4f>>) (cnt : int) =
         let mutable i = cnt
         let value = value
         let mutable run = true
@@ -193,9 +193,9 @@ module internal PickShader =
                 run <- false
 
         (!heap).[i] <- value
-        
+
     [<ReflectedDefinition>]
-    let dequeue (queue : ref<Arr<_, V4d>>) (cnt : int) =
+    let dequeue (queue : ref<Arr<_, V4f>>) (cnt : int) =
         if cnt <= 1 then
             (!queue).[0]
         else
@@ -246,12 +246,12 @@ module internal PickShader =
 
 
     [<ReflectedDefinition; Inline>]
-    let sqr (a : float) = a*a
+    let sqr (a : float32) = a*a
 
     [<ReflectedDefinition>]
-    let minDistSq (px : V2i) (o : V2i) (s : V2i) : float =
+    let minDistSq (px : V2i) (o : V2i) (s : V2i) : float32 =
         if s.X <= 1 && s.Y <= 1 then
-            let d = V2d px - V2d o
+            let d = V2f px - V2f o
             Vec.dot d d
         else
             let min = o
@@ -268,28 +268,28 @@ module internal PickShader =
 
             if ix then
                 if iy then
-                    0.0
+                    0.0f
                 else
-                    if hy then sqr (float (px.Y - max.Y))
-                    else sqr (float (min.Y - px.Y))
+                    if hy then sqr (float32 (px.Y - max.Y))
+                    else sqr (float32 (min.Y - px.Y))
 
             elif iy then
-                if hx then sqr (float (px.X - max.X))
-                else sqr (float (min.X - px.X))
+                if hx then sqr (float32 (px.X - max.X))
+                else sqr (float32 (min.X - px.X))
 
             elif hx then
-                if hy then 
-                    let d = (V2d px - V2d max)
-                    Vec.dot d d
-                else 
-                    let d = (V2d px - V2d(max.X, min.Y))
-                    Vec.dot d d
-            else
-                if hy then 
-                    let d = (V2d px - V2d(min.X, max.Y))
+                if hy then
+                    let d = (V2f px - V2f max)
                     Vec.dot d d
                 else
-                    let d = (V2d px - V2d min)
+                    let d = (V2f px - V2f(max.X, min.Y))
+                    Vec.dot d d
+            else
+                if hy then
+                    let d = (V2f px - V2f(min.X, max.Y))
+                    Vec.dot d d
+                else
+                    let d = (V2f px - V2f min)
                     Vec.dot d d
                 
 
@@ -326,15 +326,15 @@ module internal PickShader =
         fragment {
             let px = V2i v.fc.XY
             let distanceSq = sqr uniform.Distance
-            let mutable radiusSq = sqr (uniform.Distance + 1.0) 
+            let mutable radiusSq = sqr (uniform.Distance + 1.0f)
 
-            let queue : Arr<64 N, V4d> = Unchecked.defaultof<_>
+            let queue : Arr<64 N, V4f> = Unchecked.defaultof<_>
             let mutable queueCount = 0
 
             //let treeSize = quadTree.Size
             let maxLevel = uniform.Levels - 1
 
-            enqueue (V4d(0.0, float maxLevel, 0.0, 0.0) ) &&queue queueCount
+            enqueue (V4f(0.0f, float32 maxLevel, 0.0f, 0.0f) ) &&queue queueCount
             queueCount <- queueCount + 1
 
 
@@ -354,21 +354,21 @@ module internal PickShader =
                     let levelPixelSize = uniform.LevelPixelSizes.[level]
                     let value = quadTree.Read(offset / levelPixelSize, level).X
 
-                    if value >= 1.0 then 
-                        radiusSq <- e.X 
+                    if value >= 1.0f then
+                        radiusSq <- e.X
 
-                    elif value > 0.0 then
+                    elif value > 0.0f then
                         if levelPixelSize.X <= 4 && levelPixelSize.Y <= 4 then
                             for x in 0 .. levelPixelSize.X - 1 do
                                 for y in 0 .. levelPixelSize.Y - 1 do
                                     let pp = offset + V2i(x,y)
                                     let value = quadTree.Read(pp, 0).X
-                                    if value >= 1.0 then
-                                        let d = V2d pp - V2d px
+                                    if value >= 1.0f then
+                                        let d = V2f pp - V2f px
                                         let dSq = Vec.dot d d
                                         if dSq < radiusSq then
                                             radiusSq <- dSq
-                                
+
                         else
                             if level > 0 then
                                 // has non-empty children
@@ -379,33 +379,33 @@ module internal PickShader =
                                 let i2 = offset + V2i(0, h.Y)
                                 let i3 = offset + h
 
-                                let c0 = V4d(minDistSq px i0 h, float level - 1.0, V2d i0)
+                                let c0 = V4f(minDistSq px i0 h, float32 level - 1.0f, V2f i0)
                                 enqueue c0 &&queue queueCount; queueCount <- queueCount + 1
-                          
-                                let c1 = V4d(minDistSq px i1 h, float level - 1.0, V2d i1)
+
+                                let c1 = V4f(minDistSq px i1 h, float32 level - 1.0f, V2f i1)
                                 enqueue c1 &&queue queueCount; queueCount <- queueCount + 1
-                          
-                                let c2 = V4d(minDistSq px i2 h, float level - 1.0, V2d i2)
+
+                                let c2 = V4f(minDistSq px i2 h, float32 level - 1.0f, V2f i2)
                                 enqueue c2 &&queue queueCount; queueCount <- queueCount + 1
-                         
-                                let c3 = V4d(minDistSq px i3 h, float level - 1.0, V2d i3)
+
+                                let c3 = V4f(minDistSq px i3 h, float32 level - 1.0f, V2f i3)
                                 enqueue c3 &&queue queueCount; queueCount <- queueCount + 1
 
 
-            //return V4d(float iter / 10.0, 0.0, 0.0, 1.0)
+            //return V4f(float32 iter / 10.0f, 0.0f, 0.0f, 1.0f)
             //return quadTree.[px]
 
-            let mutable a = 0.5
+            let mutable a = 0.5f
 
-            if radiusSq >= distanceSq then a <- 0.0
-            elif radiusSq <= 0 then a <- 0.1
+            if radiusSq >= distanceSq then a <- 0.0f
+            elif radiusSq <= 0.0f then a <- 0.1f
 
 
             //let t = sqrt radiusSq / uniform.Distance
-            //let a = (1.0 - abs (2.0 * t - 1.0)) ** 1.0
+            //let a = (1.0f - abs (2.0f * t - 1.0f)) ** 1.0f
 
-            //let a = 1.0 - radius / uniform.Distance
-            return V4d(0.05, 0.5, 0.85, a)
+            //let a = 1.0f - radius / uniform.Distance
+            return V4f(0.05f, 0.5f, 0.85f, a)
                 
 
         }
@@ -629,14 +629,14 @@ module internal BlitExtensions =
                 let tc = (V2d pixel + V2d.Half) / V2d src.Size
                 let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
                 let viewPos = projTrafo.Backward.TransformPosProj ndc
-                Some (id, partIndex, viewPos, normal)
+                Some (id, partIndex, viewPos, V3d normal)
             elif id < 0 then
                 // Mode B (real-position): slot 3 holds length, no PartIndex available.
                 let normal = Normal32.decode (NativePtr.get iptr i1)
                 let direction = Normal32.decode (NativePtr.get iptr i2)
                 let distance = NativePtr.get ptr i3
-                let viewPos = direction * float distance
-                Some (-id, 0, viewPos, normal)
+                let viewPos = V3d direction * float distance
+                Some (-id, 0, viewPos, V3d normal)
             else
                 None
                 
@@ -812,10 +812,10 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                             )
                                         )
                                 
-                                    let hasVertexInputs = 
-                                        vertex.inputs |> List.forall (fun p -> 
-                                            Option.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
-                                            Option.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
+                                    let hasVertexInputs =
+                                        vertex.inputs |> List.forall (fun p ->
+                                            ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
+                                            ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
                                         )
                                     
                                     //let hasUniforms = 
@@ -1018,11 +1018,11 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         let task = 
             RenderTask.custom (fun (t, _rt, o) ->
                 frameTimeWatch.Restart()
-                let size = o.framebuffer.Size
+                let size = o.Framebuffer.Size
                 let evtInfo = getInfo size
 
-                if o.framebuffer.Size <> fboSize.Value then
-                    transact (fun () -> fboSize.Value <- o.framebuffer.Size)
+                if o.Framebuffer.Size <> fboSize.Value then
+                    transact (fun () -> fboSize.Value <- o.Framebuffer.Size)
                     trigger (RenderControlEvent.Resize evtInfo)
                
                 let s = fboSize.GetValue t
@@ -1045,7 +1045,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 trigger (RenderControlEvent.PostRender evtInfo)
 
 
-                runtime.BlitFramebuffer(outputInfo.NonPickableFramebuffer, o.framebuffer)
+                runtime.BlitFramebuffer(outputInfo.NonPickableFramebuffer, o.Framebuffer)
                 idx <- idx + 1
                 frameTimeWatch.Stop()
                 frameTimeStats.Add (float frameTimeWatch.Elapsed.Ticks)

@@ -47,12 +47,17 @@ module private JpegTools =
         let downloadFBO (jpeg : TJCompressor) (size : V2i) (quality : int) (fbo : Framebuffer) =
             let device = fbo.Device
             let color = fbo.Attachments.[DefaultSemantic.Colors].Image.[TextureAspect.Color, 0, 0]
-
-            let tmp = device.CreateTensorImage<byte>(V3i(size, 1), Col.Format.RGBA, false)
+            let tmp = device.ReadbackMemory.CreateTensorImage<byte>(V3i(size, 1), Col.Format.RGBA, false)
+            //tmp = device.CreateTensorImage<byte>(V3i(size, 1), Col.Format.RGBA, false)
 
             let small =
                 if size <> fbo.Size then
-                    Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
+                    Image.create
+                        TextureDimension.Texture2D
+                        (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit)
+                        VkFormat.R8g8b8a8Unorm
+                        1 1 1 (V3i(size,1))
+                        device
                     |> Some
                 else
                     None
@@ -92,17 +97,29 @@ module private JpegTools =
         let downloadFBOMS (jpeg : TJCompressor) (size : V2i) (quality : int) (fbo : Framebuffer) =
             let device = fbo.Device
             let color = fbo.Attachments.[DefaultSemantic.Colors].Image.[TextureAspect.Color, 0, 0]
-
-            let tempImage = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
+            
+            let tempImage =
+                Image.create
+                    TextureDimension.Texture2D
+                    (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit)
+                    VkFormat.R8g8b8a8Unorm
+                    1 1 1 (V3i(size,1))
+                    device
 
             let full =
                 if size <> fbo.Size then
-                    Image.create (V3i(fbo.Size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
+                    Image.create
+                        TextureDimension.Texture2D
+                        (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit)
+                        VkFormat.R8g8b8a8Unorm
+                        1 1 1 (V3i(fbo.Size,1))
+                        device
+                            
                     |> Some
                 else
                     None
 
-            let tmp = device.CreateTensorImage<byte>(V3i(size, 1), Col.Format.RGBA, false)
+            let tmp = device.ReadbackMemory.CreateTensorImage<byte>(V3i(size, 1), Col.Format.RGBA, false)
             let oldLayout = color.Image.Layout
             device.perform {
                 do! Command.TransformLayout(color.Image, VkImageLayout.TransferSrcOptimal)

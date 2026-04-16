@@ -27,17 +27,24 @@ module RawDownloader =
                     | Some t when t.Size.XY = size -> t
                     | _ ->
                         tempImage |> Option.iter (fun i -> i.Dispose())
-                        let t = Image.create (V3i(size,1)) 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.ColorAttachmentBit) ImageExportMode.None device
+ 
+                        let t =
+                            Image.create
+                                TextureDimension.Texture2D
+                                (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.ColorAttachmentBit)
+                                VkFormat.R8g8b8a8Unorm
+                                1 1 1 (V3i(size,1))
+                                device
                         tempImage <- Some t
                         t
 
             let getTempBuffer (size : int64) =
                 //let size = Fun.NextPowerOfTwo size
                 match tempBuffer with
-                    | Some b when b.Size = size -> b
+                    | Some b when b.Size = uint64 size -> b
                     | _ ->
                         tempBuffer |> Option.iter (fun i -> i.Dispose())
-                        let b = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit size
+                        let b = device.ReadbackMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit (uint64 size)
                         tempBuffer <- Some b
                         b
 
@@ -92,10 +99,10 @@ module RawDownloader =
             let getTempBuffer (size : int64) =
                 //let size = Fun.NextPowerOfTwo size
                 match tempBuffer with
-                    | Some b when b.Size = size -> b
+                    | Some b when b.Size = uint64 size -> b
                     | _ ->
                         tempBuffer |> Option.iter (fun i -> i.Dispose())
-                        let b = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit size
+                        let b = device.ReadbackMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit (uint64 size)
                         tempBuffer <- Some b
                         b
 
@@ -148,8 +155,22 @@ module RawDownloader =
             if samples > 1 then
                 let lineSize = 4L * int64 image.Size.X
                 let size = lineSize * int64 image.Size.Y
-                let tempImage = Image.create image.Size 1 1 1 TextureDimension.Texture2D VkFormat.R8g8b8a8Unorm (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit) ImageExportMode.None device
-                use temp = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit size
+                            //             let t =
+                            // Image.create
+                            //     TextureDimension.Texture2D
+                            //     (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.ColorAttachmentBit)
+                            //     VkFormat.R8g8b8a8Unorm
+                            //     1 1 1 (V3i(size,1))
+                            //     device
+                
+                let tempImage =
+                    Image.create
+                        TextureDimension.Texture2D
+                        (VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.TransferDstBit)
+                        VkFormat.R8g8b8a8Unorm
+                        1 1 1 image.Size
+                        device
+                use temp = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit (uint64 size)
 
                 let l = image.Layout
                 device.perform {
@@ -169,7 +190,7 @@ module RawDownloader =
             else
                 let lineSize = 4L * int64 image.Size.X
                 let size = lineSize * int64 image.Size.Y
-                use temp = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit size
+                use temp = device.HostMemory |> Buffer.create VkBufferUsageFlags.TransferDstBit (uint64 size)
 
                 let l = image.Layout
                 device.perform {

@@ -91,22 +91,22 @@ module Gizmo =
         
         let sample (v : Effects.Vertex) =
             fragment {
-                let s = 1.0 / V2d sam.Size
-                let mutable sum = V4d.Zero
+                let s = 1.0f / V2f sam.Size
+                let mutable sum = V4f.Zero
                 for dx in -1 .. 1 do
                     for dy in -1 .. 1 do
-                        let c = sam.SampleLevel(v.tc + V2d(float dx, float dy) * s, 0.0)
+                        let c = sam.SampleLevel(v.tc + V2f(float32 dx, float32 dy) * s, 0.0f)
                         sum <- sum + c
-                if sum.W < 0.01 then discard()
+                if sum.W < 0.01f then discard()
                 return sum / sum.W
             }
-            
+
         let light (v : Effects.Vertex) =
             fragment {
-                let n = Vec.normalize ((uniform.ViewTrafo * V4d(v.n, 0.0)).XYZ)
+                let n = Vec.normalize ((uniform.ViewTrafo * V4f(v.n, 0.0f)).XYZ)
                 let diffuse = abs n.Z
-                let l = 0.4  + 0.6 * diffuse
-                return V4d(v.c.XYZ * l, v.c.W)
+                let l = 0.4f  + 0.6f * diffuse
+                return V4f(v.c.XYZ * l, v.c.W)
             }
 
     let render (config : GizmoConfig) (viewportSize : aval<V2i>) =

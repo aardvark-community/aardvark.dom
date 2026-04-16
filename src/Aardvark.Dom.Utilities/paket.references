@@ -3,6 +3,7 @@ Aardvark.Base
 Aardvark.Build
 Aardvark.SceneGraph
 Aardvark.Rendering.Text
+Aardvark.FontProvider
 Aardvark.Application
 Aardvark.Geometry
 Adaptify.MSBuild

@@ -29,6 +29,13 @@
         "adaptify"
       ],
       "rollForward": false
+    },
+    "fshadeaot": {
+      "version": "5.7.3",
+      "commands": [
+        "fshadeaot"
+      ],
+      "rollForward": false
     }
   }
 }
