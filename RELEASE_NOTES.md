@@ -1,3 +1,9 @@
+### 1.1.0
+* updated to Aardvark.Rendering 5.6.4 / FShade 5.7.3
+* migrated all shader code to explicit float32/V*f types (FShade no longer silently lowers double to float)
+* adopted Rendering 5.6 API changes (HashMap.tryFindV, DrawCallInfo[], OutputDescription.Framebuffer, Buffer.create uint64, Image.create parameter order)
+* added Aardvark.FontProvider dependency (no longer transitive from Rendering.Text)
+
 ### 1.0.25
 * SceneEventLocation/SceneEvent now carry a PartIndex (sub-entity id for batched picks)
 * pick shader writes PartIndex to the previously-unused alpha slot in Mode A; user shaders can override via Semantic("PickPartIndex"), default is gl_InstanceID
