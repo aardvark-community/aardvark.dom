@@ -1,3 +1,6 @@
+### 1.1.1
+* always inject `PickShader.vertexPickEffect` into the no-normal pick chain so `pi` (PickPartIndex) defaults to `gl_InstanceID`. Previously the no-normal path omitted it, causing FShade to emit `PickPartIndex` as a real vertex attribute that custom-built RenderObjects (e.g. batched tile renderers) had no easy way to supply, breaking the draw entirely.
+
 ### 1.1.0
 * updated to Aardvark.Rendering 5.6.4 / FShade 5.7.3
 * migrated all shader code to explicit float32/V*f types (FShade no longer silently lowers double to float)

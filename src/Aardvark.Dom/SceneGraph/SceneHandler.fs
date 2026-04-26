@@ -841,7 +841,12 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                         if hasAllInputs withNormal then
                                             withNormal
                                         else
-                                            FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                            // Always include `vertexPickEffect` so that `pi` defaults to
+                                            // `gl_InstanceID`. Without it, FShade emits PickPartIndex as
+                                            // a real vertex attribute that custom-built RenderObjects
+                                            // (e.g. TileRenderer's batched draws) have no easy way to
+                                            // supply, breaking the draw entirely.
+                                            FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
                                 newShader.Shaders
                             )
                             
