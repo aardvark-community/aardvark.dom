@@ -1,3 +1,7 @@
+### 1.1.2
+* `pickIdNoNormal` no longer reads `v.pi` — it writes a constant 0 in the alpha slot instead. The previous `vertexPickEffect`-based default broke when an intermediate user vertex shader (e.g. `DefaultSurfaces.stableTrafo`) sat between the injected `pickVertex` and the fragment chain, making FShade re-emit `PickPartIndex` as a real vertex attribute. The new fragment-side default makes the no-normal path always work without any vertex-attribute requirement; per-feature pick distinction in this fallback path is dropped (use the with-normal `pickEffect` if you need it).
+* reverted the 1.1.1 chain change — `pickEffectNoNormal` no longer prepends `vertexPickEffect`.
+
 ### 1.1.1
 * always inject `PickShader.vertexPickEffect` into the no-normal pick chain so `pi` (PickPartIndex) defaults to `gl_InstanceID`. Previously the no-normal path omitted it, causing FShade to emit `PickPartIndex` as a real vertex attribute that custom-built RenderObjects (e.g. batched tile renderers) had no easy way to supply, breaking the draw entirely.
 

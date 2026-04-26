@@ -144,11 +144,42 @@ module internal PickShader =
             return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
         }
 
+    // ---- variants used when the user's effect doesn't write PickPartIndex.
+    // These mirror the with-pi versions but write a constant 0 in the alpha
+    // slot, so FShade doesn't pull `pi` through the chain and we don't need
+    // any PickPartIndex vertex attribute.
+    type VertexNoPi =
+        {
+            [<Color>] c : V4f
+            [<Position>] pos : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+            [<Semantic("PickViewPosition")>] pvp : V3f
+            [<Depth>] d : float32
+            [<FragCoord>] fc : V4f
+        }
+
+    let pickIdNoPi(v : VertexNoPi) =
+        fragment {
+            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            let d = (2.0f * v.d - 1.0f)
+            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
+        }
+
+    let pickIdNoNormalNoPi(v : VertexNoPi) =
+        fragment {
+            let n32 = 0
+            let d = (2.0f * v.d - 1.0f)
+            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
+        }
+
     let vertexPickEffect = Effect.ofFunction pickVertex
     let pickEffectBefore = Effect.ofFunction pickIdBefore
     let pickEffect = Effect.ofFunction pickId
     let pickEffectWithRealPosition = Effect.ofFunction pickIdWithRealPosition
     let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
+    // No-pi variants — used when the user effect doesn't output PickPartIndex.
+    let pickEffectNoPi = Effect.ofFunction pickIdNoPi
+    let pickEffectNoNormalNoPi = Effect.ofFunction pickIdNoNormalNoPi
 
     let pickSampler =
         intSampler2d {
@@ -831,22 +862,31 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
 
                                 let hasPickPositions =
                                     Map.containsKey "PickViewPosition" eff.Outputs
-                                    
+
+                                // Mirrors `hasPickPositions` semantics: if the user effect
+                                // writes PickPartIndex, plumb it through; otherwise pick
+                                // the *NoPi variants which write a constant 0 in the alpha
+                                // slot (avoids forcing a PickPartIndex vertex attribute).
+                                let hasPickPartIndex =
+                                    Map.containsKey "PickPartIndex" eff.Outputs
+
                                 let newShader =
                                     if hasPickPositions then
                                         FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectWithRealPosition]
                                     else
-                                        let withNormal = FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
-                                        
+                                        let withNormal =
+                                            if hasPickPartIndex then
+                                                FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
+                                            else
+                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoPi]
+
                                         if hasAllInputs withNormal then
                                             withNormal
                                         else
-                                            // Always include `vertexPickEffect` so that `pi` defaults to
-                                            // `gl_InstanceID`. Without it, FShade emits PickPartIndex as
-                                            // a real vertex attribute that custom-built RenderObjects
-                                            // (e.g. TileRenderer's batched draws) have no easy way to
-                                            // supply, breaking the draw entirely.
-                                            FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                            if hasPickPartIndex then
+                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                            else
+                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormalNoPi]
                                 newShader.Shaders
                             )
                             
