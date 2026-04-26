@@ -1,3 +1,6 @@
+### 1.1.4
+* fix: the no-pi pick chain dropped `vertexPickEffect`, leaving `ViewSpaceNormal`/`PickViewPosition` as required vertex attributes that no producer supplied — the pick draw silently failed (no PickId written), breaking picking for any RenderObject whose user effect doesn't output `PickPartIndex`. Added `pickVertexNoPi` (no `pi` output, no `pvp` either since the no-pi path never feeds `pickEffectWithRealPosition`) and prepend its effect to the with-normal no-pi chain. The no-normal no-pi chain stays unchanged (vn is unused there and DCE drops it).
+
 ### 1.1.3
 * fix: `pickIdBefore` also propagated `pi` because it took a `Vertex` record and `return { v with d = d }` carries every field forward — leaking `PickPartIndex` back into the chain even after switching to NoPi `pickIdNoPi`. Added `pickIdBeforeNoPi` (takes `VertexNoPi`) and use it in the same NoPi branches. Now PickPartIndex truly only appears as a vertex attribute when the user effect explicitly outputs it.
 

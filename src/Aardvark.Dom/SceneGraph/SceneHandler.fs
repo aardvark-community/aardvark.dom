@@ -153,9 +153,29 @@ module internal PickShader =
             [<Color>] c : V4f
             [<Position>] pos : V4f
             [<Semantic("ViewSpaceNormal")>] vn : V3f
-            [<Semantic("PickViewPosition")>] pvp : V3f
             [<Depth>] d : float32
             [<FragCoord>] fc : V4f
+        }
+
+    type VertexInNoPi =
+        {
+            [<Color>] c : V4f
+            [<Position>] pos : V4f
+            [<Normal>] n : V3f
+        }
+
+    let pickVertexNoPi (v : VertexInNoPi) =
+        vertex {
+            let vn = uniform.ModelViewTrafoInv.Transposed * V4f(v.n, 0.0f) |> Vec.xyz |> Vec.normalize
+            let result : VertexNoPi =
+                {
+                    c = v.c
+                    pos = v.pos
+                    vn = vn
+                    d = 0.0f
+                    fc = V4f.Zero
+                }
+            return result
         }
 
     let pickIdBeforeNoPi(v : VertexNoPi) =
@@ -184,6 +204,7 @@ module internal PickShader =
     let pickEffectWithRealPosition = Effect.ofFunction pickIdWithRealPosition
     let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
     // No-pi variants — used when the user effect doesn't output PickPartIndex.
+    let vertexPickEffectNoPi = Effect.ofFunction pickVertexNoPi
     let pickEffectBeforeNoPi = Effect.ofFunction pickIdBeforeNoPi
     let pickEffectNoPi = Effect.ofFunction pickIdNoPi
     let pickEffectNoNormalNoPi = Effect.ofFunction pickIdNoNormalNoPi
@@ -885,7 +906,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                             if hasPickPartIndex then
                                                 FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
                                             else
-                                                FShade.Effect.compose [PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoPi]
+                                                FShade.Effect.compose [PickShader.vertexPickEffectNoPi; PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoPi]
 
                                         if hasAllInputs withNormal then
                                             withNormal
