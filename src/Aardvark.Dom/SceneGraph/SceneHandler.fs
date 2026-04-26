@@ -125,10 +125,16 @@ module internal PickShader =
     // ---- Depth seeding fragment: writes gl_FragCoord.z into the Depth
     // semantic before the user's fragment runs, so downstream pickFinal*
     // sees the natural depth even if the user fragment never touches Depth.
-    type DepthOnly = { [<Depth>] d : float32 }
-    let pickDepthBefore (_ : DepthOnly) =
+    // IMPORTANT: input record must NOT declare [<Depth>] — FShade would
+    // then route Depth backwards as a required vertex attribute, breaking
+    // hasAllInputs for any geometry that has no "Depth" attribute (i.e.,
+    // every real RenderObject). Use FragCoord which is a GPU built-in
+    // (gl_FragCoord) and never becomes a varying.
+    type DepthSeedIn = { [<FragCoord>] fc : V4f }
+    type DepthSeedOut = { [<FragCoord>] fc : V4f; [<Depth>] d : float32 }
+    let pickDepthBefore (v : DepthSeedIn) =
         fragment {
-            let r : DepthOnly = { d = fragCoord().Z }
+            let r : DepthSeedOut = { fc = v.fc; d = v.fc.Z }
             return r
         }
 
