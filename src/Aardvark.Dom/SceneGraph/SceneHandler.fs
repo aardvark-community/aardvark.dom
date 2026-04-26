@@ -69,24 +69,29 @@ module internal PickShader =
         member x.LevelSizes : Arr<16 N, V2i> = uniform?LevelSizes
         member x.LevelPixelSizes : Arr<16 N, V2i> = uniform?LevelPixelSizes
 
-    type VertexIn =
-        {
-            [<Color>] c : V4f
-            [<Position>] pos : V4f
-            [<Normal>] n : V3f
-            [<InstanceId>] instanceId : int
-        }
-
-    type Vertex =
-        {
-            [<Color>] c : V4f
-            [<Position>] pos : V4f
-            [<Semantic("ViewSpaceNormal")>] vn : V3f
-            [<Semantic("PickViewPosition")>] pvp : V3f
-            [<Semantic("PickPartIndex")>] pi : int
-            [<Depth>] d : float32
-            [<FragCoord>] fc : V4f
-        }
+    // -----------------------------------------------------------------------
+    // Pick chain — design notes
+    //
+    // Each effect declares an input record containing ONLY the fields it
+    // actually reads, and an output record containing ONLY what it writes.
+    // FShade composition then routes each requested fragment input to the
+    // nearest upstream producer. A semantic only becomes a required vertex
+    // attribute if some fragment in the chain reads it AND no upstream effect
+    // produces it. With this design, neither `PickPartIndex` nor
+    // `PickViewPosition` can ever leak in as a vertex attribute from OUR
+    // chain — they can only appear if the user's own effect already required
+    // them.
+    //
+    // Modes:
+    //   A: id, encoded-normal, depth, PartIndex packed into 4 float slots.
+    //      PartIndex = user-supplied via "PickPartIndex" semantic, or 0
+    //      (we do NOT default it to gl_InstanceID — past attempts to do so
+    //      broke composition with custom user vertex shaders).
+    //   B: id, encoded-normal, encoded-direction, length — all four slots
+    //      consumed. No room for PartIndex; pi is irrelevant in this mode.
+    //   No-normal variants: same as A but write 0 instead of an encoded
+    //      normal — used when the geometry has no Normal attribute.
+    // -----------------------------------------------------------------------
 
     type Fragment =
         {
@@ -94,61 +99,125 @@ module internal PickShader =
             [<Semantic("PickId")>] id : V4f
         }
 
-    let pickVertex (v : VertexIn) =
-        vertex {
-            let vn = uniform.ModelViewTrafoInv.Transposed * V4f(v.n, 0.0f) |> Vec.xyz |> Vec.normalize
-
-            return {
-                c = v.c
-                pos = v.pos
-                pvp = uniform.ModelViewTrafo * v.pos |> Vec.xyz
-                vn = vn
-                pi = v.instanceId
-                d = 0.0f
-                fc = V4f.Zero
-            }
-        }
-
     [<GLSLIntrinsic("gl_FragCoord")>]
     let fragCoord() : V4f = onlyInShaderCode "fragcoord"
 
-    let pickIdBefore(v : Vertex) =
-        fragment {
-            let d = fragCoord().Z
-            return { v with d = d }
+    // ---- Vertex producer for ViewSpaceNormal.
+    // Only injected when a downstream pick fragment needs vn. Reads Normal,
+    // writes vn — nothing more, so pi/pvp never get pulled through.
+    type VnIn =
+        {
+            [<Position>] pos : V4f
+            [<Normal>] n : V3f
+        }
+    type VnOut =
+        {
+            [<Position>] pos : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+        }
+    let viewSpaceNormalVertex (v : VnIn) =
+        vertex {
+            let vn = uniform.ModelViewTrafoInv.Transposed * V4f(v.n, 0.0f) |> Vec.xyz |> Vec.normalize
+            let r : VnOut = { pos = v.pos; vn = vn }
+            return r
         }
 
-    // Mode B: all four V4f slots are occupied (id, normal, direction, length).
-    // No room for PartIndex — batched picking must use pickEffect / pickEffectNoNormal.
-    let pickIdWithRealPosition(v : Vertex) =
+    // ---- Depth seeding fragment: writes gl_FragCoord.z into the Depth
+    // semantic before the user's fragment runs, so downstream pickFinal*
+    // sees the natural depth even if the user fragment never touches Depth.
+    type DepthOnly = { [<Depth>] d : float32 }
+    let pickDepthBefore (_ : DepthOnly) =
+        fragment {
+            let r : DepthOnly = { d = fragCoord().Z }
+            return r
+        }
+
+    // ---- Mode A, with normal, with user PartIndex.
+    type FinalA_In =
+        {
+            [<Color>] c : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+            [<Semantic("PickPartIndex")>] pi : int
+            [<Depth>] d : float32
+        }
+    let pickFinalA (v : FinalA_In) =
+        fragment {
+            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
+            return r
+        }
+
+    // ---- Mode A, with normal, no PartIndex (defaults to 0 in fragment).
+    type FinalANoPi_In =
+        {
+            [<Color>] c : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+            [<Depth>] d : float32
+        }
+    let pickFinalANoPi (v : FinalANoPi_In) =
+        fragment {
+            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
+            return r
+        }
+
+    // ---- Mode A, no normal, with user PartIndex.
+    type FinalANoNormal_In =
+        {
+            [<Color>] c : V4f
+            [<Semantic("PickPartIndex")>] pi : int
+            [<Depth>] d : float32
+        }
+    let pickFinalANoNormal (v : FinalANoNormal_In) =
+        fragment {
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat 0, d, Bitwise.IntBitsToFloat v.pi) }
+            return r
+        }
+
+    // ---- Mode A, no normal, no PartIndex.
+    type FinalANoNormalNoPi_In =
+        {
+            [<Color>] c : V4f
+            [<Depth>] d : float32
+        }
+    let pickFinalANoNormalNoPi (v : FinalANoNormalNoPi_In) =
+        fragment {
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat 0, d, Bitwise.IntBitsToFloat 0) }
+            return r
+        }
+
+    // ---- Mode B (real position). pi is unused; never appears in this chain.
+    type FinalB_In =
+        {
+            [<Color>] c : V4f
+            [<Semantic("ViewSpaceNormal")>] vn : V3f
+            [<Semantic("PickViewPosition")>] pvp : V3f
+        }
+    let pickFinalB (v : FinalB_In) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
             let len = Vec.length v.pvp
             let dir = Normal32.encode (v.pvp / len) |> int
-            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            return r
         }
 
-    // Mode A: alpha slot carries PartIndex (user-supplied via "PickPartIndex" semantic,
-    // defaults to gl_InstanceId via pickVertex).
-    let pickId(v : Vertex) =
-        fragment {
-            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let d = (2.0f * v.d - 1.0f)
-            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
-        }
+    let viewSpaceNormalEffect = Effect.ofFunction viewSpaceNormalVertex
+    let pickDepthBeforeEffect = Effect.ofFunction pickDepthBefore
+    let pickFinalAEffect = Effect.ofFunction pickFinalA
+    let pickFinalANoPiEffect = Effect.ofFunction pickFinalANoPi
+    let pickFinalANoNormalEffect = Effect.ofFunction pickFinalANoNormal
+    let pickFinalANoNormalNoPiEffect = Effect.ofFunction pickFinalANoNormalNoPi
+    let pickFinalBEffect = Effect.ofFunction pickFinalB
 
-    let pickIdNoNormal(v : Vertex) =
-        fragment {
-            let n32 = 0
-            let d = (2.0f * v.d - 1.0f)
-            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
-        }
-
-    // ---- variants used when the user's effect doesn't write PickPartIndex.
-    // These mirror the with-pi versions but write a constant 0 in the alpha
-    // slot, so FShade doesn't pull `pi` through the chain and we don't need
-    // any PickPartIndex vertex attribute.
-    type VertexNoPi =
+    // Legacy record kept for `binary` / `outline` — they only read v.fc, but
+    // share this type with their own callers. Stripped of the pick-specific
+    // pi/pvp fields so it can't accidentally re-introduce them.
+    type Vertex =
         {
             [<Color>] c : V4f
             [<Position>] pos : V4f
@@ -156,58 +225,6 @@ module internal PickShader =
             [<Depth>] d : float32
             [<FragCoord>] fc : V4f
         }
-
-    type VertexInNoPi =
-        {
-            [<Color>] c : V4f
-            [<Position>] pos : V4f
-            [<Normal>] n : V3f
-        }
-
-    let pickVertexNoPi (v : VertexInNoPi) =
-        vertex {
-            let vn = uniform.ModelViewTrafoInv.Transposed * V4f(v.n, 0.0f) |> Vec.xyz |> Vec.normalize
-            let result : VertexNoPi =
-                {
-                    c = v.c
-                    pos = v.pos
-                    vn = vn
-                    d = 0.0f
-                    fc = V4f.Zero
-                }
-            return result
-        }
-
-    let pickIdBeforeNoPi(v : VertexNoPi) =
-        fragment {
-            let d = fragCoord().Z
-            return { v with d = d }
-        }
-
-    let pickIdNoPi(v : VertexNoPi) =
-        fragment {
-            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let d = (2.0f * v.d - 1.0f)
-            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
-        }
-
-    let pickIdNoNormalNoPi(v : VertexNoPi) =
-        fragment {
-            let n32 = 0
-            let d = (2.0f * v.d - 1.0f)
-            return { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
-        }
-
-    let vertexPickEffect = Effect.ofFunction pickVertex
-    let pickEffectBefore = Effect.ofFunction pickIdBefore
-    let pickEffect = Effect.ofFunction pickId
-    let pickEffectWithRealPosition = Effect.ofFunction pickIdWithRealPosition
-    let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
-    // No-pi variants — used when the user effect doesn't output PickPartIndex.
-    let vertexPickEffectNoPi = Effect.ofFunction pickVertexNoPi
-    let pickEffectBeforeNoPi = Effect.ofFunction pickIdBeforeNoPi
-    let pickEffectNoPi = Effect.ofFunction pickIdNoPi
-    let pickEffectNoNormalNoPi = Effect.ofFunction pickIdNoNormalNoPi
 
     let pickSampler =
         intSampler2d {
@@ -898,23 +915,31 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                 let hasPickPartIndex =
                                     Map.containsKey "PickPartIndex" eff.Outputs
 
+                                // Each fragment effect declares only the fields it
+                                // reads, so FShade composition only pulls in vn from
+                                // viewSpaceNormalEffect when the chain actually needs
+                                // it. pi/pvp can never become required vertex inputs
+                                // from these effects — they only show up if the
+                                // user's own effect already required them.
                                 let newShader =
                                     if hasPickPositions then
-                                        FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffectWithRealPosition]
+                                        // Mode B: pi is irrelevant and never appears
+                                        // in this chain.
+                                        FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalBEffect]
                                     else
                                         let withNormal =
                                             if hasPickPartIndex then
-                                                FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
+                                                FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalAEffect]
                                             else
-                                                FShade.Effect.compose [PickShader.vertexPickEffectNoPi; PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoPi]
+                                                FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoPiEffect]
 
                                         if hasAllInputs withNormal then
                                             withNormal
                                         else
                                             if hasPickPartIndex then
-                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
+                                                FShade.Effect.compose [PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoNormalEffect]
                                             else
-                                                FShade.Effect.compose [PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoNormalNoPi]
+                                                FShade.Effect.compose [PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoNormalNoPiEffect]
                                 newShader.Shaders
                             )
                             
