@@ -158,6 +158,12 @@ module internal PickShader =
             [<FragCoord>] fc : V4f
         }
 
+    let pickIdBeforeNoPi(v : VertexNoPi) =
+        fragment {
+            let d = fragCoord().Z
+            return { v with d = d }
+        }
+
     let pickIdNoPi(v : VertexNoPi) =
         fragment {
             let n32 = Normal32.encode (Vec.normalize v.vn) |> int
@@ -178,6 +184,7 @@ module internal PickShader =
     let pickEffectWithRealPosition = Effect.ofFunction pickIdWithRealPosition
     let pickEffectNoNormal = Effect.ofFunction pickIdNoNormal
     // No-pi variants — used when the user effect doesn't output PickPartIndex.
+    let pickEffectBeforeNoPi = Effect.ofFunction pickIdBeforeNoPi
     let pickEffectNoPi = Effect.ofFunction pickIdNoPi
     let pickEffectNoNormalNoPi = Effect.ofFunction pickIdNoNormalNoPi
 
@@ -878,7 +885,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                             if hasPickPartIndex then
                                                 FShade.Effect.compose [PickShader.vertexPickEffect; PickShader.pickEffectBefore; eff; PickShader.pickEffect]
                                             else
-                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoPi]
+                                                FShade.Effect.compose [PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoPi]
 
                                         if hasAllInputs withNormal then
                                             withNormal
@@ -886,7 +893,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                             if hasPickPartIndex then
                                                 FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormal]
                                             else
-                                                FShade.Effect.compose [PickShader.pickEffectBefore; eff; PickShader.pickEffectNoNormalNoPi]
+                                                FShade.Effect.compose [PickShader.pickEffectBeforeNoPi; eff; PickShader.pickEffectNoNormalNoPi]
                                 newShader.Shaders
                             )
                             

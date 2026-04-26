@@ -1,3 +1,6 @@
+### 1.1.3
+* fix: `pickIdBefore` also propagated `pi` because it took a `Vertex` record and `return { v with d = d }` carries every field forward — leaking `PickPartIndex` back into the chain even after switching to NoPi `pickIdNoPi`. Added `pickIdBeforeNoPi` (takes `VertexNoPi`) and use it in the same NoPi branches. Now PickPartIndex truly only appears as a vertex attribute when the user effect explicitly outputs it.
+
 ### 1.1.2
 * `pickIdNoNormal` no longer reads `v.pi` — it writes a constant 0 in the alpha slot instead. The previous `vertexPickEffect`-based default broke when an intermediate user vertex shader (e.g. `DefaultSurfaces.stableTrafo`) sat between the injected `pickVertex` and the fragment chain, making FShade re-emit `PickPartIndex` as a real vertex attribute. The new fragment-side default makes the no-normal path always work without any vertex-attribute requirement; per-feature pick distinction in this fallback path is dropped (use the with-normal `pickEffect` if you need it).
 * reverted the 1.1.1 chain change — `pickEffectNoNormal` no longer prepends `vertexPickEffect`.
