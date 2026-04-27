@@ -1,3 +1,13 @@
+### 1.1.6
+* refactored pick-chain selector to use FShade 5.7.4's `Effect.Dependencies`. The old logic gated mode A vs B on `Map.containsKey "PickViewPosition" eff.Outputs` (a coarse "does the user effect declare it?" check) and used `hasAllInputs` over a fully-linked module to test whether the with-normal variant was viable (one `Effect.toModule` call per draw setup). Both replaced by a pure-map analysis: for each pick-relevant semantic (`ViewSpaceNormal`, `PickViewPosition`, `PickPartIndex`) we ask "can the user's effect produce this with the geometry's actual vertex attributes?" via `EffectDeps.resolveTop`.
+* normal handling now has two paths, mirroring how pi/pvp work:
+  1. user effect produces `ViewSpaceNormal` (per-pixel pick normals — e.g. normal mapping) → use theirs, skip injection
+  2. geometry has `Normals` attribute → inject `viewSpaceNormalEffect` to synthesise vsn from the model normal
+  3. neither → no-normal variant
+* user effects that declare a pick output (e.g. `PickPartIndex`) but whose dep closure isn't satisfied by the geometry (e.g. they read `[<InstanceId>]` from a non-instanced render object) now degrade gracefully to the no-pi variant — previously this caused a silent attribute demand and "no buffer is bound to enabled attribute" at draw time.
+* extracted `PickShader.chooseChain` / `PickShader.composePickChain` as pure, public helpers; added `Aardvark.Dom.Tests` project with unit tests covering each branch of the selector + the FShade `Positions0` frag-input-renaming quirk.
+* requires FShade 5.7.4 (deps tracking is upstream).
+
 ### 1.1.5
 * fix: `pickDepthBefore`'s input record declared `[<Depth>] d : float32` purely for record-shape reasons. FShade saw Depth as a fragment input with no upstream producer and routed it backwards as a required vertex attribute. Since real geometry never has a "Depth" attribute, `hasAllInputs` returned false for every with-normal pick chain — every RenderObject silently fell back to the no-normal variant which writes a constant 0 in the encoded-normal slot. Picked normals were always V3d.Zero. Replaced the input record with `{ [<FragCoord>] fc : V4f }` (FragCoord is `gl_FragCoord`, a GPU built-in that never becomes a varying), so depth seeding no longer pollutes the vertex input set.
 

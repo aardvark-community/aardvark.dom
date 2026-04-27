@@ -55,7 +55,7 @@ module internal Normal32 =
 
             best
         
-module internal PickShader =
+module PickShader =
     open FShade 
 
     type UniformScope with
@@ -219,6 +219,98 @@ module internal PickShader =
     let pickFinalANoNormalEffect = Effect.ofFunction pickFinalANoNormal
     let pickFinalANoNormalNoPiEffect = Effect.ofFunction pickFinalANoNormalNoPi
     let pickFinalBEffect = Effect.ofFunction pickFinalB
+
+    /// Tag identifying which of our pick-final effects ended up at the tail
+    /// of the composed chain. Exposed primarily so unit tests can assert the
+    /// selection logic without round-tripping through `Effect.compose`.
+    type PickFinal =
+        | FinalA              // mode A, with normal,    with PartIndex
+        | FinalANoPi          // mode A, with normal,    no PartIndex
+        | FinalANoNormal      // mode A, no normal,      with PartIndex
+        | FinalANoNormalNoPi  // mode A, no normal,      no PartIndex
+        | FinalB              // mode B (real position)
+
+    /// Result of resolving a pick chain for a given user effect + geometry.
+    /// `Final` is the tail effect; `InjectVsn` says whether
+    /// `viewSpaceNormalEffect` is prepended to synthesise ViewSpaceNormal
+    /// from the geometry's `Normals` vertex attribute. The full chain is
+    /// `(if InjectVsn then [viewSpaceNormalEffect] else []) @ [pickDepthBeforeEffect; eff; finalEffect Final]`.
+    type PickChainChoice =
+        {
+            Final     : PickFinal
+            InjectVsn : bool
+        }
+
+    /// Resolve the pick chain choice for a user effect against a callback
+    /// `geomHas` reporting whether the target geometry exposes a given
+    /// vertex/instance attribute. Pure function — driven entirely by
+    /// FShade 5.7.4's `Effect.Dependencies`. No `Effect.toModule` calls,
+    /// no speculative composition.
+    ///
+    /// Resolution rules:
+    ///   * `PickViewPosition` produced by user (deps satisfied) → mode B
+    ///   * else → mode A; pick the with-normal / no-normal · with-pi /
+    ///     no-pi variant according to whether the user's effect can produce
+    ///     `ViewSpaceNormal` (or geometry has `Normals` for synthesis) and
+    ///     whether the user's effect can produce `PickPartIndex`.
+    ///
+    /// `InjectVsn` is set iff we need to synthesise vsn ourselves
+    /// (geometry has `Normals` but user's effect doesn't produce vsn).
+    /// FShade renames `Position` to `Positions0` (or `Positions1`, …) when
+    /// the fragment shader reads `v.pos` directly — to disambiguate the
+    /// fragment-input copy from the vertex-attribute output. Geometry only
+    /// ever exposes the canonical `Positions` semantic, so treat any
+    /// `Positions[0-9]+` as a synonym when checking attribute availability.
+    let private canonicalSemantic (s : string) =
+        if s.StartsWith "Positions" && s.Length > "Positions".Length then
+            let suffix = s.Substring("Positions".Length)
+            if suffix |> Seq.forall System.Char.IsDigit then "Positions" else s
+        else s
+
+    let chooseChain (eff : FShade.Effect) (geomHas : string -> bool) : PickChainChoice =
+        let resolved : Map<string, FShade.OutputDeps> =
+            FShade.EffectDeps.resolveTop eff.Dependencies
+
+        let canEffProduce (sem : string) =
+            match Map.tryFind sem resolved with
+            | Some (d : FShade.OutputDeps) ->
+                d.Inputs
+                |> Map.toSeq
+                |> Seq.forall (fun (n, _) -> geomHas (canonicalSemantic n))
+            | None -> false
+
+        let userVsn       = canEffProduce "ViewSpaceNormal"
+        let userPvp       = canEffProduce "PickViewPosition"
+        let userPi        = canEffProduce "PickPartIndex"
+        let canSynthesise = geomHas "Normals"
+        let canCarryVsn   = userVsn || canSynthesise
+        let needInjectVsn = canSynthesise && not userVsn
+
+        if userPvp then
+            { Final = FinalB; InjectVsn = needInjectVsn }
+        else
+            let final =
+                match canCarryVsn, userPi with
+                | true,  true  -> FinalA
+                | true,  false -> FinalANoPi
+                | false, true  -> FinalANoNormal
+                | false, false -> FinalANoNormalNoPi
+            { Final = final; InjectVsn = needInjectVsn }
+
+    /// Look up the actual effect for a `PickFinal` tag.
+    let finalEffect = function
+        | FinalA              -> pickFinalAEffect
+        | FinalANoPi          -> pickFinalANoPiEffect
+        | FinalANoNormal      -> pickFinalANoNormalEffect
+        | FinalANoNormalNoPi  -> pickFinalANoNormalNoPiEffect
+        | FinalB              -> pickFinalBEffect
+
+    /// Build the composed pick effect for a user effect + geometry callback.
+    let composePickChain (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect =
+        let choice = chooseChain eff geomHas
+        let pre = if choice.InjectVsn then [viewSpaceNormalEffect] else []
+        let chain = pre @ [pickDepthBeforeEffect; eff; finalEffect choice.Final]
+        FShade.Effect.compose chain
 
     // Legacy record kept for `binary` / `outline` — they only read v.fc, but
     // share this type with their own callers. Stripped of the pick-specific
@@ -883,69 +975,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | Surface.Effect eff ->
                         let newShaders =
                             lazy (
-                                let hasAllInputs (effect : FShade.Effect) =
-                                    let m = Effect.link newSignature o.Mode false effect
-
-                                    let vertex = 
-                                        m.Entries |> List.find (fun e -> 
-                                            e.decorations |> List.exists (function 
-                                                | EntryDecoration.Stages (ShaderStageDescription.Graphics { self = FShade.ShaderStage.Vertex }) -> true 
-                                                | _ -> false
-                                            )
-                                        )
-                                
-                                    let hasVertexInputs =
-                                        vertex.inputs |> List.forall (fun p ->
-                                            ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create p.paramSemantic)) ||
-                                            ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create p.paramSemantic))
-                                        )
-                                    
-                                    //let hasUniforms = 
-                                    //    m.entries |> List.collect (fun e -> e.uniforms) |> List.forall (fun u -> 
-                                    //        let has = 
-                                    //            u.uniformName = "PickId" ||
-                                    //            Option.isSome (Uniforms.tryGetDerivedUniform u.uniformName o.Uniforms) ||
-                                    //            Option.isSome (o.Uniforms.TryGetUniform(Ag.Scope.Root, u.uniformName))
-                                    //        if not has then Log.warn "missing: %A" u
-                                    //        has
-                                    //    )
-                                    hasVertexInputs
-
-                                let hasPickPositions =
-                                    Map.containsKey "PickViewPosition" eff.Outputs
-
-                                // Mirrors `hasPickPositions` semantics: if the user effect
-                                // writes PickPartIndex, plumb it through; otherwise pick
-                                // the *NoPi variants which write a constant 0 in the alpha
-                                // slot (avoids forcing a PickPartIndex vertex attribute).
-                                let hasPickPartIndex =
-                                    Map.containsKey "PickPartIndex" eff.Outputs
-
-                                // Each fragment effect declares only the fields it
-                                // reads, so FShade composition only pulls in vn from
-                                // viewSpaceNormalEffect when the chain actually needs
-                                // it. pi/pvp can never become required vertex inputs
-                                // from these effects — they only show up if the
-                                // user's own effect already required them.
-                                let newShader =
-                                    if hasPickPositions then
-                                        // Mode B: pi is irrelevant and never appears
-                                        // in this chain.
-                                        FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalBEffect]
-                                    else
-                                        let withNormal =
-                                            if hasPickPartIndex then
-                                                FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalAEffect]
-                                            else
-                                                FShade.Effect.compose [PickShader.viewSpaceNormalEffect; PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoPiEffect]
-
-                                        if hasAllInputs withNormal then
-                                            withNormal
-                                        else
-                                            if hasPickPartIndex then
-                                                FShade.Effect.compose [PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoNormalEffect]
-                                            else
-                                                FShade.Effect.compose [PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalANoNormalNoPiEffect]
+                                // Pick-chain selection driven entirely by FShade 5.7.4's
+                                // `Effect.Dependencies` via the pure helper
+                                // `PickShader.composePickChain`. See its docstring for
+                                // the resolution rules.
+                                let geomHas (sem : string) =
+                                    ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
+                                    ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
+                                let newShader = PickShader.composePickChain eff geomHas
                                 newShader.Shaders
                             )
                             
