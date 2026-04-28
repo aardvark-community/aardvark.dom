@@ -1071,6 +1071,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     let scopes = Dict<int, TraversalState>()
     let pickIdRefs = Dict<TraversalState, int>()
     let freeIds = System.Collections.Generic.SortedSet<int>()
+    /// Per-pickId mode flag: `true` = mode A (slot 0 stored as `+id`),
+    /// `false` = mode B (slot 0 stored as `-id`). Decoder uses this to
+    /// reject candidates whose `sign(pixIdRaw)` doesn't match — without
+    /// it, MSAA averages at silhouettes can produce a `pixIdRaw` whose
+    /// abs value collides with another scope of the *opposite* mode,
+    /// and the picker would silently return the wrong scope with the
+    /// wrong layout's data.
+    let pickModes = Dict<int, bool>()
     // For each top-level IRenderObject in the `render` ASet, the multiset of
     // scopes it acquired during wrapping (one entry per pickable leaf). On
     // remove we release each. Needed because a MultiRenderObject can acquire
@@ -1128,6 +1136,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             pickIds.Remove scope |> ignore
             scopes.Remove id |> ignore
             pickIdRefs.Remove scope |> ignore
+            pickModes.Remove id |> ignore
             freeIds.Add id |> ignore
         | true, n ->
             pickIdRefs.[scope] <- n - 1
@@ -1177,13 +1186,19 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     acquired.Add t
                     match o.Surface with
                     | Surface.Effect eff ->
+                        let geomHas (sem : string) =
+                            ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
+                            ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
+                        // Resolve the pick chain choice eagerly so we know
+                        // whether this scope is mode A or mode B; the actual
+                        // GLSL composition stays lazy.
+                        let choice = PickShader.chooseChain eff geomHas
+                        pickModes.[pickId] <- (choice.Final <> PickShader.FinalB)
                         let newShaders =
                             lazy (
-                                let geomHas (sem : string) =
-                                    ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
-                                    ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
-                                let newShader = PickShader.composePickChain eff geomHas
-                                newShader.Shaders
+                                let pre = if choice.InjectVsn then [PickShader.viewSpaceNormalEffect] else []
+                                let chain = pre @ [PickShader.pickDepthBeforeEffect; eff; PickShader.finalEffect choice.Final]
+                                (FShade.Effect.compose chain).Shaders
                             )
 
                         // `pickv3_` — bump when the pick chain encoding changes
@@ -1564,11 +1579,21 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let rSizeY    = if hasRegion then region.SizeY else 0
 
                 // Read the (signed) PickId at a region-local pixel, or 0.
+                // Rejects non-integral reads: an MSAA-resolved pickId is only
+                // trustworthy if all 4 samples agreed (→ exact integer); any
+                // float that isn't within 0.01 of an integer is an averaged
+                // silhouette mix and decodes to junk. Returning 0 here makes
+                // the equality-based neighbour validation skip those pixels
+                // automatically.
                 let inline readIdAt (lx : int) (ly : int) =
                     if not hasRegion || lx < 0 || ly < 0 || lx >= rSizeX || ly >= rSizeY then 0
                     else
                         let f0 = rData.[rBase + lx * rDx + ly * rDy]
-                        if f0 = 0.0f then 0 else int f0
+                        if f0 = 0.0f then 0
+                        else
+                            let r = System.MathF.Round f0
+                            if abs (f0 - r) > 0.01f then 0
+                            else int r
 
                 // Resolve view-space position at a same-id neighbour. Only
                 // called once per accepted candidate (lazy normal estimation).
@@ -1671,22 +1696,38 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                         if winnerHoverIdValue = 0 && off.X = 0 && off.Y = 0 then
                             winnerHoverIdValue <- absId
                         let mutable scope = Unchecked.defaultof<_>
-                        if scopes.TryGetValue(absId, &scope) && d2 <= snapR2 scope then
-                            // Validate by ≥ 2 same-id neighbours in the 3×3 block.
+                        // Mode-vs-sign check: scope was registered with a
+                        // specific mode (A → +id, B → -id). MSAA averages at
+                        // silhouettes (incl. silhouettes that mix mode-A
+                        // and mode-B pickIds, or that mix with the cleared
+                        // 0 background) can produce a `pixIdRaw` whose abs
+                        // value matches a scope of the *opposite* mode. The
+                        // decoder would otherwise return that scope with the
+                        // wrong layout's data. Reject up front.
+                        let mutable scopeIsModeA = false
+                        let modeOk =
+                            pickModes.TryGetValue(absId, &scopeIsModeA)
+                            && scopeIsModeA = (pixIdRaw > 0)
+                        if modeOk && scopes.TryGetValue(absId, &scope) && d2 <= snapR2 scope then
+                            // Validate by ≥ 3 same-id neighbours in the 3×3
+                            // block. (≥ 2 is enough to reject true random
+                            // garbage; ≥ 3 gives an extra margin against
+                            // adjacent pixels that happen to land on the
+                            // same near-integer averaged value.)
                             let mutable matches = 0
                             let mutable ddy = -1
-                            while matches < 2 && ddy <= 1 do
+                            while matches < 3 && ddy <= 1 do
                                 let mutable ddx = -1
-                                while matches < 2 && ddx <= 1 do
+                                while matches < 3 && ddx <= 1 do
                                     if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = pixIdRaw then
                                         matches <- matches + 1
                                     ddx <- ddx + 1
                                 ddy <- ddy + 1
-                            // After confirming validity, walk the rest of the
-                            // neighbourhood is unnecessary for validation; we
-                            // only re-walk it inside `reuseNormalIfMissing`
-                            // which runs once on the winner.
-                            if matches >= 2 then
+                            // After confirming validity we don't keep walking;
+                            // the rest of the 3×3 neighbourhood is only
+                            // re-visited inside `reuseNormalIfMissing` (runs
+                            // once on the winner) for normal estimation.
+                            if matches >= 3 then
                                 let i0 = rBase + lx * rDx + ly * rDy
                                 let f1 = rData.[i0 + rDz]
                                 let f2 = rData.[i0 + 2 * rDz]
