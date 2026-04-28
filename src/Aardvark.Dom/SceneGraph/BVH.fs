@@ -148,6 +148,20 @@ module internal BvhNode3d =
             else
                 HashMap.empty
                 
+    let rec getIntersectingHull (hull : FastHull3d) (node : BvhNode3d<'K, 'V>) =
+        let inline test (b : Box3d) = hull.IntersectsAxisAlignedBox(b.ComputeCorners())
+        match node with
+        | Leaf(_, bounds, values) ->
+            if test bounds then
+                values |> HashMap.filter (fun _ struct(b,_) -> test b)
+            else
+                HashMap.empty
+        | Node(_bestCost, _cnt, bounds, l, r) ->
+            if test bounds then
+                HashMap.union (getIntersectingHull hull l) (getIntersectingHull hull r)
+            else
+                HashMap.empty
+
     let rec getIntersectingFilter (query : Box3d) (filter : OptimizedClosures.FSharpFunc<'K, Box3d, 'V, bool>) (node : BvhNode3d<'K, 'V>) =
         match node with
         | Leaf(_, bounds, values) ->
@@ -416,6 +430,13 @@ type BvhTree3d<'K, 'V> private(limit : int, root : option<BvhNode3d<'K, 'V>>, ke
             BvhNode3d.getIntersecting query r
         | None ->
             HashMap.empty
+
+    member x.GetIntersecting(hull : FastHull3d) =
+        match root with
+        | Some r ->
+            BvhNode3d.getIntersectingHull hull r
+        | None ->
+            HashMap.empty
             
     member x.GetIntersecting(query : Box3d, filter : 'K -> Box3d -> 'V -> bool) =
         match root with
@@ -473,6 +494,7 @@ module BvhTree3d =
     let inline tryRemove (key : 'K) (t : BvhTree3d<'K, 'V>) = t.TryRemove(key)
 
     let inline getIntersecting (query : Box3d) (tree : BvhTree3d<'K, 'V>) = tree.GetIntersecting query
+    let inline getIntersectingHull (hull : FastHull3d) (tree : BvhTree3d<'K, 'V>) = tree.GetIntersecting hull
 
     let inline ofSeq (elements : seq<'K * Box3d * 'V>)= BvhTree3d.Build(splitLimit, elements)
     let inline ofList (elements : list<'K * Box3d * 'V>)= BvhTree3d.Build(splitLimit, elements)

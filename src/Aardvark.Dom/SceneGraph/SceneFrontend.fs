@@ -354,6 +354,15 @@ type Sg private() =
     
     static member PickThrough =
         SceneAttribute.PickThrough true
+
+    /// Sets the per-scope pixel-snap radius. Default is 0 (no snap).
+    /// Values are clamped to the global pick-snap radius at pick time;
+    /// passing >= the global cap effectively asks for the maximum.
+    static member PixelSnapRadius(radius : aval<int>) =
+        SceneAttribute.PixelSnapRadius radius
+
+    static member PixelSnapRadius(radius : int) =
+        SceneAttribute.PixelSnapRadius (AVal.constant radius)
     
     static member VertexAttributes(att : HashMap<string, BufferView>) =
         SceneAttribute.VertexAttributes att

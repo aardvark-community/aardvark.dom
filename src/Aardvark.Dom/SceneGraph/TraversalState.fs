@@ -32,7 +32,11 @@ type TraversalState =
         EventHandlers       : amap<SceneEventKind, SceneEventHandler>
         ForcePixelPick      : bool
         PixelPick           : bool
-        PickThrough         : bool   
+        PickThrough         : bool
+        /// Pixel-snap radius for this scope. When the cursor is within this
+        /// many pixels of a hit, the pick can "snap" to it. Default 0
+        /// (no snapping). Values are clamped to the global cap at use time.
+        PixelSnapRadius     : aval<int>
     }
 
 module TraversalState =
@@ -85,6 +89,10 @@ module TraversalState =
             CanFocus = true
             Cursor = AVal.constant None
             PickThrough = false
+            // Default radius 1 absorbs the 1-pixel silhouette feather caused by
+            // MS resolve averaging two distinct pickIds at object edges into a
+            // non-integer that won't map to any registered scope.
+            PixelSnapRadius = AVal.constant 1
         }
 
     let commonAncestor (a : TraversalState) (b : TraversalState) =
@@ -289,6 +297,7 @@ type SceneAttribute =
 
     | On of amap<SceneEventKind, SceneEventHandler>
     | PickThrough of bool
+    | PixelSnapRadius of aval<int>
 
 module SceneAttribute =
     let apply (att : SceneAttribute) (state : TraversalState) =
@@ -358,3 +367,4 @@ module SceneAttribute =
         | SceneAttribute.CanFocus f -> { state with CanFocus = f }
         | SceneAttribute.Cursor c -> { state with Cursor = c }
         | SceneAttribute.PickThrough v -> { state with PickThrough = v }
+        | SceneAttribute.PixelSnapRadius r -> { state with PixelSnapRadius = r }

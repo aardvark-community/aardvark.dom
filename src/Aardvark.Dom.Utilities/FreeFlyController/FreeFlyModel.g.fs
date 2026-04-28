@@ -1,5 +1,5 @@
 //afbd03ff-1235-9fdb-0014-f50af6ecc1be
-//7f24d7e0-80d0-7af0-8335-04a21b04642b
+//f3543e76-ceec-0960-ba1a-abaeef59995d
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -12,8 +12,8 @@ open Adaptify
 open Aardvark.Dom.Utilities.FreeFlyController
 [<System.Diagnostics.CodeAnalysis.SuppressMessage("NameConventions", "*")>]
 type AdaptiveFreeFlyState(value : FreeFlyState) =
-    let mutable _MoveVec_ = FSharp.Data.Adaptive.cval(value.MoveVec)
     let mutable _TurnVec_ = FSharp.Data.Adaptive.cval(value.TurnVec)
+    let mutable _MoveVec_ = FSharp.Data.Adaptive.cval(value.MoveVec)
     let mutable _IsAnimating_ = FSharp.Data.Adaptive.cval(value.IsAnimating)
     let _Enabled_ = FSharp.Data.Adaptive.cval(value.Enabled)
     let _LastRender_ = FSharp.Data.Adaptive.cval(value.LastRender)
@@ -35,8 +35,8 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
         if Microsoft.FSharp.Core.Operators.not((FSharp.Data.Adaptive.ShallowEqualityComparer<FreeFlyState>.ShallowEquals(value, __value))) then
             __value <- value
             __adaptive.MarkOutdated()
-            _MoveVec_.Value <- value.MoveVec
             _TurnVec_.Value <- value.TurnVec
+            _MoveVec_.Value <- value.MoveVec
             _IsAnimating_.Value <- value.IsAnimating
             _Enabled_.Value <- value.Enabled
             _LastRender_.Value <- value.LastRender
@@ -52,8 +52,8 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
             _Camera_.Value <- value.Camera
             ()
     member __.Current = __adaptive
-    member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.TurnVec = _TurnVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
+    member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.IsAnimating = _IsAnimating_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
     member __.Enabled = _Enabled_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
     member __.LastRender = _LastRender_ :> FSharp.Data.Adaptive.aval<System.TimeSpan>

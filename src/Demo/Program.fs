@@ -768,18 +768,115 @@ module List =
 
 
 
+/// Three teapots side-by-side with pixel-snap radii 0 / 8 / 16 to
+/// illustrate `Sg.PixelSnapRadius`. Hovering near (but not on) a teapot
+/// only "snaps" the pick to it within its declared radius.
+let snapDemo (_runtime : IRuntime) =
+    let hovered = cval ""
+    let active : cval<string> = cval ""
+
+    let view (_env : Env<unit>) (_) =
+        body {
+            Style [
+                Background "#202124"; Color "white"; FontFamily "monospace"
+                Margin "0"; Padding "0"
+            ]
+
+            div {
+                Style [Padding "10px"; FontSize "14px"]
+                "Hover near each teapot — only inside the declared radius does the cursor snap to it. Active teapot brightens."
+            }
+
+            div {
+                Style [Padding "10px"; FontSize "16px"; FontWeight "bold"]
+                hovered |> AVal.map (fun s -> if s = "" then "(no snap)" else s)
+            }
+
+            renderControl {
+                Style [Width "100%"; Height "600px"; Background "#36363A"; Outline "none"]
+                Samples 4
+                TabIndex 0
+
+                SimpleFreeFlyController {
+                    Location = V3d(0.0, -8.0, 2.0)
+                    LookAt = V3d.Zero
+                    Sky = V3d.OOI
+                    Config = None
+                    AnimationFinished = None
+                }
+
+                let! size = RenderControl.ViewportSize
+                let proj =
+                    size |> AVal.map (fun s ->
+                        Frustum.perspective 60.0 0.1 100.0 (float s.X / float s.Y)
+                        |> Frustum.projTrafo
+                    )
+                Sg.Proj proj
+
+                Dom.Style [Css.Cursor "crosshair"]
+                Sg.Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
+                Sg.Scale 5.0
+
+                let teapot (label : string) (baseColor : C4b) (snap : int) (x : float) =
+                    let dyn =
+                        active |> AVal.map (fun a ->
+                            if a = label then
+                                // bright tint when active
+                                C4b(
+                                    byte (min 255 (int baseColor.R + 100)),
+                                    byte (min 255 (int baseColor.G + 100)),
+                                    byte (min 255 (int baseColor.B + 100)),
+                                    255uy)
+                            else baseColor
+                        )
+                    sg {
+                        Sg.PixelSnapRadius snap
+                        Sg.Translate(x, 0.0, 0.0)
+                        Sg.OnPointerEnter (fun _ ->
+                            transact (fun () ->
+                                active.Value <- label
+                                hovered.Value <- sprintf "%s — snap radius %d" label snap)
+                        )
+                        Sg.OnPointerLeave (fun _ ->
+                            transact (fun () ->
+                                if active.Value = label then
+                                    active.Value <- ""
+                                    hovered.Value <- "")
+                        )
+                        Primitives.Teapot dyn
+                    }
+
+                teapot "Red"   C4b.Red   0  -0.4
+                teapot "Green" C4b.Green 8   0.0
+                teapot "Blue"  C4b.Blue  16  0.4
+            }
+        }
+
+    {
+        initial = ()
+        update = fun _ () () -> ()
+        view = view
+        unpersist =
+            {
+                 init = fun () -> ()
+                 update = fun () () -> ()
+            }
+    }
+
+
 [<EntryPoint>]
 let main _ =
     Aardvark.Init()
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
-    
+
     let app = new OpenGlApplication()
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
 
-    let run (ctx : DomContext) = 
-        App.start ctx (testApp ctx.Runtime)
+    let run (ctx : DomContext) =
+        App.start ctx (snapDemo ctx.Runtime)
+        //App.start ctx (testApp ctx.Runtime)
         //App.start ctx Elm.app
 
 

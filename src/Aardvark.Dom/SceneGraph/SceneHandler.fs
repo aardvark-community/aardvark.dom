@@ -55,8 +55,57 @@ module internal Normal32 =
 
             best
         
+/// Octahedral normal codec packed into 24 bits (12+12). Stored as a plain
+/// `float32` (any int up to 2^24 round-trips exactly through float32, so the
+/// value survives MS resolve-average when all 4 samples agree, with no
+/// IEEE-special-value risk).
+[<ReflectedDefinition>]
+module internal Normal24 =
+    let private sgn (v : V2f) = V2f((if v.X >= 0.0f then 1.0f else -1.0f), (if v.Y >= 0.0f then 1.0f else -1.0f))
+    let private clamp (v : V2f) =
+        V2f(
+            (if v.X < -1.0f then -1.0f elif v.X > 1.0f then 1.0f else v.X),
+            (if v.Y < -1.0f then -1.0f elif v.Y > 1.0f then 1.0f else v.Y)
+        )
+
+    let decode (v : int) : V3f =
+        if v = 0 then
+            V3f.Zero
+        else
+            let e = V2f(float32 (uint32 v >>> 12) / 4095.0f, float32 (v &&& 0xFFF) / 4095.0f) * 2.0f - V2f.II
+            let v = V3f(e, 1.0f - abs e.X - abs e.Y)
+            if v.Z < 0.0f then V3f(V2f(1.0f - abs v.Y, 1.0f - abs v.X) * sgn v.XY, v.Z) |> Vec.normalize
+            else v |> Vec.normalize
+
+    let encode (v : V3f) : int =
+        if v.X = 0.0f && v.Y = 0.0f && v.Z = 0.0f then
+            0
+        else
+            let p = v.XY * (1.0f / (abs v.X + abs v.Y + abs v.Z |> float32))
+            let p =
+                if v.Z <= 0.0f then clamp (V2f(1.0f - abs p.Y, 1.0f - abs p.X) * sgn p)
+                else clamp p
+
+            let x0 = floor ((p.X * 0.5f + 0.5f) * 4095.0f) |> int
+            let y0 = floor ((p.Y * 0.5f + 0.5f) * 4095.0f) |> int
+
+            let mutable bestDot = 0.0f
+            let mutable best = 0
+
+            for dx in 0 .. 1 do
+                for dy in 0 .. 1 do
+                    let e = (((x0 + dx) <<< 12) ||| (y0 + dy))
+                    let vv = decode e
+                    let d = Vec.dot vv v
+                    if d > bestDot then
+                        bestDot <- d
+                        best <- e
+
+            best
+
+
 module PickShader =
-    open FShade 
+    open FShade
 
     type UniformScope with
         member x.PickId : int = uniform?PickId
@@ -148,9 +197,19 @@ module PickShader =
         }
     let pickFinalA (v : FinalA_In) =
         fragment {
-            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            // All 4 channels are plain-float storage — never bit-cast. Each is
+            // an integer or in-range float that survives MS resolve-average:
+            //   * id  : float32 of an int < 2^24 (recycled, so live id space
+            //           stays dense well under that ceiling).
+            //   * n24 : float32 of a 12+12 octahedron normal packed into 24
+            //           bits. Lower angular precision than the old Normal32
+            //           bit-cast (12 bits/axis ≈ 0.05° vs 16 bits/axis ≈ 0.003°),
+            //           but bullet-proof under MS resolve.
+            //   * d   : NDC depth in [-1, 1].
+            //   * pi  : float32 of an int < 2^24.
+            let n24 = Normal24.encode (Vec.normalize v.vn)
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat v.pi) }
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, float32 v.pi) }
             return r
         }
 
@@ -163,9 +222,9 @@ module PickShader =
         }
     let pickFinalANoPi (v : FinalANoPi_In) =
         fragment {
-            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
+            let n24 = Normal24.encode (Vec.normalize v.vn)
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, Bitwise.IntBitsToFloat 0) }
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, 0.0f) }
             return r
         }
 
@@ -179,9 +238,10 @@ module PickShader =
     let pickFinalANoNormal (v : FinalANoNormal_In) =
         fragment {
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat 0, d, Bitwise.IntBitsToFloat v.pi) }
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, float32 v.pi) }
             return r
         }
+    // (no n24/n32 here — slot 1 already 0.0f, decoded as a zero-length normal.)
 
     // ---- Mode A, no normal, no PartIndex.
     type FinalANoNormalNoPi_In =
@@ -192,23 +252,33 @@ module PickShader =
     let pickFinalANoNormalNoPi (v : FinalANoNormalNoPi_In) =
         fragment {
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat 0, d, Bitwise.IntBitsToFloat 0) }
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, 0.0f) }
             return r
         }
 
-    // ---- Mode B (real position). pi is unused; never appears in this chain.
+    // ---- Mode B (real position). The user effect produces a precise
+    // `PickViewPosition`; we store its components straight as plain float32
+    // in slots 1/2/3. Mode B is signalled by NEGATIVE slot 0.
+    //
+    // Slot layout:
+    //   slot 0 : -float32 PickId   (sign = mode tag)
+    //   slot 1 : pvp.X             (plain float32)
+    //   slot 2 : pvp.Y             (plain float32)
+    //   slot 3 : pvp.Z             (plain float32)
+    //
+    // No depth slot — `pvp` IS the view-space position; the host doesn't
+    // need to unproject. Per-component float32 precision is the user's
+    // intended precision (they passed a `V3f`). Interior all-samples-agree
+    // → exact round-trip; silhouette mixing → neighbour-validator on slot 0
+    // rejects it.
     type FinalB_In =
         {
             [<Color>] c : V4f
-            [<Semantic("ViewSpaceNormal")>] vn : V3f
             [<Semantic("PickViewPosition")>] pvp : V3f
         }
     let pickFinalB (v : FinalB_In) =
         fragment {
-            let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            let len = Vec.length v.pvp
-            let dir = Normal32.encode (v.pvp / len) |> int
-            let r : Fragment = { c = v.c; id = V4f(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
+            let r : Fragment = { c = v.c; id = V4f(-(float32 uniform.PickId), v.pvp.X, v.pvp.Y, v.pvp.Z) }
             return r
         }
 
@@ -753,82 +823,207 @@ module internal BlitExtensions =
     //        let r = V4i dst.Volume.Data
     //        r
             
+    /// Raw pick-buffer region returned by `ReadPickRegion`. Decoding is
+    /// inlined at the call site to avoid per-pixel closure/option allocation
+    /// in the spiral hot loop.
+    [<Struct>]
+    type PickRegion =
+        { Data       : float32[]
+          BaseIdx    : int
+          Dx         : int
+          Dy         : int
+          Dz         : int
+          OriginX    : int
+          OriginY    : int
+          SizeX      : int
+          SizeY      : int }
+
+    /// Pre-flattened BVH cull entry. Avoids the per-iter
+    /// `struct(_,(_,_))` destructure in the spiral.
+    [<Struct>]
+    type CullEntry =
+        { State        : TraversalState
+          Intersectable: IIntersectable
+          Trafo        : Trafo3d }
+
     type IFramebufferRuntime with
         member x.BlitFramebuffer(src : IFramebuffer, dst : IFramebuffer) =
             x.Copy(src, dst)
-                
-        // member x.ReadPixel(src : IFramebuffer, pixel : V2i) : V4i =
-        //     let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<float32>
-        //     use ptr = fixed img.Data
-        //     let iptr = NativePtr.ofNativeInt<int> (NativePtr.toNativeInt ptr)
-        //     V4i(NativePtr.get iptr 0, NativePtr.get iptr 1, NativePtr.get iptr 2, NativePtr.get iptr 3)
-        //     //V4i img.Volume.Data
-        
-        member x.ReadPickInfo(src : IFramebuffer, projTrafo : Trafo3d, pixel : V2i) =
-            let img = x.ReadPixels(src, pickBuffer, pixel, V2i.II) :?> PixImage<float32>
-            use ptr = fixed img.Data
-            let iptr = NativePtr.ofNativeInt<int> (NativePtr.toNativeInt ptr)
-            
-            let i0 = int img.Volume.Origin
-            let i1 = i0 + int img.Volume.DZ
-            let i2 = i1 + int img.Volume.DZ
-            let i3 = i2 + int img.Volume.DZ
-            // let pickIdWithRealPosition(v : Vertex) =
-            //     fragment {
-            //         let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            //         let len = Vec.length v.pvp
-            //         let dir = Normal32.encode (v.pvp / len) |> int
-            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat -uniform.PickId, Bitwise.IntBitsToFloat n32, Bitwise.IntBitsToFloat dir, len) }
-            //     }
-            //     
-            // let pickId(v : Vertex) =
-            //     fragment {
-            //         let n32 = Normal32.encode (Vec.normalize v.vn) |> int
-            //         let d = (2.0 * v.d - 1.0) 
-            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
-            //     }
-            //     
-            // let pickIdNoNormal(v : Vertex) =
-            //     fragment {
-            //         let n32 = 0
-            //         let d = (2.0 * v.d - 1.0) 
-            //         return { c = v.c; id = V4d(Bitwise.IntBitsToFloat uniform.PickId, Bitwise.IntBitsToFloat n32, d, 0.0) }
-            //     }
-            let id = NativePtr.get iptr i0
-            if id > 0 then
-                let normal = Normal32.decode (NativePtr.get iptr i1)
-                let depth = NativePtr.get ptr i2 |> float
-                let partIndex = NativePtr.get iptr i3
 
-                let tc = (V2d pixel + V2d.Half) / V2d src.Size
-                let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
-                let viewPos = projTrafo.Backward.TransformPosProj ndc
-                Some (id, partIndex, viewPos, V3d normal)
-            elif id < 0 then
-                // Mode B (real-position): slot 3 holds length, no PartIndex available.
-                let normal = Normal32.decode (NativePtr.get iptr i1)
-                let direction = Normal32.decode (NativePtr.get iptr i2)
-                let distance = NativePtr.get ptr i3
-                let viewPos = V3d direction * float distance
-                Some (-id, 0, viewPos, V3d normal)
+        /// Reads a (2*radius+1)² region of the pick buffer around `center`,
+        /// clamped to framebuffer bounds. Returns the raw region data; the
+        /// caller decodes pixel-by-pixel.
+        member x.ReadPickRegion(src : IFramebuffer, center : V2i, radius : int) : voption<PickRegion> =
+            let s = src.Size.XY
+            let originX = max 0 (center.X - radius)
+            let originY = max 0 (center.Y - radius)
+            let endX = min s.X (center.X + radius + 1)
+            let endY = min s.Y (center.Y + radius + 1)
+            let sizeX = endX - originX
+            let sizeY = endY - originY
+            if sizeX <= 0 || sizeY <= 0 then
+                ValueNone
             else
-                None
-                
-            
-            
-            
-            
-        
-        
+                let img = x.ReadPixels(src, pickBuffer, V2i(originX, originY), V2i(sizeX, sizeY)) :?> PixImage<float32>
+                ValueSome {
+                    Data    = img.Data
+                    BaseIdx = int img.Volume.Origin
+                    Dx      = int img.Volume.DX
+                    Dy      = int img.Volume.DY
+                    Dz      = int img.Volume.DZ
+                    OriginX = originX
+                    OriginY = originY
+                    SizeX   = sizeX
+                    SizeY   = sizeY
+                }
+
+        /// Legacy wrapper kept compatible with the previous closure-based API
+        /// for any external callers that still want it. The inlined fast path
+        /// is in `Read` below.
+        member x.ReadPickRegion(src : IFramebuffer, projTrafo : Trafo3d, center : V2i, radius : int) : V2i -> option<int * int * V3d * V3d> =
+            let s = src.Size.XY
+            let originX = max 0 (center.X - radius)
+            let originY = max 0 (center.Y - radius)
+            let endX = min s.X (center.X + radius + 1)
+            let endY = min s.Y (center.Y + radius + 1)
+            let regionSize = V2i(endX - originX, endY - originY)
+            if regionSize.X <= 0 || regionSize.Y <= 0 then
+                fun _ -> None
+            else
+                let regionOrigin = V2i(originX, originY)
+                let img = x.ReadPixels(src, pickBuffer, regionOrigin, regionSize) :?> PixImage<float32>
+                let data = img.Data
+                let baseIdx = int img.Volume.Origin
+                let dx = int img.Volume.DX
+                let dy = int img.Volume.DY
+                let dz = int img.Volume.DZ
+
+                // Read PickId-as-int at a region-local pixel, or 0 if out of
+                // region bounds.
+                let inline readIdAt (lx : int) (ly : int) =
+                    if lx < 0 || ly < 0 || lx >= regionSize.X || ly >= regionSize.Y then 0
+                    else
+                        let f0 = data.[baseIdx + lx * dx + ly * dy]
+                        if f0 = 0.0f then 0 else int f0
+
+                // Compute the view-space position at a region-local pixel,
+                // using the same decoding rule as the main path. Used for
+                // CPU normal estimation from same-id neighbours.
+                let viewPosAt (lx : int) (ly : int) (idF : int) : V3d =
+                    let i0 = baseIdx + lx * dx + ly * dy
+                    let f1 = data.[i0 + dz]
+                    let f2 = data.[i0 + 2 * dz]
+                    let f3 = data.[i0 + 3 * dz]
+                    if idF > 0 then
+                        let px = originX + lx
+                        let py = originY + ly
+                        let depth = float f2
+                        let tc = (V2d(px, py) + V2d.Half) / V2d s
+                        let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, depth)
+                        projTrafo.Backward.TransformPosProj ndc
+                    else
+                        V3d(float f1, float f2, float f3)
+
+                fun (offset : V2i) ->
+                    let p = center + offset
+                    let lx = p.X - originX
+                    let ly = p.Y - originY
+                    if lx < 0 || ly < 0 || lx >= regionSize.X || ly >= regionSize.Y then None
+                    else
+                        let idF = readIdAt lx ly
+                        if idF = 0 then None
+                        else
+                            // Walk the 3×3 neighbourhood once, simultaneously
+                            // counting same-id neighbours (validation) and
+                            // gathering their view-space positions (for CPU
+                            // normal estimation when the encoded normal is
+                            // missing — mode B always, mode A NoNormal variants).
+                            //
+                            // Silhouette pixels under MS resolve produce
+                            // essentially-random averaged ids; two adjacent
+                            // garbage averages matching the same int is
+                            // vanishingly unlikely, so ≥2 same-id neighbours
+                            // is a reliable interior-pixel test.
+                            let nbrs = ResizeArray<V3d>(8)
+                            for ddy in -1 .. 1 do
+                                for ddx in -1 .. 1 do
+                                    if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = idF then
+                                        nbrs.Add (viewPosAt (lx + ddx) (ly + ddy) idF)
+                            if nbrs.Count < 2 then None
+                            else
+                                let i0 = baseIdx + lx * dx + ly * dy
+                                let f1 = data.[i0 + dz]
+                                let f2 = data.[i0 + 2 * dz]
+                                let f3 = data.[i0 + 3 * dz]
+
+                                let viewPos, encodedNormal, partIndex =
+                                    if idF > 0 then
+                                        // Mode A: id, n24, depth, pi.
+                                        let depth = float f2
+                                        let tc = (V2d p + V2d.Half) / V2d s
+                                        let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, depth)
+                                        let vp = projTrafo.Backward.TransformPosProj ndc
+                                        let n = if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
+                                        vp, n, int f3
+                                    else
+                                        // Mode B: -id, pvp.x, pvp.y, pvp.z.
+                                        V3d(float f1, float f2, float f3), V3d.Zero, 0
+
+                                // CPU normal estimation when none was encoded.
+                                // Pick the same-id neighbour pair whose
+                                // view-space tangent vectors give the largest
+                                // cross-product magnitude, then orient toward
+                                // the camera (view-space camera at origin
+                                // looking down -Z, so visible surfaces have
+                                // normals with negative-or-zero z).
+                                let normal =
+                                    if encodedNormal <> V3d.Zero then
+                                        encodedNormal
+                                    else
+                                        let mutable bestArea = 0.0
+                                        let mutable bestN = V3d.Zero
+                                        for i in 0 .. nbrs.Count - 2 do
+                                            let vi = nbrs.[i] - viewPos
+                                            for j in i + 1 .. nbrs.Count - 1 do
+                                                let n = Vec.cross vi (nbrs.[j] - viewPos)
+                                                let m = n.Length
+                                                if m > bestArea then
+                                                    bestArea <- m
+                                                    bestN <- n / m
+                                        if bestArea = 0.0 then V3d.Zero
+                                        elif bestN.Z > 0.0 then -bestN
+                                        else bestN
+
+                                Some (abs idF, partIndex, viewPos, normal)
+
+[<AutoOpen>]
+module internal PickSnap =
+    /// Pixel-snap radius for picking. `Read` reads a (2R+1)² region around
+    /// the cursor and walks `offsets` from the center outward.
+    let radius = 16
+
+    /// Pixel offsets within the snap disc (|offset| <= radius), sorted by
+    /// squared distance from the center. The first entry is V2i.OO.
+    let offsets : V2i[] =
+        let r = radius
+        [|
+            for dx in -r .. r do
+                for dy in -r .. r do
+                    let d2 = dx*dx + dy*dy
+                    if d2 <= r*r then yield struct(d2, V2i(dx, dy))
+        |]
+        |> Array.sortBy (fun struct(d2, _) -> d2)
+        |> Array.map (fun struct(_, p) -> p)
+
+
 type private SceneHandlerFramebuffers =
     {
         PickableFramebuffer         : IFramebuffer
         NonPickableFramebuffer      : IFramebuffer
-        PickBuffer                 : IRenderbuffer
+        PickBuffer                  : IRenderbuffer
         PickTextureResolved         : IBackendTexture
         PickFramebufferResolved     : IFramebuffer
         Disposables                 : list<System.IDisposable>
-
     }
 
 
@@ -866,11 +1061,24 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     
     let runtime = signature.Runtime :?> IRuntime
 
+    // PickId state. Ids are assigned per-scope on first use (acquireId), and
+    // recycled when the last RenderObject referencing a scope is removed
+    // (releaseId). The free-list is a SortedSet so reuse picks the smallest
+    // available id first — keeps the live id space dense, well clear of the
+    // ~8M pickId-as-float32 ceiling.
     let mutable currentId = 1
     let pickIds = Dict<TraversalState, int>()
     let scopes = Dict<int, TraversalState>()
+    let pickIdRefs = Dict<TraversalState, int>()
+    let freeIds = System.Collections.Generic.SortedSet<int>()
+    // For each top-level IRenderObject in the `render` ASet, the multiset of
+    // scopes it acquired during wrapping (one entry per pickable leaf). On
+    // remove we release each. Needed because a MultiRenderObject can acquire
+    // its scope N times for N pickable children but appears only once in the
+    // ASet's delta stream.
+    let acquiredFor = Dict<IRenderObject, ResizeArray<TraversalState>>()
 
-    let mutable pickTexture : option<IBackendTexture * IFramebuffer> = None
+    let mutable pickTexture : option<IFramebuffer> = None
     //let mutable attachments = []
     let mutable fbos : option<SceneHandlerFramebuffers> = None
     let mutable viewportSize = V2i.Zero
@@ -890,71 +1098,66 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
 
     let clearColor = cval C4f.Black
 
-    let getId(scope : TraversalState) =
-        pickIds.GetOrCreate(scope, fun s -> 
-            let i = currentId
-            currentId <- i + 1
-            scopes.[i] <- s
-            i
-        )
+    let acquireId (scope : TraversalState) =
+        let id =
+            match pickIds.TryGetValue scope with
+            | true, id -> id
+            | _ ->
+                let id =
+                    if freeIds.Count > 0 then
+                        let i = freeIds.Min
+                        freeIds.Remove i |> ignore
+                        i
+                    else
+                        let i = currentId
+                        currentId <- i + 1
+                        i
+                pickIds.[scope] <- id
+                scopes.[id] <- scope
+                id
+        pickIdRefs.[scope] <-
+            match pickIdRefs.TryGetValue scope with
+            | true, n -> n + 1
+            | _ -> 1
+        id
+
+    let releaseId (scope : TraversalState) =
+        match pickIdRefs.TryGetValue scope with
+        | true, 1 ->
+            let id = pickIds.[scope]
+            pickIds.Remove scope |> ignore
+            scopes.Remove id |> ignore
+            pickIdRefs.Remove scope |> ignore
+            freeIds.Add id |> ignore
+        | true, n ->
+            pickIdRefs.[scope] <- n - 1
+        | _ -> ()
 
     let mutable lastMousePosition = None
      
-    let read (projTrafo : Trafo3d) (pixel : V2i) =
+    /// Read the (2*PickSnap.radius+1)² pick-buffer region around `pixel`.
+    /// Returns the raw region data; `Read` decodes inline.
+    let readPickRegion (pixel : V2i) : voption<PickRegion> =
         match pickTexture with
-        | Some (pickTexture, pickFbo) when pixel.AllGreaterOrEqual 0 && pixel.AllSmaller pickTexture.Size.XY ->
-            match runtime.ReadPickInfo(pickFbo, projTrafo, pixel) with
-            | Some (id, partIndex, viewPos, normal) ->
-                transact (fun () -> hoverId.Value <- id)
-                match scopes.TryGetValue id with
-                | true, scope ->
-                    let depth = projTrafo.TransformPosProj(viewPos).Z
-                    Some (scope, float depth, viewPos, normal, partIndex)
-                | _ ->
-                    None
-
-            | None ->
-                transact (fun () -> hoverId.Value <- 0)
-                None
-            //
-            // let value = runtime.ReadPixel(pickFbo, pixel)
-            //
-            // let id = value.X
-            // transact (fun () -> hoverId.Value <- id)
-            // if id > 0 then
-            //     match scopes.TryGetValue id with
-            //     | true, scope ->
-            //         let n = value.Y |> Normal32.decode
-            //         let depth = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.Z|]).[0]
-            //         let tc = (V2d pixel + V2d.Half) / V2d pickTexture.Size.XY
-            //         let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, float depth)
-            //         let viewPos = projTrafo.Backward.TransformPosProj ndc
-            //         
-            //         Some (scope, float depth, viewPos, n)
-            //     | _ ->
-            //         None
-            // elif id < 0 then
-            //     let id = -id
-            //     match scopes.TryGetValue id with
-            //     | true, scope ->
-            //         let n = value.Y |> Normal32.decode
-            //         let vd = value.Z |> Normal32.decode
-            //         let vl = MemoryMarshal.Cast<int, float32>(System.Span<int> [|value.W|]).[0] |> float
-            //         
-            //         let viewPos = vd * vl
-            //         let depth = projTrafo.TransformPosProj(viewPos).Z
-            //         Some (scope, float depth, viewPos, n)
-            //     | _ ->
-            //         None
-            // else
-            //     None
+        | Some pickFbo when pixel.AllGreaterOrEqual 0 && pixel.AllSmaller pickFbo.Size.XY ->
+            runtime.ReadPickRegion(pickFbo, pixel, PickSnap.radius)
         | _ ->
-            None
+            ValueNone
              
 
     let mutable renderTask, pickObjects, dispose =
         let runtime = signature.Runtime :?> IRuntime
-        
+
+        // Single MS FBO: extend the user's signature with the pick attachment
+        // (`Rgba32f`, MS) so pickable geometry writes color, depth, and the
+        // PickId record in one render pass. After render the pick attachment
+        // is resolved to a single-sample texture for `ReadPixels`.
+        //
+        // Encoding caveat: MS resolve averages samples for float formats. At
+        // silhouette pixels the averaged PickId lands on a non-integer that
+        // (almost always) won't map to any registered scope — so the snap
+        // spiral skips it. The default `PixelSnapRadius = 1` absorbs that
+        // 1-pixel feather.
         let pickId = signature.ColorAttachmentSlots
 
         let colorAttachments =
@@ -964,42 +1167,42 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             runtime.CreateFramebufferSignature(colorAttachments, signature.DepthStencilAttachment, signature.Samples, signature.LayerCount, signature.PerLayerUniforms)
 
         let render, pick = scene.GetObjects(TraversalState.empty runtime)
-        
 
-        let rec wrapObject (t : TraversalState) (o : IRenderObject) =
+
+        let rec wrapObject (acquired : ResizeArray<TraversalState>) (t : TraversalState) (o : IRenderObject) =
             if t.PixelPick then
                 match o with
                 | :? RenderObject as o ->
-                    let pickId = getId(t)
+                    let pickId = acquireId t
+                    acquired.Add t
                     match o.Surface with
                     | Surface.Effect eff ->
                         let newShaders =
                             lazy (
-                                // Pick-chain selection driven entirely by FShade 5.7.4's
-                                // `Effect.Dependencies` via the pure helper
-                                // `PickShader.composePickChain`. See its docstring for
-                                // the resolution rules.
                                 let geomHas (sem : string) =
                                     ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
                                     ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
                                 let newShader = PickShader.composePickChain eff geomHas
                                 newShader.Shaders
                             )
-                            
-                        let newEffect = FShade.Effect("fpick_" + eff.Id, newShaders, [])
-                            
+
+                        // `pickv3_` — bump when the pick chain encoding changes
+                        // so cached compiled shaders from older builds get
+                        // rejected by name instead of silently rebound.
+                        let newEffect = FShade.Effect("pickv3_" + eff.Id, newShaders, [])
+
                         let r = RenderObject.Clone o
-                        
+
                         let newBlendState =
-                            let newModes = 
+                            let newModes =
                                 o.BlendState.AttachmentMode |> AVal.map (fun map ->
-                                    Map.add pickBuffer BlendMode.None map    
+                                    Map.add pickBuffer BlendMode.None map
                                 )
                             let newWrites =
                                 o.BlendState.AttachmentWriteMask |> AVal.map (fun map ->
                                     Map.add pickBuffer ColorMask.All map
                                 )
-                            
+
                             {
                                 Mode = o.BlendState.Mode
                                 AttachmentMode = newModes
@@ -1007,8 +1210,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                                 ConstantColor = o.BlendState.ConstantColor
                                 ColorWriteMask = o.BlendState.ColorWriteMask
                             }
-                        
-                        
+
+
                         r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList ["PickId", AVal.constant pickId :> IAdaptiveValue])
                         r.Surface <- Surface.Effect newEffect
                         r.BlendState <- newBlendState
@@ -1016,9 +1219,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     | s ->
                         Log.warn "cannot change surface: %A" s
                         o :> IRenderObject, true
-              
+
                 | :? MultiRenderObject as o ->
-                    let res = o.Children |> List.map (wrapObject t)
+                    let res = o.Children |> List.map (wrapObject acquired t)
                     if res |> List.forall snd then
                         let n = MultiRenderObject(List.map fst res)
                         n :> IRenderObject, true
@@ -1029,17 +1232,38 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     o, false
             else
                 o, false
-            
 
-        let objs = 
+
+        let objs =
             render
             |> ASet.map (fun o ->
-                match RenderObject.traversalStates.TryGetValue o with
-                | true, t ->
-                    wrapObject t o
-                | _ ->
-                    o, false
+                let acquired = ResizeArray<TraversalState>()
+                let wrapped, p =
+                    match RenderObject.traversalStates.TryGetValue o with
+                    | true, t -> wrapObject acquired t o
+                    | _ -> o, false
+                if acquired.Count > 0 then
+                    acquiredFor.[o] <- acquired
+                wrapped, p
             )
+
+        // Independent reader on `render` to observe removals → release ids.
+        // ASet.map's mapper above only fires on Add; this reader observes Rem
+        // and walks the per-IRO `acquiredFor` record so we release exactly as
+        // many times as we acquired (a MultiRenderObject can acquire its
+        // scope N times for N pickable children).
+        let releaseTrackerReader = render.GetReader()
+        let pumpReleases (token : AdaptiveToken) =
+            let ops = releaseTrackerReader.GetChanges token
+            for op in ops do
+                match op with
+                | Add _ -> ()
+                | Rem(_, o) ->
+                    match acquiredFor.TryGetValue o with
+                    | true, scopes ->
+                        acquiredFor.Remove o |> ignore
+                        for s in scopes do releaseId s
+                    | _ -> ()
 
         let pickable = objs |> ASet.choose (fun (o, p) -> if p then Some o else None)
         let nonPickable = objs |> ASet.choose (fun (o, p) -> if not p then Some o else None)
@@ -1047,7 +1271,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         let renderPickable = runtime.CompileRender(newSignature, pickable)
         let renderNonPickable = runtime.CompileRender(signature, nonPickable)
 
-   
+
         let getFramebuffers (size : V2i) =
             match fbos with
             | Some o when o.PickableFramebuffer.Size = size ->
@@ -1058,89 +1282,72 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     runtime.DeleteFramebuffer o.PickableFramebuffer
                     runtime.DeleteFramebuffer o.NonPickableFramebuffer
                     runtime.DeleteFramebuffer o.PickFramebufferResolved
-                    //for f in o.PickLevelFramebuffers do runtime.DeleteFramebuffer f
                     for t in o.Disposables do t.Dispose()
-                | None ->
-                    ()
-                    
+                | None -> ()
+
                 let semantics =
-                    let res = newSignature.ColorAttachments |> Map.toList |> List.map (fun (_slot, a) -> a.Name, a.Format) |> Map.ofList
+                    let res =
+                        newSignature.ColorAttachments
+                        |> Map.toList
+                        |> List.map (fun (_slot, a) -> a.Name, a.Format)
+                        |> Map.ofList
                     match newSignature.DepthStencilAttachment with
                     | Some ds -> Map.add DefaultSemantic.DepthStencil ds res
                     | None -> res
-                    
-                let buffers, outputs =
-                    let buffers =
-                        semantics |> Map.map (fun _ a ->
-                            runtime.CreateRenderbuffer(size, a, newSignature.Samples)    
-                        )
-                    let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
-                    buffers, outputs
-                    // if newSignature.Samples > 1 then
-                    //     let buffers =
-                    //         semantics |> Map.map (fun _ a ->
-                    //             runtime.CreateRenderbuffer(size, a, newSignature.Samples)    
-                    //         )
-                    //     let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
-                    //     Map.empty, outputs
-                    // else
-                    //     let textures =
-                    //         semantics |> Map.map (fun _ a ->
-                    //             if newSignature.LayerCount > 1 then runtime.CreateTexture2DArray(size, a, 1, newSignature.Samples, newSignature.LayerCount)
-                    //             else runtime.CreateTexture2D(size, a, 1, newSignature.Samples)
-                    //         )
-                    //     let outputs =
-                    //         textures |> Map.map (fun _ t -> t.[TextureAspect.Color, 0, *] :> IFramebufferOutput)
-                    //     textures, outputs
+
+                // Both framebuffers (with and without pick attachment) share
+                // the same backing color/depth renderbuffers, so non-pickable
+                // RenderObjects can render to the same color/depth as pickable
+                // ones without paying for a second color buffer.
+                let buffers =
+                    semantics |> Map.map (fun _ fmt ->
+                        runtime.CreateRenderbuffer(size, fmt, newSignature.Samples)
+                    )
+                let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
+
                 let nf = runtime.CreateFramebuffer(signature, outputs)
                 let pf = runtime.CreateFramebuffer(newSignature, outputs)
-                
-                let pickResolvedTex, pickResolved =
-                    let tex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, 1)
-                    let s = runtime.CreateFramebufferSignature([pickBuffer, TextureFormat.Rgba32f])
-                    //let fbo = runtime.CreateFramebuffer(s, [pickBuffer, tex.[TextureAspect.Color, 0, *] :> IFramebufferOutput])
-                    
-                    //let levelFbos =
-                    //    Array.init levels (fun l ->
-                    //        runtime.CreateFramebuffer(s, [pickBuffer, tex.[TextureAspect.Color, l, *] :> IFramebufferOutput])
-                    //    )
 
-                    let fbo = runtime.CreateFramebuffer(s, [pickBuffer, tex.[TextureAspect.Color, 0, 0] :> IFramebufferOutput])
-                    
-                    (tex, fbo)
-                
-                //let sTex, rSel, dSel = PickBuffer.compileQuadTree signature hoverId pickResolvedTex
+                // Single-sample resolve target for the pick attachment so
+                // `ReadPixels` has a non-MS source to read from.
+                let pickResolvedTex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, 1)
+                let pickResolvedSig = runtime.CreateFramebufferSignature([pickBuffer, TextureFormat.Rgba32f])
+                let pickResolvedFbo =
+                    runtime.CreateFramebuffer(
+                        pickResolvedSig,
+                        [pickBuffer, pickResolvedTex.[TextureAspect.Color, 0, 0] :> IFramebufferOutput]
+                    )
 
                 let result =
                     {
-                        PickableFramebuffer         = pf
-                        NonPickableFramebuffer      = nf
-                        PickFramebufferResolved     = pickResolved
-                        PickBuffer                  = buffers.[pickBuffer]
-                        PickTextureResolved         = pickResolvedTex
-                        Disposables                 = pickResolvedTex :: (buffers |> Map.toList |> List.map (fun (_, b) -> b :> System.IDisposable))
-                        //RenderOutline               = sTex
-                        //CreateSelection             = rSel
-                        //DisposeSelection            = dSel
+                        PickableFramebuffer     = pf
+                        NonPickableFramebuffer  = nf
+                        PickBuffer              = buffers.[pickBuffer]
+                        PickTextureResolved     = pickResolvedTex
+                        PickFramebufferResolved = pickResolvedFbo
+                        Disposables =
+                            (pickResolvedTex :> System.IDisposable)
+                            :: (buffers |> Map.toList |> List.map (fun (_, b) -> b :> System.IDisposable))
                     }
-                
-                
-                //attachments <- textures |> Map.toList |> List.map snd
+
                 fbos <- Some result
                 result
-                
-               
-        let clear = 
+
+
+        let clear =
             let clearValues =
                 clearColor
                 |> AVal.map (fun color ->
                     ClearValues.empty
-                    |> ClearValues.colors (Map.ofList [DefaultSemantic.Colors, ClearColor.op_Implicit color; pickBuffer, ClearColor.op_Implicit V4i.Zero])
+                    |> ClearValues.colors (Map.ofList [
+                        DefaultSemantic.Colors, ClearColor.op_Implicit color
+                        pickBuffer, ClearColor.op_Implicit V4f.Zero
+                    ])
                     |> ClearValues.depth 1.0
                     |> ClearValues.stencil 0
                 )
             runtime.CompileClear (newSignature, clearValues)
-        
+
         let mutable idx = 0
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let frameTimeWatch = System.Diagnostics.Stopwatch()
@@ -1154,9 +1361,9 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 Time = sw.MicroTime
                 FrameTime = MicroTime(System.TimeSpan(int64 frameTimeStats.Average))
             }
-      
 
-        let task = 
+
+        let task =
             RenderTask.custom (fun (t, _rt, o) ->
                 frameTimeWatch.Restart()
                 let size = o.Framebuffer.Size
@@ -1165,24 +1372,30 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 if o.Framebuffer.Size <> fboSize.Value then
                     transact (fun () -> fboSize.Value <- o.Framebuffer.Size)
                     trigger (RenderControlEvent.Resize evtInfo)
-               
+
                 let s = fboSize.GetValue t
                 let rt = RenderToken.Empty
                 let outputInfo = getFramebuffers s
 
-             
+                // Recycle ids for any RenderObjects that were removed since
+                // last frame.
+                pumpReleases t
+
                 trigger (RenderControlEvent.PreRender evtInfo)
 
                 clear.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
-                let pickBuffer = outputInfo.PickBuffer
-                if pickBuffer.Samples > 1 then runtime.ResolveMultisamples(pickBuffer, outputInfo.PickTextureResolved)
-                else runtime.Copy(pickBuffer, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
-                
-                pickTexture <- Some (outputInfo.PickTextureResolved, outputInfo.PickFramebufferResolved)
+
+                let pickRb = outputInfo.PickBuffer
+                if pickRb.Samples > 1 then
+                    runtime.ResolveMultisamples(pickRb, outputInfo.PickTextureResolved)
+                else
+                    runtime.Copy(pickRb, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
+
+                pickTexture <- Some outputInfo.PickFramebufferResolved
                 viewportSize <- outputInfo.PickTextureResolved.Size.XY
-           
+
                 trigger (RenderControlEvent.PostRender evtInfo)
 
 
@@ -1190,7 +1403,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 idx <- idx + 1
                 frameTimeWatch.Stop()
                 frameTimeStats.Add (float frameTimeWatch.Elapsed.Ticks)
-                
+
             )
 
         let dispose() =
@@ -1203,6 +1416,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | Some o ->
                 runtime.DeleteFramebuffer o.PickableFramebuffer
                 runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                runtime.DeleteFramebuffer o.PickFramebufferResolved
                 for t in o.Disposables do t.Dispose()
                 fbos <- None
             | None ->
@@ -1279,107 +1493,331 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | true, s -> Some s
             | _ -> None
 
-        let result = 
+        let result =
             if pixel.AllGreaterOrEqual 0 && pixel.AllSmaller viewportSize then
                 let v = AVal.force view
                 let p = AVal.force proj
                 lastMousePosition <- Some pixel
-                let pixelResult = read p pixel
 
                 let s =
                     match pickTexture with
-                    | Some(t,_) -> t.Size.XY
+                    | Some fbo -> fbo.Size.XY
                     | None -> V2i.II
 
                 let vp = v * p
-                let ndc = V2d(2.0 * float pixel.X / float s.X - 1.0, 1.0 - 2.0 * float pixel.Y / float s.Y)
-                let ray =
-                    let p0 = vp.Backward.TransformPosProj(V3d(ndc, -1.0))
-                    let d = vp.Backward.TransformPosProj(V3d(ndc, 0.0)) - p0 |> Vec.normalize
-                    Ray3d(p0, d)
-                
-            
-            
-                let tryIntersect (skipPickThrough : bool) (tmin : float) (tmax : float) (state : TraversalState) (i : IIntersectable, trafo : Trafo3d) =
-                    if AVal.force state.Active then
-                        let mutable r = 0.0
-                        let mutable n = V3d.Zero
-                        let mutable hit = V3d.Zero
-                        let skip =
-                            if skipPickThrough then state.PickThrough
-                            else false
-                        let localRay = ray.Transformed(trafo.Backward)
-                        if not skip && i.Intersects(localRay, tmin, tmax, &r, &hit, &n) then
-                            let worldPoint = trafo.Forward.TransformPos hit
-                            let depth = vp.Forward.TransformPosProj(worldPoint).Z
-                            let vn = Vec.normalize (v.Backward.TransposedTransformDir (trafo.Backward.TransposedTransformDir n))
-                            // BVH-based picking has no PartIndex — default to 0.
-                            Some (r, (state, depth, v.Forward.TransformPos worldPoint, vn, 0))
-                        else
-                            None
-                    else
-                        None
+                // Hoist matrix references — Trafo3d.Backward is a property
+                // recompute on each access; keep one M44d struct on the stack.
+                let vpBwd = vp.Backward
+                let vpFwd = vp.Forward
+                let pBwd  = p.Backward      // proj⁻¹: NDC → VIEW space (mode A unproject)
+                let vBwd  = v.Backward
+                let vFwd  = v.Forward
+                let sX    = float s.X
+                let sY    = float s.Y
 
-                let tryGetIntersection (skipPickThrough : bool) (tmin : float) (tmax : float) (bvh : BvhTree3d<TraversalState, _>) =
-                    match bvh.GetClosestHit(ray, tmin, tmax, tryIntersect skipPickThrough tmin tmax) with
-                    | Some (_, (bvhScope, bvhDepth, bvhViewPos, bvhViewNormal, bvhPartIndex)) ->
-                        match pixelResult with
-                        | Some (scope, depth, viewPos, viewNormal, partIndex) ->
-                            if depth < bvhDepth then
-                                Some (true, depth, scope, viewPos, viewNormal, partIndex)
-                            else
-                                Some (false, bvhDepth, bvhScope, bvhViewPos, bvhViewNormal, bvhPartIndex)
-                        | None ->
-                            Some (false, bvhDepth, bvhScope, bvhViewPos, bvhViewNormal, bvhPartIndex)
-                    | None ->
-                        match pixelResult with
-                        | Some (scope, depth, viewPos, normal, partIndex) ->
-                            Some (true, depth, scope, viewPos, normal, partIndex)
-                        | None ->
-                            None
+                // Inline rayFor — used at most ~805 times per Read.
+                let inline rayFor (pxX : int) (pxY : int) =
+                    let ndcX = 2.0 * float pxX / sX - 1.0
+                    let ndcY = 1.0 - 2.0 * float pxY / sY
+                    let p0 = vpBwd.TransformPosProj(V3d(ndcX, ndcY, -1.0))
+                    let p1 = vpBwd.TransformPosProj(V3d(ndcX, ndcY,  0.0))
+                    Ray3d(p0, p1 - p0 |> Vec.normalize)
 
-                
-                
-                
-                
-                // limit t if pixel-result found
-                let mutable t = System.Double.PositiveInfinity
-                match pixelResult with
-                | Some (_, _, viewPos, _, _) ->
-                    let world = v.Backward.TransformPos viewPos
-                    t <- Vec.dot ray.Direction (world - ray.Origin)
-                | None ->
-                    ()
-
+                // ---- Cone hull over the snap window for BVH culling.
+                let r = PickSnap.radius
+                let xMin = 2.0 * float (max 0 (pixel.X - r))         / sX - 1.0
+                let xMax = 2.0 * float (min s.X (pixel.X + r + 1))   / sX - 1.0
+                let yMin = 1.0 - 2.0 * float (min s.Y (pixel.Y + r + 1)) / sY
+                let yMax = 1.0 - 2.0 * float (max 0 (pixel.Y - r))       / sY
+                let cx = (xMin + xMax) * 0.5
+                let cy = (yMin + yMax) * 0.5
+                let sx = 2.0 / (xMax - xMin)
+                let sy = 2.0 / (yMax - yMin)
+                let tSub = Trafo3d.Translation(-cx, -cy, 0.0) * Trafo3d.Scale(sx, sy, 1.0)
+                let coneHull = ViewProjection.toHull3d (vp * tSub) |> FastHull3d
                 let bvh = AVal.force bvh
-                match tryGetIntersection false 0.0 t bvh with
-                | Some (isPixelPick, _depth, scope, viewPos, viewNormal, partIndex) ->
+                // Pre-flatten BVH cull set into a typed struct array. Each
+                // `CullEntry` is a struct so iteration over the array is
+                // pointer-chase-free and the per-iter destructure of nested
+                // `struct(_, (_,_))` is gone.
+                let cullSet =
+                    let m = bvh.GetIntersecting coneHull
+                    let arr = Array.zeroCreate<CullEntry> m.Count
+                    let mutable i = 0
+                    for state, struct(_, (it, trafo)) in m do
+                        arr.[i] <- { State = state; Intersectable = it; Trafo = trafo }
+                        i <- i + 1
+                    arr
+
+                // Pick-buffer region — raw float32 array + strides. No closure.
+                let regionOpt = readPickRegion pixel
+                let hasRegion = regionOpt.IsSome
+                let region    = if hasRegion then regionOpt.Value else Unchecked.defaultof<_>
+                let rData     = if hasRegion then region.Data else null
+                let rBase     = if hasRegion then region.BaseIdx else 0
+                let rDx       = if hasRegion then region.Dx else 0
+                let rDy       = if hasRegion then region.Dy else 0
+                let rDz       = if hasRegion then region.Dz else 0
+                let rOriginX  = if hasRegion then region.OriginX else 0
+                let rOriginY  = if hasRegion then region.OriginY else 0
+                let rSizeX    = if hasRegion then region.SizeX else 0
+                let rSizeY    = if hasRegion then region.SizeY else 0
+
+                // Read the (signed) PickId at a region-local pixel, or 0.
+                let inline readIdAt (lx : int) (ly : int) =
+                    if not hasRegion || lx < 0 || ly < 0 || lx >= rSizeX || ly >= rSizeY then 0
+                    else
+                        let f0 = rData.[rBase + lx * rDx + ly * rDy]
+                        if f0 = 0.0f then 0 else int f0
+
+                // Resolve view-space position at a same-id neighbour. Only
+                // called once per accepted candidate (lazy normal estimation).
+                let viewPosAt (lx : int) (ly : int) (idF : int) =
+                    let i0 = rBase + lx * rDx + ly * rDy
+                    let f1 = rData.[i0 + rDz]
+                    let f2 = rData.[i0 + 2 * rDz]
+                    let f3 = rData.[i0 + 3 * rDz]
+                    if idF > 0 then
+                        let pxX = rOriginX + lx
+                        let pxY = rOriginY + ly
+                        let depth = float f2
+                        let tcX = (float pxX + 0.5) / sX
+                        let tcY = (float pxY + 0.5) / sY
+                        let ndc = V3d(2.0 * tcX - 1.0, 1.0 - 2.0 * tcY, depth)
+                        pBwd.TransformPosProj ndc      // NDC → VIEW
+                    else
+                        V3d(float f1, float f2, float f3)
+
+                // Per-scope snap-radius-squared cache. Forces `PixelSnapRadius`
+                // (an `aval<int>`) once per scope per Read instead of per
+                // (offset × scope).
+                let snapR2Cache = Dict<TraversalState, int>()
+                let inline snapR2 (state : TraversalState) =
+                    let mutable r = 0
+                    if snapR2Cache.TryGetValue(state, &r) then r
+                    else
+                        let r0 = min PickSnap.radius (max 0 (AVal.force state.PixelSnapRadius))
+                        let r2 = r0 * r0
+                        snapR2Cache.[state] <- r2
+                        r2
+
+                // Spiral state — all mutable, no per-iter allocations.
+                let mutable winnerOffX = System.Int32.MinValue
+                let mutable winnerOffY = 0
+                let mutable winnerIsPixel = false
+                let mutable winnerScope : TraversalState = Unchecked.defaultof<_>
+                let mutable winnerVp = V3d.Zero
+                let mutable winnerN  = V3d.Zero
+                let mutable winnerPi = 0
+                let mutable winnerHoverIdValue = 0
+
+                let inline reuseNormalIfMissing (lx : int) (ly : int) (idF : int) (centerVP : V3d) (encodedNormal : V3d) =
+                    if encodedNormal.X <> 0.0 || encodedNormal.Y <> 0.0 || encodedNormal.Z <> 0.0 then
+                        encodedNormal
+                    else
+                        // Walk the 3×3 neighbourhood again, this time gathering
+                        // view-space positions, and take the cross-product of
+                        // the two same-id tangent vectors with largest area.
+                        let mutable bestArea = 0.0
+                        let mutable bestN = V3d.Zero
+                        // up to 8 neighbours; small enough to keep on the stack
+                        let n0 = Array.zeroCreate<V3d> 8
+                        let mutable count = 0
+                        for ddy in -1 .. 1 do
+                            for ddx in -1 .. 1 do
+                                if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = idF then
+                                    n0.[count] <- viewPosAt (lx + ddx) (ly + ddy) idF
+                                    count <- count + 1
+                        for i in 0 .. count - 2 do
+                            let vi = n0.[i] - centerVP
+                            for j in i + 1 .. count - 1 do
+                                let n = Vec.cross vi (n0.[j] - centerVP)
+                                let m = n.Length
+                                if m > bestArea then
+                                    bestArea <- m
+                                    bestN <- n / m
+                        // Aardvark's right-handed view space has the camera at
+                        // the origin looking down -Z, so a *visible* surface's
+                        // normal points toward +Z. Flip if the cross-product
+                        // ended up pointing away from the camera.
+                        if bestArea = 0.0 then V3d.Zero
+                        elif bestN.Z < 0.0 then -bestN
+                        else bestN
+
+                let cullCount = cullSet.Length
+                let offsets = PickSnap.offsets
+                let mutable idx = 0
+                while winnerOffX = System.Int32.MinValue && idx < offsets.Length do
+                    let off = offsets.[idx]
+                    let d2 = off.X * off.X + off.Y * off.Y
+                    let pxX = pixel.X + off.X
+                    let pxY = pixel.Y + off.Y
+                    let lx  = pxX - rOriginX
+                    let ly  = pxY - rOriginY
+
+                    // ---- Pixel candidate ----
+                    let pixIdRaw = readIdAt lx ly
+                    let mutable pixOk = false
+                    let mutable pixId = 0
+                    let mutable pixScope : TraversalState = Unchecked.defaultof<_>
+                    let mutable pixDepth = 0.0
+                    let mutable pixVp = V3d.Zero
+                    let mutable pixN  = V3d.Zero
+                    let mutable pixPi = 0
+
+                    if pixIdRaw <> 0 then
+                        let absId = if pixIdRaw < 0 then -pixIdRaw else pixIdRaw
+                        // capture hover even if scope mapping fails
+                        if winnerHoverIdValue = 0 && off.X = 0 && off.Y = 0 then
+                            winnerHoverIdValue <- absId
+                        let mutable scope = Unchecked.defaultof<_>
+                        if scopes.TryGetValue(absId, &scope) && d2 <= snapR2 scope then
+                            // Validate by ≥ 2 same-id neighbours in the 3×3 block.
+                            let mutable matches = 0
+                            let mutable ddy = -1
+                            while matches < 2 && ddy <= 1 do
+                                let mutable ddx = -1
+                                while matches < 2 && ddx <= 1 do
+                                    if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = pixIdRaw then
+                                        matches <- matches + 1
+                                    ddx <- ddx + 1
+                                ddy <- ddy + 1
+                            // After confirming validity, walk the rest of the
+                            // neighbourhood is unnecessary for validation; we
+                            // only re-walk it inside `reuseNormalIfMissing`
+                            // which runs once on the winner.
+                            if matches >= 2 then
+                                let i0 = rBase + lx * rDx + ly * rDy
+                                let f1 = rData.[i0 + rDz]
+                                let f2 = rData.[i0 + 2 * rDz]
+                                let f3 = rData.[i0 + 3 * rDz]
+                                if pixIdRaw > 0 then
+                                    pixDepth <- float f2
+                                    let tcX = (float pxX + 0.5) / sX
+                                    let tcY = (float pxY + 0.5) / sY
+                                    let ndc = V3d(2.0 * tcX - 1.0, 1.0 - 2.0 * tcY, pixDepth)
+                                    pixVp <- pBwd.TransformPosProj ndc      // NDC → VIEW
+                                    pixN  <- if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
+                                    pixPi <- int f3
+                                else
+                                    pixVp <- V3d(float f1, float f2, float f3)
+                                    pixDepth <- vpFwd.TransformPosProj(pixVp).Z
+                                    pixN <- V3d.Zero
+                                    pixPi <- 0
+                                pixId <- absId
+                                pixScope <- scope
+                                pixOk <- true
+
+                    // ---- BVH candidate ----
+                    let mutable bvhOk = false
+                    let mutable bvhScope : TraversalState = Unchecked.defaultof<_>
+                    let mutable bvhDepth = 0.0
+                    let mutable bvhVp = V3d.Zero
+                    let mutable bvhN  = V3d.Zero
+                    if cullCount > 0 then
+                        let ray = rayFor pxX pxY
+                        let mutable bestT = System.Double.PositiveInfinity
+                        let mutable k = 0
+                        while k < cullCount do
+                            let entry = cullSet.[k]
+                            if AVal.force entry.State.Active && d2 <= snapR2 entry.State then
+                                let mutable rt  = 0.0
+                                let mutable hit = V3d.Zero
+                                let mutable n   = V3d.Zero
+                                let trafo = entry.Trafo
+                                let localRay = ray.Transformed(trafo.Backward)
+                                if entry.Intersectable.Intersects(localRay, 0.0, bestT, &rt, &hit, &n) then
+                                    bestT <- rt
+                                    let worldPoint = trafo.Forward.TransformPos hit
+                                    let viewPoint  = vFwd.TransformPos worldPoint
+                                    bvhVp    <- viewPoint
+                                    bvhDepth <- vpFwd.TransformPosProj(worldPoint).Z
+                                    bvhN     <- Vec.normalize (vBwd.TransposedTransformDir (trafo.Backward.TransposedTransformDir n))
+                                    bvhScope <- entry.State
+                                    bvhOk    <- true
+                            k <- k + 1
+
+                    // ---- Decide winner for this offset ----
+                    let pickPixel = pixOk && (not bvhOk || pixDepth <= bvhDepth)
+                    if pickPixel then
+                        winnerOffX    <- off.X
+                        winnerOffY    <- off.Y
+                        winnerIsPixel <- true
+                        winnerScope   <- pixScope
+                        winnerVp      <- pixVp
+                        winnerN       <- if pixN = V3d.Zero then reuseNormalIfMissing lx ly pixIdRaw pixVp pixN else pixN
+                        winnerPi      <- pixPi
+                        winnerHoverIdValue <- pixId
+                    elif bvhOk then
+                        winnerOffX    <- off.X
+                        winnerOffY    <- off.Y
+                        winnerIsPixel <- false
+                        winnerScope   <- bvhScope
+                        winnerVp      <- bvhVp
+                        winnerN       <- bvhN
+                        winnerPi      <- 0
+                    else
+                        idx <- idx + 1
+
+                transact (fun () ->
+                    hoverId.Value <- if winnerIsPixel then winnerHoverIdValue else 0
+                )
+
+                if winnerOffX = System.Int32.MinValue then
+                    None
+                else
+                    let scope = winnerScope
+                    let viewPos = winnerVp
+                    let viewNormal = winnerN
+                    let partIndex = winnerPi
                     if scope.PickThrough then
-                        if isPixelPick then
-                            // TODO: any way to realize that??
+                        if winnerIsPixel then
                             Log.warn "cannot pick-through pixel-picked objects"
                             Some (scope, viewPos, viewNormal, partIndex, None)
                         else
-                            match tryGetIntersection true 0.0 t bvh with
-                            | Some (_isPixel, _nDepth, nScope, nViewPos, nViewNormal, nPartIndex) ->
+                            // PickThrough rerun against the same offset's ray,
+                            // skipping pick-through scopes. Inline the same loop
+                            // as bvhAt(true) to avoid a second closure.
+                            let pxX = pixel.X + winnerOffX
+                            let pxY = pixel.Y + winnerOffY
+                            let ray = rayFor pxX pxY
+                            let mutable bestT = System.Double.PositiveInfinity
+                            let mutable nFound = false
+                            let mutable nScope : TraversalState = Unchecked.defaultof<_>
+                            let mutable nViewPos = V3d.Zero
+                            let mutable nViewNormal = V3d.Zero
+                            let mutable k = 0
+                            while k < cullCount do
+                                let entry = cullSet.[k]
+                                if AVal.force entry.State.Active && not entry.State.PickThrough then
+                                    let mutable rt = 0.0
+                                    let mutable hit = V3d.Zero
+                                    let mutable n = V3d.Zero
+                                    let trafo = entry.Trafo
+                                    let localRay = ray.Transformed(trafo.Backward)
+                                    if entry.Intersectable.Intersects(localRay, 0.0, bestT, &rt, &hit, &n) then
+                                        bestT <- rt
+                                        let worldPoint = trafo.Forward.TransformPos hit
+                                        nViewPos    <- vFwd.TransformPos worldPoint
+                                        nViewNormal <- Vec.normalize (vBwd.TransposedTransformDir (trafo.Backward.TransposedTransformDir n))
+                                        nScope      <- entry.State
+                                        nFound      <- true
+                                k <- k + 1
 
+                            if nFound then
                                 let rec hasEventHandler (kind : SceneEventKind) (scope : TraversalState) =
                                     HashMap.containsKey kind (AMap.force scope.EventHandlers) ||
                                     (Option.isSome scope.Parent && hasEventHandler kind (Option.get scope.Parent))
 
                                 if hasEventHandler kind scope then
-                                    Some (scope, nViewPos, nViewNormal, nPartIndex, Some nScope)
+                                    Some (scope, nViewPos, nViewNormal, 0, Some nScope)
                                 else
-                                    Some (nScope, nViewPos, nViewNormal, nPartIndex, None)
-
-                            | None ->
+                                    Some (nScope, nViewPos, nViewNormal, 0, None)
+                            else
                                 Some (scope, viewPos, viewNormal, partIndex, None)
                     else
                         Some (scope, viewPos, viewNormal, partIndex, None)
-                | None ->
-                    None
             else
-
                 None
 
         let capturedResult =
