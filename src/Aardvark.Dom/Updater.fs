@@ -474,13 +474,15 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
 
     let currentSignature = cval Unchecked.defaultof<IFramebufferSignature>
     let size = cval V2i.II
+    let clientSize = cval V2i.II
     let time = cval System.DateTime.Now
 
-    let attributes, sceneHandlers, scene = 
+    let attributes, sceneHandlers, scene =
         getContent {
             Runtime = runtime
             FramebufferSignature = currentSignature
             ViewportSize = size
+            ClientSize = clientSize
             Time = time
         }
 
@@ -582,7 +584,7 @@ and internal RenderControlUpdater<'a>(runtime : IRuntime, id : 'a, getContent : 
         | None -> 
             let signature = getFramebufferSignature state.runtime samples
             transact (fun () -> currentSignature.Value <- signature)
-            let h = new SceneHandler(signature, handleSceneEvent, setCursor, scene.Scene, scene.View, scene.Proj, size, time) 
+            let h = new SceneHandler(signature, handleSceneEvent, setCursor, scene.Scene, scene.View, scene.Proj, size, clientSize, time)
             handler <- Some h
             code.SetupRenderer(id, h)
             scene.OnReady h

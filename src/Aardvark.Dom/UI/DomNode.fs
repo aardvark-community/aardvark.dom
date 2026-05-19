@@ -15,7 +15,14 @@ type RenderControlInfo =
     {
         Runtime                 : IRuntime
         FramebufferSignature    : aval<IFramebufferSignature>
+        /// Framebuffer pixel size (devicePixelRatio-scaled). Use for shader
+        /// uniforms, pixel-space math, and anything indexing the FBO.
         ViewportSize            : aval<V2i>
+        /// CSS pixel size of the canvas (what the DOM sees via
+        /// getBoundingClientRect). Use for HTML overlay positioning. Equal to
+        /// ViewportSize / devicePixelRatio. Populated lazily from the first
+        /// DOM event; before any event arrives this is V2i.II.
+        ClientSize              : aval<V2i>
         Time                    : aval<System.DateTime>
     }
     
@@ -501,8 +508,9 @@ module NodeBuilderHelpers =
 open NodeBuilderHelpers
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
-module RenderControl = 
+module RenderControl =
     type ViewportSize = ViewportSize
+    type ClientSize = ClientSize
     type Time = Time
     type Info = Info
 
@@ -548,7 +556,10 @@ type RenderControlBuilderExt() =
         fun (state : RenderControlBuilderState) ->
             action state.Info.ViewportSize state
 
-            
+    member inline x.Bind(size : RenderControl.ClientSize, [<InlineIfLambda>] action : aval<V2i> -> RenderControlBuilder<'a>) =
+        fun (state : RenderControlBuilderState) ->
+            action state.Info.ClientSize state
+
     member inline x.Bind(size : RenderControl.Time, [<InlineIfLambda>] action : aval<System.DateTime> -> RenderControlBuilder<'a>) =
         fun (state : RenderControlBuilderState) ->
             action state.Info.Time state

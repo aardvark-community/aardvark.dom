@@ -1056,7 +1056,7 @@ type private Stats(maxCnt : int) =
             0.0
 
 
-type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<string> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, time : cval<System.DateTime>) =
+type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<string> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, clientSize : cval<V2i>, time : cval<System.DateTime>) =
     static let pickBuffer = Symbol.Create "PickId"
     
     let runtime = signature.Runtime :?> IRuntime
@@ -1090,6 +1090,26 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     //let mutable attachments = []
     let mutable fbos : option<SceneHandlerFramebuffers> = None
     let mutable viewportSize = V2i.Zero
+
+    /// Convert a DOM (CSS-pixel) event position to the framebuffer-pixel
+    /// coordinate the pick FBO is indexed in. Scale is derived from the
+    /// event's own ClientRect vs. viewportSize, so it stays correct under
+    /// any RenderControl.PixelRatio override. Returns sub-pixel V2d;
+    /// rounding to V2i is left to the GL read-edge. Also publishes the
+    /// CSS-pixel client size on `clientSize` so consumers (HTML overlays)
+    /// have a typed source.
+    let toFbPixel (clientPosition : V2i) (clientRect : Box2d) =
+        let cssSize = clientRect.Size
+        let s = viewportSize
+        let scale =
+            if cssSize.X > 0.0 && cssSize.Y > 0.0 then V2d s / cssSize
+            else V2d.II
+        let pixelF = V2d (clientPosition - V2i clientRect.Min) * scale
+        let cssSizeI = V2i(round cssSize.X, round cssSize.Y)
+        if cssSizeI.AllGreater 0 && cssSizeI <> clientSize.Value then
+            transact (fun () -> clientSize.Value <- cssSizeI)
+        pixelF
+
     let hoverId = cval -1
     let lastOver : cval<option<TraversalState>> = cval None
     let lastFocus : cval<option<TraversalState>> = cval None
@@ -1934,16 +1954,17 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     member x.HandlePointerEvent(kind : SceneEventKind, original : PointerEvent) : bool =
         let s = viewportSize
         if s.AllGreater 0 then
-            let view = AVal.force view 
+            let view = AVal.force view
             let proj = AVal.force proj
             let scrollDelta = V2d.Zero
 
-            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+            let pixelF = toFbPixel original.ClientPosition original.ClientRect
+            let pixelI = V2i(round pixelF.X, round pixelF.Y)
 
-            match x.Read(pixel, original.PointerId, kind, original) with
+            match x.Read(pixelI, original.PointerId, kind, original) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, viewPos, viewNormal, partIndex)
+                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = ScenePointerEvent(x, best, target, kind, loc, original)
 
                 TraversalState.handleMove lastOver evt (Some best)
@@ -1969,14 +1990,14 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | None ->
                 match kind with
                 | SceneEventKind.Click when Option.isSome lastFocus.Value ->
-                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, pixelF, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
                     let evt = ScenePointerEvent(x, lastFocus.Value.Value, null, kind, loc, original)
                     TraversalState.handleDifferential lastFocus SceneEventKind.FocusEnter SceneEventKind.FocusLeave evt None
                 | _ -> ()
 
 
                 if Option.isSome lastOver.Value then
-                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d pixel, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
+                    let loc = SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, pixelF, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
                     let evt = ScenePointerEvent(x, lastOver.Value.Value, null, kind, loc, original)
                     TraversalState.handleMove lastOver evt None
 
@@ -1987,34 +2008,36 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     member x.HandleTapEvent(kind : SceneEventKind, original : TapEvent) : bool =
         let s = viewportSize
         if s.AllGreater 0 then
-            let view = AVal.force view 
+            let view = AVal.force view
             let proj = AVal.force proj
 
-            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+            let pixelF = toFbPixel original.ClientPosition original.ClientRect
+            let pixelI = V2i(round pixelF.X, round pixelF.Y)
 
-            match x.Read(pixel, original.PointerId, kind) with
+            match x.Read(pixelI, original.PointerId, kind) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, viewPos, viewNormal, partIndex)
+                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = SceneTapEvent(x, best, target, kind, loc, original)
                 TraversalState.handleEvent true evt best
             | None ->
                 true
         else
             true
-        
+
     member x.HandleWheelEvent(kind : SceneEventKind, original : WheelEvent) : bool =
         let s = viewportSize
         if s.AllGreater 0 then
-            let view = AVal.force view 
+            let view = AVal.force view
             let proj = AVal.force proj
 
-            let pixel = original.ClientPosition - V2i original.ClientRect.Min
+            let pixelF = toFbPixel original.ClientPosition original.ClientRect
+            let pixelI = V2i(round pixelF.X, round pixelF.Y)
 
-            match x.Read(pixel, -1, kind) with
+            match x.Read(pixelI, -1, kind) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, V2d pixel, s, viewPos, viewNormal, partIndex)
+                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = SceneWheelEvent(x, best, target, kind, loc, original)
                 TraversalState.handleEvent true evt best
             | None ->
