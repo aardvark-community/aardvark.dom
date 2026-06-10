@@ -1,3 +1,8 @@
+### 1.2.0-prerelease0001
+* updated to Aardvark.Rendering 5.7.0-prerelease0002 (SceneGraph, Rendering.GL/Vulkan, Application.Slim.GL/Vulkan, Rendering.Text)
+* FShade.Core minimum bumped to 5.7.9
+* `NodeBuilder.Yield`: replaced the flexible `#seq<DomNode>` overload with explicit overloads for `seq`, `list`, array, `IndexList` and `HashSet`. The flex constraint blocked F# CE overload resolution when several other `Yield` overloads exist (e.g. nesting an `if/else -> DomNode` inside a parent CE); concrete collection shapes resolve unambiguously.
+
 ### 1.1.9
 * fix: picking was broken on HiDPI / Retina displays after the renderer started honoring `devicePixelRatio` (Aardworx.WebAssembly 1.2.7). `SceneHandler.HandlePointerEvent` / `HandleTapEvent` / `HandleWheelEvent` computed `pixel = original.ClientPosition - V2i original.ClientRect.Min` — CSS pixels from DOM events — and passed that straight to the pick-buffer read. With a 3× framebuffer (iPhone) the read happened at 1/3 the click location → wrong scope or none. `SceneEventLocation` also got the mismatched `pixel` (CSS) and `viewportSize` (fb), breaking any consumer doing `pixel / viewportSize` for NDC.
 * convert at the input boundary instead: a new `toFbPixel` helper in `SceneHandler` scales the event position via the per-event `ClientRect.Size` vs. `viewportSize` ratio — self-consistent under any `RenderControl.PixelRatio` override (no `window.devicePixelRatio` lookup needed). Pixel space stays sub-pixel `V2d` end-to-end; rounding to `V2i` happens only at the GL read-edge.

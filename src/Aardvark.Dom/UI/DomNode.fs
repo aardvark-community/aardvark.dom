@@ -659,7 +659,24 @@ type NodeBuilder =
     member inline x.Yield(content : string) =
         x.Yield (DomNode.Text (AVal.constant content))
 
-    member inline x.Yield(elements : #seq<DomNode>) =
+    // Explicit per-shape overloads (no flexible `#seq<DomNode>`): the flex
+    // constraint blocks F# CE overload resolution when several other Yield
+    // overloads exist (e.g. nesting an `if/else -> DomNode` inside a parent
+    // CE). Each concrete collection shape gets its own overload so codegen
+    // (puresg / adaptify) can choose unambiguously after adaptification.
+    member inline x.Yield(elements : seq<DomNode>) =
+        { children = NodeList elements; attributes = AttributeTable.Empty }
+
+    member inline x.Yield(elements : list<DomNode>) =
+        { children = NodeList (elements :> seq<_>); attributes = AttributeTable.Empty }
+
+    member inline x.Yield(elements : DomNode[]) =
+        { children = NodeList (elements :> seq<_>); attributes = AttributeTable.Empty }
+
+    member inline x.Yield(elements : IndexList<DomNode>) =
+        { children = NodeList (elements :> seq<_>); attributes = AttributeTable.Empty }
+
+    member inline x.Yield(elements : HashSet<DomNode>) =
         { children = NodeList (elements :> seq<_>); attributes = AttributeTable.Empty }
 
     member inline x.Yield(elements : alist<DomNode>) =
