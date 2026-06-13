@@ -16,8 +16,20 @@ module RenderObject =
         static let invCache = UnaryCache<aval<Trafo3d>, aval<Trafo3d>>(AVal.map (fun v -> v.Inverse))
         static let normalMatrixCache = UnaryCache<aval<Trafo3d>, aval<M33d>>(AVal.map (fun v -> M33d v.Backward.Transposed))
         
-        let model = 
+        let model =
             lazy (TraversalState.modelTrafo state)
+
+        // The UNFOLDED model-trafo stack (root->leaf, Trafo3d `*` compose order),
+        // exposed ALONGSIDE the folded "ModelTrafo" so a GPU-chain consumer (the
+        // heap) can compose the per-leaf chain on the GPU instead of pulling the
+        // CPU-folded product: a shared/constant ancestor link then dedups across
+        // leaves and editing one link re-folds only on the GPU. Carried as
+        // `aval<aval<Trafo3d>[]>` (a constant wrapper over the link array) since
+        // IUniformProvider hands back IAdaptiveValues; the consumer forces it
+        // ONCE (structure is immutable per RO) to recover the links. Non-chain
+        // consumers never ask for this name, so the folded path is untouched.
+        let modelStack =
+            lazy (AVal.constant (List.toArray state.Model))
 
 
         member x.TryGetUniform(name : string) =
@@ -26,6 +38,7 @@ module RenderObject =
                 match name with
                 | "NormalMatrix" -> normalMatrixCache.Invoke model.Value :> IAdaptiveValue |> ValueSome
                 | "ModelTrafo" -> model.Value :> IAdaptiveValue |> ValueSome
+                | "ModelTrafoStack" -> modelStack.Value :> IAdaptiveValue |> ValueSome
                 | "ModelTrafoInv" -> invCache.Invoke model.Value :> IAdaptiveValue |> ValueSome
                 | "ViewTrafo" -> state.View :> IAdaptiveValue |> ValueSome
                 | "ProjTrafo" -> state.Proj :> IAdaptiveValue |> ValueSome

@@ -128,6 +128,16 @@ module private SceneGraphShapeUtilities =
                                 | _ ->
                                     ownTrafo :> IAdaptiveValue |> ValueSome
 
+                        // keep the UNFOLDED stack consistent with the folded
+                        // ModelTrafo above: own renderTrafo is the new outermost
+                        // (root) link, prepended in Trafo3d `*` compose order.
+                        | "ModelTrafoStack" ->
+                            match old.TryGetUniform(scope, sem) with
+                                | ValueSome (:? aval<aval<Trafo3d>[]> as st) ->
+                                    (st |> AVal.map (fun s -> Array.append [| ownTrafo |] s)) :> IAdaptiveValue |> ValueSome
+                                | _ ->
+                                    AVal.constant [| ownTrafo |] :> IAdaptiveValue |> ValueSome
+
                         | _ ->
                             old.TryGetUniform(scope, sem)
 
