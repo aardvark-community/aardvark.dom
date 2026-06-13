@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0002
+* expose the UNFOLDED model-trafo stack as a well-known `ModelTrafoStack` uniform (`aval<aval<Trafo3d>[]>`, root->leaf `Trafo3d *` compose order) ALONGSIDE the folded `ModelTrafo`. A GPU-chain consumer (the heap) forces it ONCE and composes the per-leaf chain on the GPU — deduping shared/constant ancestor links across leaves and re-folding only on the GPU when one link is edited — while every non-chain consumer is untouched (they never request the name). Exposed unconditionally by `RenderObject.ofTraversalState`; the text/shape path keeps it consistent by prepending its own render trafo as the new outermost link.
+
 ### 1.2.0-prerelease0001
 * updated to Aardvark.Rendering 5.7.0-prerelease0002 (SceneGraph, Rendering.GL/Vulkan, Application.Slim.GL/Vulkan, Rendering.Text)
 * FShade.Core minimum bumped to 5.7.9
