@@ -15,6 +15,13 @@ module RenderObject =
         static let camCache = UnaryCache<aval<Trafo3d>, aval<V3d>>(AVal.map (fun v -> v.GetViewPosition()))
         static let invCache = UnaryCache<aval<Trafo3d>, aval<Trafo3d>>(AVal.map (fun v -> v.Inverse))
         static let normalMatrixCache = UnaryCache<aval<Trafo3d>, aval<M33d>>(AVal.map (fun v -> M33d v.Backward.Transposed))
+        // ViewProjTrafo MUST be memoized like its siblings: a fresh AVal.map2 per
+        // TryGetUniform call hands every render object a DISTINCT view-proj aval, so
+        // consumers that dedup global uniforms by aval identity (e.g. the heap's
+        // arena) can't recognize the shared camera and wrongly treat view-proj as a
+        // per-draw field — turning a camera move into an O(N) per-object re-pack.
+        // Keyed on (View, Proj) so all ROs in a render control share ONE aval.
+        static let viewProjCache = BinaryCache<aval<Trafo3d>, aval<Trafo3d>, aval<Trafo3d>>(AVal.map2 (*))
         
         let model =
             lazy (TraversalState.modelTrafo state)
@@ -44,7 +51,7 @@ module RenderObject =
                 | "ProjTrafo" -> state.Proj :> IAdaptiveValue |> ValueSome
                 | "ViewTrafoInv" -> invCache.Invoke state.View :> IAdaptiveValue |> ValueSome
                 | "ProjTrafoInv" -> invCache.Invoke state.Proj :> IAdaptiveValue |> ValueSome
-                | "ViewProjTrafo" -> (state.View,state.Proj) ||> AVal.map2 (*) :> IAdaptiveValue |> ValueSome
+                | "ViewProjTrafo" -> viewProjCache.Invoke(state.View, state.Proj) :> IAdaptiveValue |> ValueSome
                 | "CameraLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> ValueSome
                 | "LightLocation" -> camCache.Invoke state.View :> IAdaptiveValue |> ValueSome
                 | _ ->
