@@ -1,3 +1,7 @@
+### 1.2.0-prerelease0003
+* memoize `ViewProjTrafo` per `(View, Proj)` like its sibling camera uniforms. It was the one camera uniform built as a fresh `AVal.map2` on every `TryGetUniform`, so every render object got a DISTINCT view-proj aval over the one camera — consumers that dedup global uniforms by aval identity (e.g. the heap arena) then saw N distinct sources and an O(N) fan-out per camera move. Now all render objects in a render control share ONE aval.
+* depend on `Aardvark.Rendering 5.7.0-prerelease0018` (heap: unified ref-counted-per-aval uniforms, real double-precision uniforms, camera composites derived from `View`/`Proj`).
+
 ### 1.2.0-prerelease0002
 * expose the UNFOLDED model-trafo stack as a well-known `ModelTrafoStack` uniform (`aval<aval<Trafo3d>[]>`, root->leaf `Trafo3d *` compose order) ALONGSIDE the folded `ModelTrafo`. A GPU-chain consumer (the heap) forces it ONCE and composes the per-leaf chain on the GPU — deduping shared/constant ancestor links across leaves and re-folding only on the GPU when one link is edited — while every non-chain consumer is untouched (they never request the name). Exposed unconditionally by `RenderObject.ofTraversalState`; the text/shape path keeps it consistent by prepending its own render trafo as the new outermost link.
 
