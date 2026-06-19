@@ -94,17 +94,25 @@ module MetalExport =
             Format = format; Image = image; Memory = mem; Size = uint64 req.size
         }
 
-    /// Map the (host-visible) memory and read the center pixel as (R,G,B,A).
-    let readbackCenter (device : Device) (img : MetalSharedImage) : int * int * int * int =
-        let dev = device.Handle
-        let mutable p = 0n
-        VkRaw.vkMapMemory(dev, img.Memory, 0UL, img.Size, VkMemoryMapFlags.None, &&p) |> check "vkMapMemory"
-        let px = p + nativeint img.Offset + nativeint ((img.Height / 2) * int img.Stride + (img.Width / 2) * 4)
+    // Read the IOSurface directly (the consumer-facing object) — its pixels live in
+    // the IOSurface storage, not in our VkDeviceMemory.
+    [<Literal>] let private framework = "/System/Library/Frameworks/IOSurface.framework/IOSurface"
+    [<DllImport(framework)>] extern int IOSurfaceLock(nativeint surf, uint32 options, nativeint seed)
+    [<DllImport(framework)>] extern int IOSurfaceUnlock(nativeint surf, uint32 options, nativeint seed)
+    [<DllImport(framework)>] extern nativeint IOSurfaceGetBaseAddress(nativeint surf)
+    [<DllImport(framework)>] extern unativeint IOSurfaceGetBytesPerRow(nativeint surf)
+
+    /// Lock the IOSurface and read the center pixel as (R,G,B,A).
+    let readbackCenter (_device : Device) (img : MetalSharedImage) : int * int * int * int =
+        IOSurfaceLock(img.IOSurface, 1u (* kIOSurfaceLockReadOnly *), 0n) |> ignore
+        let baseA = IOSurfaceGetBaseAddress(img.IOSurface)
+        let bpr = int (IOSurfaceGetBytesPerRow(img.IOSurface))
+        let px = baseA + nativeint ((img.Height / 2) * bpr + (img.Width / 2) * 4)
         let b = int (Marshal.ReadByte(px, 0))
         let g = int (Marshal.ReadByte(px, 1))
         let r = int (Marshal.ReadByte(px, 2))
         let a = int (Marshal.ReadByte(px, 3))
-        VkRaw.vkUnmapMemory(dev, img.Memory)
+        IOSurfaceUnlock(img.IOSurface, 1u, 0n) |> ignore
         (r, g, b, a)
 
     let destroy (device : Device) (img : MetalSharedImage) =
