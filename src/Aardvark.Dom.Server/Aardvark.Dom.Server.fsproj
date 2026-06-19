@@ -17,6 +17,11 @@
     <Compile Include="SharedMemory\SharedMemory.fs" />
     <Compile Include="SharedMemory\RawDownload.fs" />
     <Compile Include="SharedMemory\SharedMemoryTransfer.fs" />
+    <Compile Include="SharedTexture\VulkanDmaBuf.fs" />
+    <Compile Include="SharedTexture\EglDmaBufImport.fs" />
+    <Compile Include="SharedTexture\VulkanSync.fs" />
+    <Compile Include="SharedTexture\VulkanGpuCopy.fs" />
+    <Compile Include="SharedTexture\FdHandoff.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj" />

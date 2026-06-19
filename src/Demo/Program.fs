@@ -865,12 +865,90 @@ let snapDemo (_runtime : IRuntime) =
 
 
 [<EntryPoint>]
-let main _ =
+let main argv =
     Aardvark.Init()
+
+    // Cross-process consumer: reopen a dma-buf published by another process and
+    // EGL-validate it. No Vulkan needed here (mirrors Electron's GPU process).
+    if Array.contains "dmabuf-recv" argv then
+        printfn "[dmabuf-recv] waiting for a dma-buf on /tmp/dmabuf.sock ..."
+        let img = Aardvark.Dom.Remote.SharedTexture.FdHandoff.recvFd "/tmp/dmabuf.sock"
+        let data = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.readbackRGBA img
+        let i = ((128 * 256) + 128) * 4
+        let got = (int data.[i], int data.[i+1], int data.[i+2], int data.[i+3])
+        let exp = (51, 102, 153, 255)
+        let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+        let ok = close got exp
+        printfn "[dmabuf-recv] cross-process dma-buf center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+        exit (if ok then 0 else 1)
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
 
-    let app = new OpenGlApplication()
+    // Texture-sharing work targets Vulkan (dma-buf / D3D11 / IOSurface export).
+    // GL can do it too on Linux via an EGL context + EGL_MESA_image_dma_buf_export,
+    // but we standardize on Vulkan for now.
+    let app = new VulkanApplication()
+
+    // Milestone 0 smoke test: prove the device can export a LINEAR color image as
+    // a dma-buf fd (the real unknown on NVIDIA). Run with `Demo.dll dmabuf-test`.
+    if Array.contains "dmabuf-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let img = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.fillTestPattern dev img
+            printfn "[dmabuf-test] exported fd=%d  %dx%d  fourcc=0x%08X  modifier=%d  offset=%d  stride=%d  size=%d"
+                img.Fd img.Width img.Height img.Fourcc img.Modifier img.Offset img.Stride img.Size
+            // Milestone 0b: re-import via EGL (the Chromium NativePixmap path) and verify pixels.
+            let ok = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.validate img
+            printfn "[dmabuf-test] EGL re-import validation: %s" (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev img
+            exit (if img.Fd >= 0 && ok then 0 else 1)
+        | r -> eprintfn "[dmabuf-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Milestone 0c: fill the shared dma-buf purely on the GPU (clear a source image
+    // + vkCmdCopyImage into it, no CPU map) and verify the colour survives via EGL.
+    if Array.contains "dmabuf-gpu-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            let struct (src, srcMem) =
+                let (a, b) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+                struct (a, b)
+            let color = V4f(0.2f, 0.4f, 0.6f, 1.0f) // (R,G,B,A)
+            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst color
+            printfn "[dmabuf-gpu-test] exported sync_fd fence=%d (%s)" fenceFd
+                (if fenceFd >= 0 then "real fence fd" elif fenceFd = -1 then "already-signaled sentinel (valid)" else "INVALID")
+            let data = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.readbackRGBA dst
+            let i = ((128 * 256) + 128) * 4
+            let got = (int data.[i], int data.[i+1], int data.[i+2], int data.[i+3])
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[dmabuf-gpu-test] GPU-copied dma-buf center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[dmabuf-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Cross-process producer: GPU-fill a dma-buf, publish its descriptor, and hold
+    // it alive so a separate `dmabuf-recv` process can reopen + validate it.
+    if Array.contains "dmabuf-send" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
+            printfn "[dmabuf-send] sending dma-buf fd=%d (pid=%d) over /tmp/dmabuf.sock"
+                dst.Fd (System.Diagnostics.Process.GetCurrentProcess().Id)
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst
+            System.Threading.Thread.Sleep 500 // let the consumer recvmsg before we free
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
+            exit 0
+        | r -> eprintfn "[dmabuf-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
 
