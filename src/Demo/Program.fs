@@ -907,13 +907,13 @@ let main argv =
             let dev = vk.Device
             let dst = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev 256 256
             let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyMetal dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let evt = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyMetal dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
             let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readbackCenter dev dst
             let exp = (51, 102, 153, 255)
             let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
             let ok = close got exp
-            printfn "[metal-gpu-test] IOSurface=0x%X  center RGBA=%A expected~%A %s"
-                (int64 dst.IOSurface) got exp (if ok then "PASS" else "FAIL")
+            printfn "[metal-gpu-test] IOSurface=0x%X  MTLSharedEvent=0x%X  center RGBA=%A expected~%A %s"
+                (int64 dst.IOSurface) (int64 evt) got exp (if ok then "PASS" else "FAIL")
             Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev dst
             exit (if ok then 0 else 1)

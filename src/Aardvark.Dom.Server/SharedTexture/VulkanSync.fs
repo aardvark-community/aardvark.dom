@@ -65,5 +65,22 @@ module DmaBufSync =
         KHRExternalSemaphoreWin32.VkRaw.vkGetSemaphoreWin32HandleKHR(device.Handle, &&getInfo, &&handle) |> check "vkGetSemaphoreWin32HandleKHR"
         handle
 
+    // ---- macOS: MTLSharedEvent (consumer waits on it via Metal) ----
+    let createExportableSemaphoreMetal (device : Device) : VkSemaphore =
+        let dev = device.Handle
+        let mutable expCreate =
+            EXTMetalObjects.VkExportMetalObjectCreateInfoEXT(EXTMetalObjects.VkExportMetalObjectTypeFlagsEXT.MetalSharedEventBit)
+        let mutable info = VkSemaphoreCreateInfo(VkSemaphoreCreateFlags.None)
+        info.pNext <- NativePtr.toNativeInt &&expCreate
+        let mutable sem = Unchecked.defaultof<VkSemaphore>
+        VkRaw.vkCreateSemaphore(dev, &&info, NativePtr.zero, &&sem) |> check "vkCreateSemaphore(metal)"
+        sem
+
+    let exportSharedEventMetal (device : Device) (sem : VkSemaphore) : nativeint =
+        let mutable seInfo = EXTMetalObjects.VkExportMetalSharedEventInfoEXT(sem, Unchecked.defaultof<VkEvent>, 0n)
+        let mutable expInfo = EXTMetalObjects.VkExportMetalObjectsInfoEXT(NativePtr.toNativeInt &&seInfo)
+        EXTMetalObjects.VkRaw.vkExportMetalObjectsEXT(device.Handle, &&expInfo)
+        seInfo.mtlSharedEvent
+
     let destroySemaphore (device : Device) (sem : VkSemaphore) =
         VkRaw.vkDestroySemaphore(device.Handle, sem, NativePtr.zero)

@@ -147,11 +147,13 @@ module DmaBufGpu =
         VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
         h
 
-    /// macOS: GPU-clear `src` + copy into the IOSurface-backed image `dst`. Fence via
-    /// MTLSharedEvent is a follow-up; for now drains on the queue.
-    let clearAndCopyMetal (device : Device) (src : VkImage) (dst : MetalSharedImage) (color : V4f) : unit =
-        let sem = DmaBufSync.createSemaphore device
+    /// macOS: GPU-clear `src` + copy into the IOSurface-backed image `dst`. Returns an
+    /// exported MTLSharedEvent handle the consumer waits on (Metal-side).
+    let clearAndCopyMetal (device : Device) (src : VkImage) (dst : MetalSharedImage) (color : V4f) : nativeint =
+        let sem = DmaBufSync.createExportableSemaphoreMetal device
         let struct (queue, pool) = recordClearCopySubmit device src dst.Image dst.Width dst.Height color sem
+        let sharedEvent = DmaBufSync.exportSharedEventMetal device sem
         VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle"
         DmaBufSync.destroySemaphore device sem
         VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
+        sharedEvent
