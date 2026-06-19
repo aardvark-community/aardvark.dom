@@ -96,7 +96,8 @@ module MetalExport =
 
     // Read the IOSurface directly (the consumer-facing object) — its pixels live in
     // the IOSurface storage, not in our VkDeviceMemory.
-    [<Literal>] let private framework = "/System/Library/Frameworks/IOSurface.framework/IOSurface"
+    [<Literal>]
+    let private framework = "/System/Library/Frameworks/IOSurface.framework/IOSurface"
     [<DllImport(framework)>] extern int IOSurfaceLock(nativeint surf, uint32 options, nativeint seed)
     [<DllImport(framework)>] extern int IOSurfaceUnlock(nativeint surf, uint32 options, nativeint seed)
     [<DllImport(framework)>] extern nativeint IOSurfaceGetBaseAddress(nativeint surf)
