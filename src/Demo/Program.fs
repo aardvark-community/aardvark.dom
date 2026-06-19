@@ -881,6 +881,21 @@ let main argv =
         let ok = close got exp
         printfn "[dmabuf-recv] cross-process dma-buf center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
         exit (if ok then 0 else 1)
+
+    // macOS milestone (analog of dmabuf-test): create an IOSurface-backed image via
+    // VK_EXT_metal_objects (enabled on a Headless runtime) and export the IOSurface.
+    if Array.contains "metal-test" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            printfn "[metal-test] VK_EXT_metal_objects enabled: %b" (dev.IsExtensionEnabled "VK_EXT_metal_objects")
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev 256 256
+            printfn "[metal-test] IOSurface=0x%X  %dx%d  offset=%d stride=%d" (int64 img.IOSurface) img.Width img.Height img.Offset img.Stride
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev img
+            exit (if img.IOSurface <> 0n then 0 else 1)
+        | r -> eprintfn "[metal-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
 

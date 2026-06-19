@@ -19,6 +19,7 @@
     <Compile Include="SharedMemory\SharedMemoryTransfer.fs" />
     <Compile Include="SharedTexture\VulkanDmaBuf.fs" />
     <Compile Include="SharedTexture\VulkanWin32Export.fs" />
+    <Compile Include="SharedTexture\VulkanMetalExport.fs" />
     <Compile Include="SharedTexture\EglDmaBufImport.fs" />
     <Compile Include="SharedTexture\VulkanSync.fs" />
     <Compile Include="SharedTexture\VulkanGpuCopy.fs" />
