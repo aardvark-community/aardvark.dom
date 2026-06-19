@@ -949,6 +949,18 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
             exit 0
         | r -> eprintfn "[dmabuf-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Windows milestone (analog of dmabuf-test): export a color image's memory as a
+    // Win32 NT handle and confirm it's valid.
+    if Array.contains "win32-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let img = Aardvark.Dom.Remote.SharedTexture.Win32Export.create dev 256 256
+            printfn "[win32-test] exported NT handle=0x%X  %dx%d  size=%d" (int64 img.Handle) img.Width img.Height img.Size
+            Aardvark.Dom.Remote.SharedTexture.Win32Export.destroy dev img
+            exit (if img.Handle <> 0n then 0 else 1)
+        | r -> eprintfn "[win32-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
 
