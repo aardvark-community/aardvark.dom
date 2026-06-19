@@ -961,6 +961,19 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.Win32Export.destroy dev img
             exit (if img.Handle <> 0n then 0 else 1)
         | r -> eprintfn "[win32-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // List available device extensions (e.g. check MoltenVK VK_EXT_metal_objects on macOS).
+    if Array.contains "vk-exts" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let exts = vk.Device.PhysicalDevice.AvailableExtensions |> Seq.map string |> Seq.toList
+            printfn "[vk-exts] %d device extensions available" (List.length exts)
+            for e in exts do
+                let l = e.ToLowerInvariant()
+                if l.Contains "metal" || l.Contains "external" then printfn "  %s" e
+            printfn "[vk-exts] VK_EXT_metal_objects present: %b" (exts |> List.exists (fun e -> e = "VK_EXT_metal_objects"))
+            exit 0
+        | r -> eprintfn "[vk-exts] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
 
