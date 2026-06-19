@@ -20,6 +20,14 @@ module DmaBufSync =
     let private check (what : string) (res : VkResult) =
         if res <> VkResult.Success then failwithf "[DmaBufSync] %s failed: %A" what res
 
+    /// A plain (non-exportable) binary semaphore — used where the fence isn't
+    /// exported yet (e.g. macOS, pending MTLSharedEvent export).
+    let createSemaphore (device : Device) : VkSemaphore =
+        let mutable info = VkSemaphoreCreateInfo(VkSemaphoreCreateFlags.None)
+        let mutable sem = Unchecked.defaultof<VkSemaphore>
+        VkRaw.vkCreateSemaphore(device.Handle, &&info, NativePtr.zero, &&sem) |> check "vkCreateSemaphore"
+        sem
+
     /// A binary semaphore created exportable as a sync_fd.
     let createExportableSemaphore (device : Device) : VkSemaphore =
         let dev = device.Handle

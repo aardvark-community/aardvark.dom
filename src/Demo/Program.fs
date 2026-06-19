@@ -896,6 +896,28 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev img
             exit (if img.IOSurface <> 0n then 0 else 1)
         | r -> eprintfn "[metal-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // macOS milestone (analog of dmabuf-gpu-test): GPU-fill the IOSurface-backed image
+    // and verify via map-readback.
+    if Array.contains "metal-gpu-test" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyMetal dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readbackCenter dev dst
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[metal-gpu-test] IOSurface=0x%X  center RGBA=%A expected~%A %s"
+                (int64 dst.IOSurface) got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[metal-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
 
