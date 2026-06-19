@@ -962,6 +962,26 @@ let main argv =
             exit (if img.Handle <> 0n then 0 else 1)
         | r -> eprintfn "[win32-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
+    // Windows milestone (analog of dmabuf-gpu-test): GPU-fill the Win32 shared image
+    // and verify via map-readback; also export a Win32 fence handle.
+    if Array.contains "win32-gpu-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.Win32Export.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let fence = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyWin dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let got = Aardvark.Dom.Remote.SharedTexture.Win32Export.readbackCenter dev dst
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[win32-gpu-test] NT=0x%X fence=0x%X  center RGBA=%A expected~%A %s"
+                (int64 dst.Handle) (int64 fence) got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.Win32Export.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[win32-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
     // List available device extensions (e.g. check MoltenVK VK_EXT_metal_objects on macOS).
     if Array.contains "vk-exts" argv then
         match app.Runtime with

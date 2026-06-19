@@ -67,10 +67,11 @@ module DmaBufGpu =
         VkRaw.vkCmdPipelineBarrier(cmd, srcStage, dstStage, VkDependencyFlags.None,
                                    0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b)
 
-    /// GPU-clear `src` to `color` (R,G,B,A) and copy it into the dma-buf `dst`.
-    /// Fully on the GPU; the dma-buf is never mapped on the CPU. Returns a sync_fd
-    /// fence that signals when the GPU work completes (-1 = already-signaled).
-    let clearAndCopy (device : Device) (src : VkImage) (dst : DmaBufImage) (color : V4f) : int =
+    /// Records "GPU-clear `src` to `color` + copy into `dstImage`" and submits it,
+    /// signaling `signalSem` on completion. Returns the queue + one-shot pool so the
+    /// caller can export a fence before draining and tearing down. Platform-agnostic.
+    let private recordClearCopySubmit (device : Device) (src : VkImage) (dstImage : VkImage)
+                                      (dstW : int) (dstH : int) (color : V4f) (signalSem : VkSemaphore) =
         let dev = device.Handle
         let qfi = uint32 device.GraphicsFamily.Index
 
@@ -99,8 +100,8 @@ module DmaBufGpu =
                 VkImageLayout.TransferDstOptimal VkImageLayout.TransferSrcOptimal
                 VkPipelineStageFlags.TransferBit VkPipelineStageFlags.TransferBit
 
-        // dst dma-buf: UNDEFINED -> TRANSFER_DST
-        barrier cmd dst.Image VkAccessFlags.None VkAccessFlags.TransferWriteBit
+        // dst: UNDEFINED -> TRANSFER_DST
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
                 VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
                 VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
 
@@ -108,31 +109,40 @@ module DmaBufGpu =
         let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
         let mutable region =
             VkImageCopy(layers, VkOffset3D(0, 0, 0), layers, VkOffset3D(0, 0, 0),
-                        VkExtent3D(uint32 dst.Width, uint32 dst.Height, 1u))
+                        VkExtent3D(uint32 dstW, uint32 dstH, 1u))
         VkRaw.vkCmdCopyImage(cmd, src, VkImageLayout.TransferSrcOptimal,
-                             dst.Image, VkImageLayout.TransferDstOptimal, 1u, &&region)
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region)
 
-        // dst -> GENERAL, make memory available to the external (EGL) consumer
-        barrier cmd dst.Image VkAccessFlags.TransferWriteBit VkAccessFlags.MemoryReadBit
+        // dst -> GENERAL, make memory available to the external consumer
+        barrier cmd dstImage VkAccessFlags.TransferWriteBit VkAccessFlags.MemoryReadBit
                 VkImageLayout.TransferDstOptimal VkImageLayout.General
                 VkPipelineStageFlags.TransferBit VkPipelineStageFlags.BottomOfPipeBit
 
         VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer"
 
-        // exportable fence: the submit signals `sem` on completion; we export a
-        // sync_fd from it (while the GPU work is still pending → a real fence fd)
-        // so the consumer can GPU-wait instead of us stalling.
-        let sem = DmaBufSync.createExportableSemaphore device
-        let mutable psem = sem
+        let mutable psem = signalSem
         let mutable pcmd = cmd
         let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
         VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit"
+        struct (queue, pool)
 
+    /// Linux: GPU-clear `src` + copy into the dma-buf `dst`. Returns a sync_fd fence.
+    let clearAndCopy (device : Device) (src : VkImage) (dst : DmaBufImage) (color : V4f) : int =
+        let sem = DmaBufSync.createExportableSemaphore device
+        let struct (queue, pool) = recordClearCopySubmit device src dst.Image dst.Width dst.Height color sem
         let syncFd = DmaBufSync.exportSyncFd device sem
-
-        // (test only) drain so we can safely tear down the one-shot pool; the real
-        // path drops this and lets the consumer wait on `syncFd` instead.
         VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle"
         DmaBufSync.destroySemaphore device sem
-        VkRaw.vkDestroyCommandPool(dev, pool, NativePtr.zero)
+        VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
         syncFd
+
+    /// Windows: GPU-clear `src` + copy into the Win32 shared image `dst`. Returns an
+    /// exportable Win32 semaphore handle (consumer waits via a D3D/KMT fence).
+    let clearAndCopyWin (device : Device) (src : VkImage) (dst : WinSharedImage) (color : V4f) : nativeint =
+        let sem = DmaBufSync.createExportableSemaphoreWin32 device
+        let struct (queue, pool) = recordClearCopySubmit device src dst.Image dst.Width dst.Height color sem
+        let h = DmaBufSync.exportSemaphoreWin32 device sem
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle"
+        DmaBufSync.destroySemaphore device sem
+        VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
+        h

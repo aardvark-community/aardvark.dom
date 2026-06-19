@@ -39,5 +39,23 @@ module DmaBufSync =
         KHRExternalSemaphoreFd.VkRaw.vkGetSemaphoreFdKHR(device.Handle, &&getInfo, &&fd) |> check "vkGetSemaphoreFdKHR"
         fd
 
+    // ---- Windows: OPAQUE_WIN32 semaphore handle (consumer waits via a D3D/KMT fence) ----
+    let private OpaqueWin32Sem = VkExternalSemaphoreHandleTypeFlags.OpaqueWin32Bit
+
+    let createExportableSemaphoreWin32 (device : Device) : VkSemaphore =
+        let dev = device.Handle
+        let mutable exportInfo = VkExportSemaphoreCreateInfo(OpaqueWin32Sem)
+        let mutable info = VkSemaphoreCreateInfo(VkSemaphoreCreateFlags.None)
+        info.pNext <- NativePtr.toNativeInt &&exportInfo
+        let mutable sem = Unchecked.defaultof<VkSemaphore>
+        VkRaw.vkCreateSemaphore(dev, &&info, NativePtr.zero, &&sem) |> check "vkCreateSemaphore(win32)"
+        sem
+
+    let exportSemaphoreWin32 (device : Device) (sem : VkSemaphore) : nativeint =
+        let mutable getInfo = KHRExternalSemaphoreWin32.VkSemaphoreGetWin32HandleInfoKHR(sem, OpaqueWin32Sem)
+        let mutable handle = 0n
+        KHRExternalSemaphoreWin32.VkRaw.vkGetSemaphoreWin32HandleKHR(device.Handle, &&getInfo, &&handle) |> check "vkGetSemaphoreWin32HandleKHR"
+        handle
+
     let destroySemaphore (device : Device) (sem : VkSemaphore) =
         VkRaw.vkDestroySemaphore(device.Handle, sem, NativePtr.zero)
