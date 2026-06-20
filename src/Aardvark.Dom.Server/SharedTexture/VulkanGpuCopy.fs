@@ -67,6 +67,22 @@ module DmaBufGpu =
         VkRaw.vkCmdPipelineBarrier(cmd, srcStage, dstStage, VkDependencyFlags.None,
                                    0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b)
 
+    // VK_QUEUE_FAMILY_EXTERNAL — release ownership of the shared image to an
+    // external consumer (another Vulkan instance / API). Without this, cross-instance
+    // content visibility is undefined and NVIDIA samples blank in Chromium.
+    let private QUEUE_FAMILY_EXTERNAL = 0xFFFFFFF1u
+
+    let private barrierReleaseExternal (cmd : VkCommandBuffer) (image : VkImage)
+                                       (srcAccess : VkAccessFlags)
+                                       (oldLayout : VkImageLayout) (newLayout : VkImageLayout)
+                                       (srcStage : VkPipelineStageFlags) (srcQfi : uint32) =
+        let range = VkImageSubresourceRange(VkImageAspectFlags.ColorBit, 0u, 1u, 0u, 1u)
+        let mutable b =
+            VkImageMemoryBarrier(0n, srcAccess, VkAccessFlags.None, oldLayout, newLayout,
+                                 srcQfi, QUEUE_FAMILY_EXTERNAL, image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, srcStage, VkPipelineStageFlags.BottomOfPipeBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b)
+
     /// Records "GPU-clear `src` to `color` + copy into `dstImage`" and submits it,
     /// signaling `signalSem` on completion. Returns the queue + one-shot pool so the
     /// caller can export a fence before draining and tearing down. Platform-agnostic.
@@ -113,10 +129,11 @@ module DmaBufGpu =
         VkRaw.vkCmdCopyImage(cmd, src, VkImageLayout.TransferSrcOptimal,
                              dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region)
 
-        // dst -> GENERAL, make memory available to the external consumer
-        barrier cmd dstImage VkAccessFlags.TransferWriteBit VkAccessFlags.MemoryReadBit
-                VkImageLayout.TransferDstOptimal VkImageLayout.General
-                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.BottomOfPipeBit
+        // dst -> GENERAL + RELEASE ownership to an external (cross-instance) consumer,
+        // so the producer's writes are visible to Chromium's importing instance.
+        barrierReleaseExternal cmd dstImage VkAccessFlags.TransferWriteBit
+                               VkImageLayout.TransferDstOptimal VkImageLayout.General
+                               VkPipelineStageFlags.TransferBit qfi
 
         VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer"
 
