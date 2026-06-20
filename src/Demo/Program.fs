@@ -1289,6 +1289,66 @@ let main argv =
             exit 0
         )
 
+    // ---- D3D11_TEXTURE export producer — the PRODUCTION Windows path de-risk (W0-analog for
+    // D3D). Export a Vulkan image as a DXGI shared NT handle openable by a D3D11 consumer
+    // (ID3D11Device::OpenSharedResource1) — exactly how Chromium's default D3DImageBacking
+    // imports a texture. GPU-fill a 2-axis gradient, publish {handleValue, producerPID, w, h}
+    // to a file, hold alive. Pin the adapter via `--gpu <substr>` so the producer's VkDevice
+    // and the D3D11 consumer's DXGI adapter (LUID match) are the SAME physical device.
+    //   --keyedmutex : create the image WITH a keyed mutex (acquire 0 / release 1 around the
+    //                  fill). Test the no-keyed-mutex path FIRST; add this if the open/read fails.
+    if Array.contains "d3d11-send" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let useKeyedMutex = Array.contains "--keyedmutex" argv
+        // Enable VK_KHR_win32_keyed_mutex on the device when requested (external_memory_win32 is
+        // already enabled by default — W0 proved it). Build a dedicated app so both the device
+        // pin (scoring chooser) and the keyed-mutex extension are honoured.
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                if useKeyedMutex then Seq.singleton "VK_KHR_win32_keyed_mutex" else Seq.empty)
+        let pinnedRuntime : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let vk = pinnedRuntime
+            let dev = vk.Device
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-send] PRODUCER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)  keyedMutex=%b%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid useKeyedMutex
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let (exportable, feat) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.queryExportSupport dev
+            printfn "[d3d11-send] D3D11_TEXTURE export support: exportable=%b features=%A" exportable feat
+            let W, H = 256, 256
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11.txt")
+            let img = Aardvark.Dom.Remote.SharedTexture.D3D11Export.create dev W H useKeyedMutex
+            // fill the 2-axis gradient (R=x, G=y, B=128); for keyed mutex: acquire 0, release 1.
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.fillGradient dev img 0UL 1UL
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath img.Handle W H
+            printfn "[d3d11-send] D3D11_TEXTURE handle=0x%X pid=%d %dx%d size=%d keyedMutex=%b -> %s"
+                (int64 img.Handle) pid W H img.Size useKeyedMutex handoffPath
+            printfn "[d3d11-send] holding alive 90s for the D3D11 consumer to DuplicateHandle + OpenSharedResource1..."
+            System.Threading.Thread.Sleep 90000
+            printfn "[d3d11-send] done"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.destroy dev img
+            exit 0
+        )
+
     // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
     // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
     // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
