@@ -28,6 +28,7 @@
     <Compile Include="SharedTexture\Win32Handoff.fs" />
     <Compile Include="SharedTexture\VulkanOpaqueWin32.fs" />
     <Compile Include="SharedTexture\VulkanD3D11Export.fs" />
+    <Compile Include="SharedTexture\SilkD3D11Alloc.fs" />
     <Compile Include="SharedTexture\SharedTextureTransfer.fs" />
   </ItemGroup>
   <ItemGroup>
