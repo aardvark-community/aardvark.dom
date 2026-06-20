@@ -112,7 +112,7 @@ module D3D11Export =
         props.pNext <- NativePtr.toNativeInt &&extProps
         let r = VkRaw.vkGetPhysicalDeviceImageFormatProperties2(phys, &&fmtInfo, &&props)
         let feat = extProps.externalMemoryProperties.externalMemoryFeatures
-        let exportable = (r = VkResult.Success) && (int feat &&& int VkExternalMemoryFeatureFlags.ExportableBitKhr) <> 0
+        let exportable = (r = VkResult.Success) && (int feat &&& int VkExternalMemoryFeatureFlags.ExportableBit) <> 0
         (exportable, feat)
 
     /// PRODUCER: create an OPTIMAL device-local image exported as a D3D11_TEXTURE DXGI shared NT
