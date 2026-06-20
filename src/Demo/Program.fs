@@ -1419,6 +1419,15 @@ let main argv =
                 (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
             let (exportable, feat) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.queryExportSupport dev
             printfn "[d3d11-send] D3D11_TEXTURE export support: exportable=%b features=%A" exportable feat
+            // VERDICT (2026-06-20, zephyrus): both NVIDIA RTX 4070 and AMD 890M report D3D11_TEXTURE as
+            // IMPORT-ONLY (features=DedicatedOnlyBit,ImportableBit, no ExportableBit). The export call
+            // returns a handle but D3D11 OpenSharedResource1 rejects it (E_INVALIDARG), and the keyed-
+            // mutex submit fails (ErrorInitializationFailed) — there is no real DXGI keyed-mutex backing.
+            // Abort cleanly instead of crashing in vkCmdPipelineBarrier on the bogus image. The supported
+            // direction is the REVERSE: D3D11 allocates the shared keyed-mutex texture, Vulkan IMPORTS it.
+            if not exportable then
+                eprintfn "[d3d11-send] ABORT: this device does NOT support EXPORTING D3D11_TEXTURE (import-only). Vulkan->D3D11 export is unsupported; use the D3D11-allocates / Vulkan-imports direction."
+                exit 4
             let W, H = 256, 256
             let handoffPath =
                 let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
