@@ -160,10 +160,15 @@ module private Platform =
                 let tex = SilkD3D11Alloc.alloc luidHex w h
                 let imp = D3D11Export.importD3D11 device tex.Handle w h
                 { Image = imp.Image; Width = w; Height = h; Tag = box (tex, imp) }
-              CopyInto = fun cmd src srcLayout buf w h sem fence ->
+              CopyInto = fun cmd src srcLayout buf w h _sem fence ->
                 let (_, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
                 // keyed-mutex blit, single key 0 (Chromium's D3DImageBacking owns the mutex).
-                DmaBufGpu.recordBlitIntoKeyed device cmd src srcLayout imp.Image imp.Memory w h 0UL 0UL sem fence
+                // Pass a NULL signal semaphore: nothing waits it here (the keyed mutex is the
+                // cross-process sync) and re-signaling the same per-slot BINARY semaphore every
+                // RING_N frames without a wait would hang the queue. The per-slot CPU fence
+                // alone tracks copy completion.
+                DmaBufGpu.recordBlitIntoKeyed device cmd src srcLayout imp.Image imp.Memory w h 0UL 0UL
+                    Unchecked.defaultof<VkSemaphore> fence
               Destroy = fun buf ->
                 let (tex, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
                 D3D11Export.destroyImported device imp

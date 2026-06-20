@@ -352,8 +352,13 @@ module DmaBufGpu =
                 1u, pAcqMem, pAcqKeys, pAcqTimeouts, 1u, pRelMem, pRelKeys)
         let mutable psem = signalSem
         let mutable pcmd = cmd
+        // The signal semaphore is signaled-but-never-waited in this integration (the keyed
+        // mutex is the cross-process sync). A BINARY semaphore signaled again before being
+        // waited is illegal and HANGS the queue, and the same per-slot semaphore is reused
+        // every RING_N frames — so signal it only when one is actually provided (NULL = skip).
+        let signalCount = if signalSem = Unchecked.defaultof<VkSemaphore> then 0u else 1u
         let mutable submit =
-            VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
+            VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, signalCount, &&psem)
         VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit(keyed)"
 
     /// Copy an already-rendered source image (currently in `srcLayout`) into the
