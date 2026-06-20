@@ -313,7 +313,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             try conn <- strategy.SideChannelConnect channelName
             with _ ->
                 conn <- -1L               // browser not up yet — retry after the backoff
-                nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
+                nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 50.0
         conn >= 0L
 
     let disconnect () =
@@ -354,28 +354,48 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     // Register every slot's memfd with the browser over the side-channel ONCE per
     // (re)allocation. No-op (deferred) if the side-channel isn't connected yet — the
     // slots carry Registered=false and will be registered as soon as a connection exists.
+    // Guarded by `chanLock` because a background connector thread also registers (the
+    // render loop pauses once the browser stops requesting frames, so REG must NOT depend
+    // on Run being called — otherwise: no REG -> browser never composites -> never requests
+    // a frame -> Run never runs -> never REGs. The bg thread breaks that bootstrap deadlock).
+    let chanLock = obj()
     let registerRing () =
-        if tryConnect () then
-            for s in ring do
-                if not s.Registered then
-                    // REG <textureId> <w> <h> [+ platform handle]: Linux SCM_RIGHTS memfd,
-                    // macOS mach-port name, Windows NT-handle file — via the strategy.
-                    let ok = strategy.SendReg conn s.Buf s.TextureId s.Buf.Width s.Buf.Height
-                    if ok then s.Registered <- true
-                    else disconnect ()
+        lock chanLock (fun () ->
+            if tryConnect () then
+                for s in ring do
+                    if not s.Registered then
+                        let ok = strategy.SendReg conn s.Buf s.TextureId s.Buf.Width s.Buf.Height
+                        if ok then s.Registered <- true
+                        else disconnect ())
 
     // Drain any FREE <textureId> messages the browser sent back; clear the slot's Busy.
     let pollFree () =
-        if conn >= 0L then
-            let txt = try strategy.SideChannelPoll conn with _ -> ""
-            if txt <> "" then
-                for line in txt.Split('\n') do
-                    let parts = line.Trim().Split(' ')
-                    if parts.Length >= 2 && parts.[0] = "FREE" then
-                        let id = parts.[1]
-                        match ring |> Array.tryFind (fun s -> s.TextureId = id) with
-                        | Some s -> s.Busy <- false
-                        | None -> ()
+        lock chanLock (fun () ->
+            if conn >= 0L then
+                let txt = try strategy.SideChannelPoll conn with _ -> ""
+                if txt <> "" then
+                    for line in txt.Split('\n') do
+                        let parts = line.Trim().Split(' ')
+                        if parts.Length >= 2 && parts.[0] = "FREE" then
+                            let id = parts.[1]
+                            match ring |> Array.tryFind (fun s -> s.TextureId = id) with
+                            | Some s -> s.Busy <- false
+                            | None -> ())
+
+    // Background connector: keeps the side-channel up and REGisters slots INDEPENDENT of the
+    // render loop, so the bootstrap deadlock (no REG -> no composite -> no frame request -> no
+    // Run -> no REG) can't happen. Started lazily on the first Run (once the ring exists).
+    let mutable connectorStarted = false
+    let mutable disposed = false
+    let startConnector () =
+        if not connectorStarted then
+            connectorStarted <- true
+            let t = System.Threading.Thread(fun () ->
+                while not disposed do
+                    (try registerRing (); pollFree () with _ -> ())
+                    System.Threading.Thread.Sleep 30)
+            t.IsBackground <- true
+            t.Start()
 
     // Pick the next FREE slot for this frame. FIFO 2-in-flight: prefer a slot whose
     // last copy is GPU-complete (fence signaled) AND not Busy (client still holding it).
@@ -410,8 +430,10 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         | None -> ()
 
     member x.Dispose() =
+        disposed <- true              // stop the background connector thread
+        System.Threading.Thread.Sleep 50
         VkRaw.vkDeviceWaitIdle devH |> ignore
-        disconnect ()
+        lock chanLock (fun () -> disconnect ())
         if ring.Length > 0 then ring |> Array.iter destroySlot
         ring <- [||]
         ringSize <- V2i.Zero
@@ -436,8 +458,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             if ring.Length = 0 || ringSize <> s then
                 ringSize <- s
                 allocRing s
-            registerRing ()       // (re)hand the memfds to the browser if/when connected
-            pollFree ()           // recycle any slots the browser released
+            startConnector ()     // bg thread owns connect + REG + FREE-poll (deadlock-free)
+            pollFree ()           // also drain FREE inline (cheap; the bg thread does too)
 
             let fbo = getFramebuffer s
             let i = pickSlot ()

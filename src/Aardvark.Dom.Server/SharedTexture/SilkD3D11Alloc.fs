@@ -160,18 +160,7 @@ module SilkD3D11Alloc =
         res1.Dispose()
         chosen.Dispose()
 
-        // ---- prime the keyed mutex to a known RELEASED (key 0 available) state from the
-        // CREATING (D3D) device. A freshly created keyed-mutex resource's initial owner can be
-        // ambiguous across drivers; if D3D implicitly holds key 0, the Vulkan importer's first
-        // AcquireSync(0) (with INFINITE timeout, on the shared render queue) blocks forever and
-        // wedges the producer. Doing one Acquire(0)/Release(0) here establishes key 0 as free.
-        let km : ComPtr<IDXGIKeyedMutex> = tex.QueryInterface<IDXGIKeyedMutex>()
-        let hrAcq = km.AcquireSync(0UL, 1000u)        // 1s timeout; key 0 should be free on a fresh tex
-        if hrAcq >= 0 then km.ReleaseSync(0UL) |> ignore
-        else printfn "[silk-alloc] WARN initial AcquireSync(0) hr=0x%08X (continuing)" hrAcq
-        km.Dispose()
-
-        printfn "[silk-alloc] CreateSharedHandle -> 0x%X (%dx%d keyed-mutex shared, key0 primed)" (int64 handle) w h
+        printfn "[silk-alloc] CreateSharedHandle -> 0x%X (%dx%d keyed-mutex shared)" (int64 handle) w h
         {
             Handle = handle; Width = w; Height = h; LuidHex = chosenHex
             Dxgi = dxgi; D3D11 = d3d11; Factory = factory
