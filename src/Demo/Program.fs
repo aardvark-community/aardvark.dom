@@ -1219,6 +1219,46 @@ let main argv =
             exit (if ok then 0 else 1)
         | r -> eprintfn "[win32-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
+    // OPAQUE_WIN32 single-frame sender for the CHROMIUM Windows port (analog of opaquefd-send,
+    // the Linux teal-pixel producer). GPU-fill ONE OPTIMAL B8G8R8A8 image with solid teal,
+    // export it as a VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32 NT handle, and publish the
+    // handoff descriptor {handleValue, producerPID, w, h} to a well-known file the browser GPU
+    // process reads. The GPU process then OpenProcess(PROCESS_DUP_HANDLE)+DuplicateHandle's the
+    // handle into itself and imports it (sentinel-gated branch in the Chromium Vulkan import).
+    // We must STAY ALIVE holding the image+handle until the consumer has duplicated it, so we
+    // sleep generously before exiting.
+    if Array.contains "opaquewin32-send" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            // Fixed, well-known handoff path the Chromium import branch reads (analog of the
+            // Linux /tmp/dmabuf.sock). Overridable via 1st non-flag arg if provided.
+            let handoffPath =
+                let explicit =
+                    argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-opaquewin32.txt")
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.create dev W H
+            // fill SOLID TEAL (51,102,153) via the proven GPU clear+copy that releases the dst
+            // to VK_QUEUE_FAMILY_EXTERNAL in GENERAL (matches Chromium's import-side acquire).
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearCopyExternalNoSem dev src opaque.Image W H (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            // producer-side control readback (proves the fill landed before we hand off)
+            let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterLocal dev opaque
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath opaque.Handle W H
+            printfn "[opaquewin32-send] SOLID TEAL OPAQUE_WIN32 handle=0x%X pid=%d %dx%d size=%d -> %s (producer center=(%d,%d,%d,%d))"
+                (int64 opaque.Handle) pid W H opaque.Size handoffPath pr pg pb pa
+            printfn "[opaquewin32-send] holding alive 60s for the GPU process to DuplicateHandle + import..."
+            System.Threading.Thread.Sleep 60000
+            printfn "[opaquewin32-send] done"
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.destroy dev opaque
+            exit 0
+        | r -> eprintfn "[opaquewin32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
     // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
     // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
     // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
