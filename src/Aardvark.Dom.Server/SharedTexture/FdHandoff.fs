@@ -278,4 +278,32 @@ module FdHandoff =
         Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
         r.ToInt64() >= 0L
 
+    /// Send a frame tick (ASCII msg) + one fd (the per-frame acquire sync_fd fence)
+    /// via SCM_RIGHTS. The consumer waits this fence (UpdateSharedImage) to re-acquire
+    /// the buffer's freshly-written content. Returns false if the peer is gone.
+    let streamFrameFd (conn : int) (msg : string) (fd : int) : bool =
+        let pb = Encoding.ASCII.GetBytes msg
+        let pPayload = Marshal.AllocHGlobal pb.Length
+        Marshal.Copy(pb, 0, pPayload, pb.Length)
+        let pIov = Marshal.AllocHGlobal 16
+        Marshal.WriteIntPtr(pIov, 0, pPayload)
+        Marshal.WriteInt64(pIov, 8, int64 pb.Length)
+        let pControl = Marshal.AllocHGlobal CMSG_SPACE
+        Marshal.WriteInt64(pControl, 0, CMSG_LEN)
+        Marshal.WriteInt32(pControl, 8, SOL_SOCKET)
+        Marshal.WriteInt32(pControl, 12, SCM_RIGHTS)
+        Marshal.WriteInt32(pControl, 16, fd)
+        let pMsg = Marshal.AllocHGlobal 56
+        for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
+        Marshal.WriteIntPtr(pMsg, 16, pIov)
+        Marshal.WriteInt64(pMsg, 24, 1L)
+        Marshal.WriteIntPtr(pMsg, 32, pControl)
+        Marshal.WriteInt64(pMsg, 40, int64 CMSG_SPACE)
+        let r = sendmsg(conn, pMsg, 0)
+        Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
+        Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
+        r.ToInt64() >= 0L
+
+    let closeFd (fd : int) = if fd >= 0 then close fd |> ignore
+
     let streamClose (conn : int) = close conn |> ignore

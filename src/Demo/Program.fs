@@ -1077,9 +1077,16 @@ let main argv =
                     { Fd = ring.[i].MemFd; Width = W; Height = H; Fourcc = 0u
                       Modifier = 0xFFFFFFFFFFFFFFFEUL; Offset = 0UL; Stride = 0UL
                       Image = ring.[i].Image; Memory = ring.[i].Memory; Size = ring.[i].Size }
-                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col |> ignore
-                if not (Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrame conn (sprintf "F %d\n" i)) then
+                // GPU-fill this ring buffer; clearAndCopy releases it to EXTERNAL and
+                // returns an acquire sync_fd the consumer waits to re-acquire the fresh
+                // content. Send it as the per-frame tick's fd, then close our copy.
+                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col
+                if not (Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrameFd conn (sprintf "F %d\n" i) fenceFd) then
                     running <- false
+                Aardvark.Dom.Remote.SharedTexture.FdHandoff.closeFd fenceFd
+                if frame % 60 = 0 then
+                    let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev ring.[i]
+                    printfn "[opaquefd-stream] frame %d buf %d SAME-INSTANCE readback RGBA=(%d,%d,%d,%d)" frame i r g b a
                 System.Threading.Thread.Sleep 16
                 frame <- frame + 1
             printfn "[opaquefd-stream] streamed %d frames; closing" frame
