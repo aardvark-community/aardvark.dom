@@ -99,57 +99,62 @@ module SilkD3D11Alloc =
             failwithf "[silk-alloc] no DXGI adapter with LUID %s" wantLuidHex
         printfn "[silk-alloc] chosen adapter LUID=%s" chosenHex
 
-        // ---- D3D11CreateDevice on that adapter (D3D_DRIVER_TYPE_UNKNOWN required when adapter != null)
-        let mutable device = Unchecked.defaultof<ComPtr<ID3D11Device>>
-        let mutable context = Unchecked.defaultof<ComPtr<ID3D11DeviceContext>>
-        let mutable fl = D3DFeatureLevel.Level110
+        // ---- D3D11CreateDevice on that adapter (D3D_DRIVER_TYPE_UNKNOWN required when adapter != null).
+        // Use the all-nativeptr overload: pass the adapter as IDXGIAdapter*, receive ID3D11Device*
+        // / ID3D11DeviceContext* and wrap them into ComPtr afterwards.
         let adapterUnk : ComPtr<IDXGIAdapter> = chosen.QueryInterface<IDXGIAdapter>()
+        let mutable devPtr = NativePtr.ofNativeInt<ID3D11Device> 0n
+        let mutable ctxPtr = NativePtr.ofNativeInt<ID3D11DeviceContext> 0n
+        let mutable fl = D3DFeatureLevel.Level110
         let hrDev =
             d3d11.CreateDevice(
-                adapterUnk,
+                adapterUnk.Handle,                              // IDXGIAdapter*
                 D3DDriverType.Unknown,
                 0n,
-                0u,                       // flags
-                NativePtr.ofNativeInt<D3DFeatureLevel> 0n, // pFeatureLevels = null
-                0u,                       // FeatureLevels = 0
+                0u,                                             // flags
+                NativePtr.ofNativeInt<D3DFeatureLevel> 0n,      // pFeatureLevels = null
+                0u,                                             // FeatureLevels = 0
                 D3D11.SdkVersion,
-                &device,
-                &fl,
-                &context)
+                NativePtr.toByRef &&devPtr,                     // ppDevice : ID3D11Device**
+                &&fl,                                           // pFeatureLevel
+                NativePtr.toByRef &&ctxPtr)                     // ppImmediateContext
         check "D3D11CreateDevice" hrDev
         adapterUnk.Dispose()
+        let device = ComPtr<ID3D11Device>(devPtr)
+        let context = ComPtr<ID3D11DeviceContext>(ctxPtr)
 
-        // ---- CreateTexture2D: B8G8R8A8_UNORM, SHARED_KEYEDMUTEX|SHARED_NTHANDLE
-        let MISC = uint32 (0x20 ||| 0x800)   // SHARED_KEYEDMUTEX | SHARED_NTHANDLE
-        let mutable desc =
-            Texture2DDesc(
-                Width = uint32 w,
-                Height = uint32 h,
-                MipLevels = 1u,
-                ArraySize = 1u,
-                Format = Format.FormatB8G8R8A8Unorm,
-                SampleDesc = Silk.NET.DXGI.SampleDesc(Count = 1u, Quality = 0u),
-                Usage = Usage.Default,
-                BindFlag = uint32 (int BindFlag.ShaderResource ||| int BindFlag.RenderTarget),
-                CPUAccessFlag = 0u,
-                MiscFlag = MISC)
-        let mutable tex = Unchecked.defaultof<ComPtr<ID3D11Texture2D>>
+        // ---- CreateTexture2D: B8G8R8A8_UNORM, SHARED_KEYEDMUTEX|SHARED_NTHANDLE.
+        // Silk's Texture2DDesc is a mutable struct; build it field-by-field.
+        let mutable desc = Texture2DDesc()
+        desc.Width <- uint32 w
+        desc.Height <- uint32 h
+        desc.MipLevels <- 1u
+        desc.ArraySize <- 1u
+        desc.Format <- Format.FormatB8G8R8A8Unorm
+        desc.SampleDesc <- Silk.NET.DXGI.SampleDesc(1u, 0u)
+        desc.Usage <- Usage.Default
+        desc.BindFlags <- uint32 (int BindFlag.ShaderResource ||| int BindFlag.RenderTarget)
+        desc.CPUAccessFlags <- 0u
+        desc.MiscFlags <- uint32 (0x20 ||| 0x800)   // SHARED_KEYEDMUTEX | SHARED_NTHANDLE
+        let mutable texPtr = NativePtr.ofNativeInt<ID3D11Texture2D> 0n
         let hrTex =
-            device.CreateTexture2D(&desc, NativePtr.ofNativeInt<SubresourceData> 0n, &tex)
+            device.CreateTexture2D(&desc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&texPtr)
         check "CreateTexture2D" hrTex
+        let tex = ComPtr<ID3D11Texture2D>(texPtr)
 
         // ---- QI tex -> IDXGIResource1, CreateSharedHandle (NT handle)
         let res1 : ComPtr<IDXGIResource1> = tex.QueryInterface<IDXGIResource1>()
         let DXGI_SHARED_RESOURCE_READ  = 0x80000000u
         let DXGI_SHARED_RESOURCE_WRITE = 0x00000001u
-        let mutable handle = 0n
+        let mutable handlePtr : voidptr = NativePtr.toVoidPtr (NativePtr.ofNativeInt<byte> 0n)
         let hrSh =
             res1.CreateSharedHandle(
-                NativePtr.ofNativeInt 0n,                       // pAttributes = null
+                System.ReadOnlySpan<SecurityAttributes>(),      // null pAttributes
                 DXGI_SHARED_RESOURCE_READ ||| DXGI_SHARED_RESOURCE_WRITE,
                 (NativePtr.ofNativeInt<char> 0n),               // lpName = null
-                &handle)
+                &handlePtr)
         check "CreateSharedHandle" hrSh
+        let handle : nativeint = NativePtr.toNativeInt (NativePtr.ofVoidPtr<byte> handlePtr)
         res1.Dispose()
         chosen.Dispose()
 
