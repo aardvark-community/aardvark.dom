@@ -120,8 +120,7 @@ module SilkD3D11Alloc =
                 NativePtr.toByRef &&ctxPtr)                     // ppImmediateContext
         check "D3D11CreateDevice" hrDev
         adapterUnk.Dispose()
-        printfn "[silk-alloc] CreateDevice OK: devPtr=0x%X ctxPtr=0x%X featureLevel=%A"
-            (NativePtr.toNativeInt devPtr) (NativePtr.toNativeInt ctxPtr) fl
+        printfn "[silk-alloc] CreateDevice OK (featureLevel=%A)" fl
         let device = ComPtr<ID3D11Device>(devPtr)
         let context = ComPtr<ID3D11DeviceContext>(ctxPtr)
 
@@ -139,19 +138,6 @@ module SilkD3D11Alloc =
         desc.CPUAccessFlags <- 0u
         // D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX = 0x100 (NOT 0x20), SHARED_NTHANDLE = 0x800.
         desc.MiscFlags <- uint32 (0x100 ||| 0x800)   // = 0x900
-        printfn "[silk-alloc] desc: %dx%d mip=%d arr=%d fmt=%A samples=%d usage=%A bind=0x%X cpu=0x%X misc=0x%X"
-            desc.Width desc.Height desc.MipLevels desc.ArraySize desc.Format desc.SampleDesc.Count
-            desc.Usage desc.BindFlags desc.CPUAccessFlags desc.MiscFlags
-        // PROBE: try a plain (misc=0) texture first to isolate device-validity from the
-        // keyed-mutex/nt-handle misc flags.
-        let mutable probeDesc = desc
-        probeDesc.MiscFlags <- 0u
-        let mutable probePtr = NativePtr.ofNativeInt<ID3D11Texture2D> 0n
-        let hrProbe =
-            device.CreateTexture2D(&&probeDesc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&probePtr)
-        printfn "[silk-alloc] PROBE CreateTexture2D(misc=0) hr=0x%08X" hrProbe
-        if hrProbe >= 0 then (ComPtr<ID3D11Texture2D>(probePtr)).Dispose()
-
         let mutable texPtr = NativePtr.ofNativeInt<ID3D11Texture2D> 0n
         let hrTex =
             device.CreateTexture2D(&&desc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&texPtr)
