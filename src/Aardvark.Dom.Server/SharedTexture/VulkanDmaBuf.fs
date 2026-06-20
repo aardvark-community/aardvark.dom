@@ -67,20 +67,19 @@ module DmaBufExport =
         |> Option.map (fun mt -> uint32 mt.index)
         |> Option.defaultWith (fun () -> failwith "[DmaBuf] no host-visible/coherent memory type")
 
-    /// pick a memory type allowed by `typeBits`, preferring host-visible+coherent
-    /// (so CPU-map self-tests still work) but falling back to device-local — a
-    /// DRM-modifier image is not guaranteed to admit host-visible memory.
+    /// pick a HOST_VISIBLE + HOST_COHERENT memory type allowed by `typeBits`.
+    /// This is mandatory for cross-instance sharing: Chromium's import takes no
+    /// acquire semaphore, so the producer's GPU writes must be flushed to coherent
+    /// (system) memory by waitIdle — device-local memory leaves them in VRAM,
+    /// invisible to Chromium's separate Vulkan instance (reads zero on NVIDIA).
     let private pickMemoryType (device : Device) (typeBits : uint32) =
-        let allowed =
-            device.PhysicalDevice.MemoryTypes
-            |> Array.filter (fun mt -> (typeBits &&& (1u <<< mt.index)) <> 0u)
-        let hostVisible =
-            allowed |> Array.tryFind (fun mt ->
-                (int mt.flags &&& int VkMemoryPropertyFlags.HostVisibleBit) <> 0 &&
-                (int mt.flags &&& int VkMemoryPropertyFlags.HostCoherentBit) <> 0)
-        match hostVisible |> Option.orElse (Array.tryHead allowed) with
-        | Some mt -> uint32 mt.index
-        | None -> failwith "[DmaBuf] no allowed memory type"
+        device.PhysicalDevice.MemoryTypes
+        |> Array.tryFind (fun mt ->
+            (typeBits &&& (1u <<< mt.index)) <> 0u &&
+            (int mt.flags &&& int VkMemoryPropertyFlags.HostVisibleBit) <> 0 &&
+            (int mt.flags &&& int VkMemoryPropertyFlags.HostCoherentBit) <> 0)
+        |> Option.map (fun mt -> uint32 mt.index)
+        |> Option.defaultWith (fun () -> failwith "[DmaBuf] no host-visible+coherent memory type for the exported DRM-modifier image")
 
     /// Create a dma-buf-exportable BGRA color image using an EXPLICIT DRM format
     /// modifier (via VK_EXT_image_drm_format_modifier). A plain VK_IMAGE_TILING_LINEAR
