@@ -147,6 +147,13 @@ module MetalExport =
         System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFTypeDictionaryKeyCallBacks")
     let private kCFTypeDictionaryValueCallBacks =
         System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFTypeDictionaryValueCallBacks")
+    // kCFBooleanTrue/False are exported CFBooleanRef DATA symbols (the address holds the ref).
+    let private kCFBooleanTrue =
+        Marshal.ReadIntPtr(System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFBooleanTrue"))
+    let private kCFBooleanFalse =
+        Marshal.ReadIntPtr(System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFBooleanFalse"))
+    // cfBool returns a borrowed (non-owned) CFBooleanRef; do NOT CFRelease it.
+    let private cfBool (b : bool) = if b then kCFBooleanTrue else kCFBooleanFalse
 
     // BGRA OSType ('BGRA') — the IOSurface pixel format Chromium's IOSurfaceImageBackingFactory
     // expects for viz::SinglePlaneFormat::kBGRA_8888 (vs the property-less surface MoltenVK mints).
@@ -163,12 +170,22 @@ module MetalExport =
             let key = cfStr k
             CFDictionarySetValue(dict, key, v)
             CFRelease key
-            CFRelease v
+            CFRelease v   // we own v (cfStr/cfInt return +1); dict retained it
+        // for borrowed constants (cfBool) — set without releasing the value
+        let setBorrowed (k : string) (v : nativeint) =
+            let key = cfStr k
+            CFDictionarySetValue(dict, key, v)
+            CFRelease key
         set "IOSurfaceWidth" (cfInt width)
         set "IOSurfaceHeight" (cfInt height)
         set "IOSurfaceBytesPerElement" (cfInt bpe)
         set "IOSurfaceBytesPerRow" (cfInt bpr)
         set "IOSurfacePixelFormat" (cfInt (int BGRA_OSType))
+        // make it discoverable by IOSurfaceLookup(globalID) cross-process. A plain
+        // IOSurfaceCreate'd surface is NOT global (unlike the MoltenVK-exported one);
+        // kIOSurfaceIsGlobal restores the simple global-id handoff for the de-risk.
+        // (Secure production handoff = IOSurfaceCreateMachPort -> LookupFromMachPort.)
+        setBorrowed "IOSurfaceIsGlobal" (cfBool true)
         let surf = IOSurfaceCreate dict
         CFRelease dict
         surf
