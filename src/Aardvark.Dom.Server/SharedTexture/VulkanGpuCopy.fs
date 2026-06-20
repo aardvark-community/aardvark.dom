@@ -153,6 +153,68 @@ module DmaBufGpu =
         VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
         syncFd
 
+    // Like recordClearCopySubmit but the source ALREADY holds rendered content (in
+    // `srcLayout`, e.g. an Aardvark FBO colour image): transition src -> TRANSFER_SRC,
+    // copy into dst, restore src to `srcLayout` (so Aardvark's layout tracking stays
+    // valid), then release dst to EXTERNAL. GPU is idle when this runs (caller waits).
+    let private recordRenderCopySubmit (device : Device) (src : VkImage) (srcLayout : VkImageLayout)
+                                       (dstImage : VkImage) (dstW : int) (dstH : int) (signalSem : VkSemaphore) =
+        let dev = device.Handle
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        let mutable poolInfo = VkCommandPoolCreateInfo(0n, VkCommandPoolCreateFlags.None, qfi)
+        let mutable pool = Unchecked.defaultof<VkCommandPool>
+        VkRaw.vkCreateCommandPool(dev, &&poolInfo, NativePtr.zero, &&pool) |> check "vkCreateCommandPool"
+        let mutable allocInfo = VkCommandBufferAllocateInfo(0n, pool, VkCommandBufferLevel.Primary, 1u)
+        let mutable cmd = Unchecked.defaultof<VkCommandBuffer>
+        VkRaw.vkAllocateCommandBuffers(dev, &&allocInfo, &&cmd) |> check "vkAllocateCommandBuffers"
+        let mutable beginInfo = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&beginInfo) |> check "vkBeginCommandBuffer"
+
+        // src: srcLayout -> TRANSFER_SRC
+        barrier cmd src VkAccessFlags.MemoryWriteBit VkAccessFlags.TransferReadBit
+                srcLayout VkImageLayout.TransferSrcOptimal
+                VkPipelineStageFlags.AllCommandsBit VkPipelineStageFlags.TransferBit
+        // dst: UNDEFINED -> TRANSFER_DST
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        // copy src -> dst
+        let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkImageCopy(layers, VkOffset3D(0, 0, 0), layers, VkOffset3D(0, 0, 0),
+                        VkExtent3D(uint32 dstW, uint32 dstH, 1u))
+        VkRaw.vkCmdCopyImage(cmd, src, VkImageLayout.TransferSrcOptimal,
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        // src: TRANSFER_SRC -> srcLayout (restore for Aardvark)
+        barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
+                VkImageLayout.TransferSrcOptimal srcLayout
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.AllCommandsBit
+        // dst -> GENERAL + RELEASE to external consumer
+        barrierReleaseExternal cmd dstImage VkAccessFlags.TransferWriteBit
+                               VkImageLayout.TransferDstOptimal VkImageLayout.General
+                               VkPipelineStageFlags.TransferBit qfi
+
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer"
+        let mutable psem = signalSem
+        let mutable pcmd = cmd
+        let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit"
+        struct (queue, pool)
+
+    /// Copy an already-rendered source image (currently in `srcLayout`) into the
+    /// OPAQUE/dma-buf `dst`, releasing dst to EXTERNAL. Returns a sync_fd fence;
+    /// restores the source layout so Aardvark can keep rendering into it.
+    let renderCopyExternal (device : Device) (src : VkImage) (srcLayout : VkImageLayout) (dst : DmaBufImage) : int =
+        let sem = DmaBufSync.createExportableSemaphore device
+        let struct (queue, pool) = recordRenderCopySubmit device src srcLayout dst.Image dst.Width dst.Height sem
+        let syncFd = DmaBufSync.exportSyncFd device sem
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle"
+        DmaBufSync.destroySemaphore device sem
+        VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
+        syncFd
+
     /// Windows: GPU-clear `src` + copy into the Win32 shared image `dst`. Returns an
     /// exportable Win32 semaphore handle (consumer waits via a D3D/KMT fence).
     let clearAndCopyWin (device : Device) (src : VkImage) (dst : WinSharedImage) (color : V4f) : nativeint =
