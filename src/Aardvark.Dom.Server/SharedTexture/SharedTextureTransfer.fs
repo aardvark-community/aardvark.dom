@@ -101,9 +101,18 @@ type private PlatformStrategy =
       CopyInto : VkCommandBuffer -> VkImage -> VkImageLayout -> PlatformBuffer -> int -> int -> VkSemaphore -> VkFence -> unit
       /// free the backing.
       Destroy  : PlatformBuffer -> unit
-      /// publish the slot's handle + send the REG line over the side-channel `conn` (Windows
-      /// uses a file handoff and ignores conn). textureId, w, h. returns true on success.
-      SendReg  : int -> PlatformBuffer -> string -> int -> int -> bool
+      /// publish the slot's handle + send the REG line over the side-channel `conn`. textureId,
+      /// w, h. returns true on success. (Linux: SCM_RIGHTS memfd; macOS: mach name; Windows:
+      /// NT-handle value folded into the REG line over the named pipe.)
+      SendReg  : int64 -> PlatformBuffer -> string -> int -> int -> bool
+      /// SIDE-CHANNEL TRANSPORT (the only genuinely-new Windows piece). The browser native layer
+      /// is the LISTENER/server; the producer connects as the client. The connection is an opaque
+      /// int64 token (Linux: socket fd; Windows: named-pipe HANDLE). -1 / throw until the browser
+      /// is up — the render target retries with a backoff. SideChannelTick sends the per-frame
+      /// "F <textureId>" swap tick; SideChannelPoll drains "FREE <id>" backpressure messages.
+      SideChannelConnect : string -> int64
+      SideChannelPoll    : int64 -> string
+      SideChannelClose   : int64 -> unit
       /// self-test readback (BGRA bytes); [||] where unsupported.
       Readback : PlatformBuffer -> byte[] }
 
@@ -119,7 +128,10 @@ module private Platform =
               Destroy = fun buf -> OpaqueFd.destroy device (buf.Tag :?> OpaqueImage)
               SendReg = fun conn buf id w h ->
                 let o = buf.Tag :?> OpaqueImage
-                FdHandoff.streamFrameFd conn (sprintf "REG %s %d %d\n" id w h) o.MemFd
+                FdHandoff.streamFrameFd (int conn) (sprintf "REG %s %d %d\n" id w h) o.MemFd
+              SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
+              SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
+              SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)
               Readback = fun buf -> OpaqueFd.readAllLocal device (buf.Tag :?> OpaqueImage) }
 
         let macos () : PlatformStrategy =
@@ -136,7 +148,10 @@ module private Platform =
                 // the browser does IOSurfaceLookupFromMachPort(name). (Streaming handoff: follow-on.)
                 let name = sprintf "%s.%s" MetalExport.MachServiceName id
                 MetalExport.aardvark_publish(name, m.IOSurface) |> ignore
-                FdHandoff.streamFrame conn (sprintf "REG %s %d %d %s\n" id w h name)
+                FdHandoff.streamFrame (int conn) (sprintf "REG %s %d %d %s\n" id w h name)
+              SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
+              SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
+              SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)
               Readback = fun _ -> [||] }
 
         let windows () : PlatformStrategy =
@@ -153,12 +168,18 @@ module private Platform =
                 let (tex, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
                 D3D11Export.destroyImported device imp
                 SilkD3D11Alloc.destroy tex
-              SendReg = fun _conn buf id w h ->
+              SendReg = fun conn buf id w h ->
                 let (tex, _) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
-                // Windows: NT-handle file handoff (the painter reads handle+PID from the file).
-                let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "aardvark-d3d11-%s.txt" id)
-                Win32Handoff.writeHandoff path tex.Handle w h
-                true
+                // Windows: the DXGI shared NT handle can't be sent down the pipe (it's process-
+                // local); fold its VALUE + the producer PID into the REG line so the browser
+                // reconstitutes it via OpenProcess(PROCESS_DUP_HANDLE)+DuplicateHandle (the exact
+                // mechanism the single-frame Win32 painter uses). Per-textureId REG over the pipe.
+                let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+                NamedPipeHandoff.send (nativeint conn)
+                    (sprintf "REG %s %d %d %d %d\n" id w h (int64 tex.Handle) pid)
+              SideChannelConnect = fun ch -> int64 (NamedPipeHandoff.connect ch)
+              SideChannelPoll    = fun conn -> NamedPipeHandoff.poll (nativeint conn)
+              SideChannelClose   = fun conn -> NamedPipeHandoff.close (nativeint conn)
               Readback = fun _ -> [||] }
 
         if RuntimeInformation.IsOSPlatform OSPlatform.OSX then macos ()
@@ -186,8 +207,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     inherit AdaptiveObject()
 
     static let RING_N = 3            // ring depth
-    // socket path the browser native layer binds; the server connects lazily.
-    let sockPath = sprintf "/tmp/aardvark-sharedtexture-%s.sock" channelName
+    // the side-channel path/pipe is keyed by channelName inside the platform strategy
+    // (Linux /tmp/aardvark-sharedtexture-<channel>.sock; Windows \\.\pipe\aardvark-<channel>).
 
     let vk =
         match runtime with
@@ -264,23 +285,24 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     let mutable ring : RingSlot[] = [||]
     let mutable frame = 0
 
-    // ---- lazy side-channel connection to the browser native layer ----
-    let mutable conn = -1                 // -1 until connected
+    // ---- lazy side-channel connection to the browser native layer (transport via the
+    //      strategy: Linux AF_UNIX socket / Windows named pipe; opaque int64 token) ----
+    let mutable conn = -1L                // -1 until connected
     let mutable nextConnectAttempt = DateTime.MinValue   // backoff clock for retries
 
-    // The browser binds/listens on sockPath; the server connects as the client.
+    // The browser binds/listens for `channelName`; the server connects as the client.
     // The browser may not be up at the first frame, so RETRY with a short backoff
     // (the browser begins listening only once the page calls bindSharedTextureChannel).
     let tryConnect () =
-        if conn < 0 && DateTime.UtcNow >= nextConnectAttempt then
-            try conn <- FdHandoff.streamConnect sockPath
+        if conn < 0L && DateTime.UtcNow >= nextConnectAttempt then
+            try conn <- strategy.SideChannelConnect channelName
             with _ ->
-                conn <- -1                // browser not up yet — retry after the backoff
+                conn <- -1L               // browser not up yet — retry after the backoff
                 nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
-        conn >= 0
+        conn >= 0L
 
     let disconnect () =
-        if conn >= 0 then (try FdHandoff.streamClose conn with _ -> ()); conn <- -1
+        if conn >= 0L then (try strategy.SideChannelClose conn with _ -> ()); conn <- -1L
         nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
 
     let destroySlot (s : RingSlot) =
@@ -302,7 +324,13 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                     TextureId  = sprintf "%d-%d" gen i
                     Buf        = strategy.Alloc s.X s.Y
                     Cmd        = newCmd ()
-                    Sem        = DmaBufSync.createExportableSemaphore device
+                    // plain (non-exportable) semaphore: it is signaled by the per-slot copy
+                    // submit but NEVER exported in this integration — the cross-process sync is
+                    // carried by the platform's release primitive (Linux/macOS QUEUE_FAMILY_EXTERNAL
+                    // release, Windows keyed-mutex acquire/release). createExportableSemaphore is
+                    // sync_fd-backed (Linux-only) and would fail at runtime on Windows/macOS, so use
+                    // a plain cross-platform semaphore here.
+                    Sem        = DmaBufSync.createSemaphore device
                     Fence      = newFence ()
                     Busy       = false
                     Registered = false
@@ -323,8 +351,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
 
     // Drain any FREE <textureId> messages the browser sent back; clear the slot's Busy.
     let pollFree () =
-        if conn >= 0 then
-            let txt = try FdHandoff.streamPoll conn with _ -> ""
+        if conn >= 0L then
+            let txt = try strategy.SideChannelPoll conn with _ -> ""
             if txt <> "" then
                 for line in txt.Split('\n') do
                     let parts = line.Trim().Split(' ')

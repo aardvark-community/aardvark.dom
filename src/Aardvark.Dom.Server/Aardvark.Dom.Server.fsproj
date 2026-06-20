@@ -26,6 +26,7 @@
     <Compile Include="SharedTexture\FdHandoff.fs" />
     <Compile Include="SharedTexture\VulkanOpaqueFd.fs" />
     <Compile Include="SharedTexture\Win32Handoff.fs" />
+    <Compile Include="SharedTexture\NamedPipeHandoff.fs" />
     <Compile Include="SharedTexture\VulkanOpaqueWin32.fs" />
     <Compile Include="SharedTexture\VulkanD3D11Export.fs" />
     <Compile Include="SharedTexture\SilkD3D11Alloc.fs" />
