@@ -25,6 +25,8 @@
     <Compile Include="SharedTexture\VulkanGpuCopy.fs" />
     <Compile Include="SharedTexture\FdHandoff.fs" />
     <Compile Include="SharedTexture\VulkanOpaqueFd.fs" />
+    <Compile Include="SharedTexture\Win32Handoff.fs" />
+    <Compile Include="SharedTexture\VulkanOpaqueWin32.fs" />
     <Compile Include="SharedTexture\SharedTextureTransfer.fs" />
   </ItemGroup>
   <ItemGroup>

@@ -1219,6 +1219,64 @@ let main argv =
             exit (if ok then 0 else 1)
         | r -> eprintfn "[win32-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
+    // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
+    // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
+    // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
+    // via OPAQUE_WIN32, when the consumer re-acquires from EXTERNAL each frame? Handoff is the
+    // Win32 analog of SCM_RIGHTS: file {handleValue, producerPID, w, h} + DuplicateHandle. ----
+    if Array.contains "opaque-win32-rewrite-send" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let handoffPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-win32.txt")
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.create dev W H
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath opaque.Handle W H
+            printfn "[w32-send] HANDOFF -> %s  handle=0x%X pid=%d %dx%d size=%d"
+                handoffPath (int64 opaque.Handle) pid W H opaque.Size
+            // give the consumer time to read the file + OpenProcess + DuplicateHandle + import
+            System.Threading.Thread.Sleep 2000
+            for k in 0 .. 30 do
+                let r = (k * 37) % 256
+                let g = (k * 53) % 256
+                let col = V4f(float32 r / 255.0f, float32 g / 255.0f, 0.5f, 1.0f)
+                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearCopyExternalNoSem dev src opaque.Image W H col
+                let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterLocal dev opaque
+                printfn "[w32-send] k=%-2d wrote expect~(%d,%d,128)  PRODUCER center=(%d,%d,%d,%d)" k r g pr pg pb pa
+                System.Threading.Thread.Sleep 120
+            // hold alive a moment so the consumer drains its last frames, then quit.
+            System.Threading.Thread.Sleep 1000
+            printfn "[w32-send] done"
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.destroy dev opaque
+            exit 0
+        | r -> eprintfn "[w32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    if Array.contains "opaque-win32-rewrite-recv" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let noExternal = Array.contains "noexternal" argv
+            let handoffPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-win32.txt")
+            let h = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.readHandoff handoffPath
+            printfn "[w32-recv] handoff handle=0x%X producerPID=%d %dx%d noExternal=%b"
+                (int64 h.Handle) h.ProducerPID h.Width h.Height noExternal
+            let dup = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.duplicateIntoSelf h.ProducerPID h.Handle
+            printfn "[w32-recv] DuplicateHandle -> 0x%X (valid in this process)" (int64 dup)
+            let imp = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.importOnce dev dup h.Width h.Height
+            printfn "[w32-recv] imported OPAQUE_WIN32 memory + bound image; looping reads"
+            for i in 0 .. 40 do
+                let (r, g, b, a) =
+                    if noExternal then Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterCrossNoExternal dev imp
+                    else Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterCross dev imp
+                printfn "[w32-recv] i=%-2d CONSUMER center=(%d,%d,%d,%d)" i r g b a
+                System.Threading.Thread.Sleep 110
+            printfn "[w32-recv] done"
+            exit 0
+        | r -> eprintfn "[w32-recv] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
     // List available device extensions (e.g. check MoltenVK VK_EXT_metal_objects on macOS).
     if Array.contains "vk-exts" argv then
         match app.Runtime with

@@ -317,6 +317,56 @@ module DmaBufGpu =
         VkRaw.vkDestroyCommandPool(device.Handle, pool, NativePtr.zero)
         h
 
+    /// Windows OPAQUE_WIN32 cross-instance test: GPU-clear `src` to `color` + copy into the
+    /// shared OPTIMAL image `dstImage`, releasing it to VK_QUEUE_FAMILY_EXTERNAL (GENERAL
+    /// layout), then waitIdle. NO semaphore export — the AMD-permissive no-sync baseline that
+    /// the OpaqueWin32 test relies on. Caller paces with a CPU sleep between iterations.
+    let clearCopyExternalNoSem (device : Device) (src : VkImage) (dstImage : VkImage)
+                               (dstW : int) (dstH : int) (color : V4f) =
+        let dev = device.Handle
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        let mutable poolInfo = VkCommandPoolCreateInfo(0n, VkCommandPoolCreateFlags.None, qfi)
+        let mutable pool = Unchecked.defaultof<VkCommandPool>
+        VkRaw.vkCreateCommandPool(dev, &&poolInfo, NativePtr.zero, &&pool) |> check "vkCreateCommandPool(win32rw)"
+        let mutable allocInfo = VkCommandBufferAllocateInfo(0n, pool, VkCommandBufferLevel.Primary, 1u)
+        let mutable cmd = Unchecked.defaultof<VkCommandBuffer>
+        VkRaw.vkAllocateCommandBuffers(dev, &&allocInfo, &&cmd) |> check "vkAllocateCommandBuffers(win32rw)"
+        let mutable beginInfo = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&beginInfo) |> check "vkBeginCommandBuffer(win32rw)"
+
+        barrier cmd src VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        let mutable cc = VkClearColorValue.Float32 color
+        let mutable range = VkImageSubresourceRange(VkImageAspectFlags.ColorBit, 0u, 1u, 0u, 1u)
+        VkRaw.vkCmdClearColorImage(cmd, src, VkImageLayout.TransferDstOptimal, &&cc, 1u, &&range)
+        barrier cmd src VkAccessFlags.TransferWriteBit VkAccessFlags.TransferReadBit
+                VkImageLayout.TransferDstOptimal VkImageLayout.TransferSrcOptimal
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.TransferBit
+        // dst: GENERAL (after first iter) or UNDEFINED — use GENERAL is unsafe on iter0 because
+        // the image starts UNDEFINED; UNDEFINED->TRANSFER_DST discards but that's fine since we
+        // overwrite the whole image each iteration.
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkImageCopy(layers, VkOffset3D(0, 0, 0), layers, VkOffset3D(0, 0, 0),
+                        VkExtent3D(uint32 dstW, uint32 dstH, 1u))
+        VkRaw.vkCmdCopyImage(cmd, src, VkImageLayout.TransferSrcOptimal,
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        barrierReleaseExternal cmd dstImage VkAccessFlags.TransferWriteBit
+                               VkImageLayout.TransferDstOptimal VkImageLayout.General
+                               VkPipelineStageFlags.TransferBit qfi
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer(win32rw)"
+        let mutable pcmd = cmd
+        let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 0u, NativePtr.zero)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit(win32rw)"
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle(win32rw)"
+        VkRaw.vkDestroyCommandPool(dev, pool, NativePtr.zero)
+
     /// macOS: GPU-clear `src` + copy into the IOSurface-backed image `dst`. Returns the
     /// exported MTLSharedEvent handle the consumer waits on.
     /// NOTE: with a binary semaphore MoltenVK returns 0 — MTLSharedEvent is value-based and
