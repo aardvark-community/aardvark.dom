@@ -1034,13 +1034,18 @@ let main argv =
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
-            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.fillGradient dev opaque
+            // fill SOLID TEAL (51,102,153) via the proven GPU clear+copy (releases to
+            // VK_QUEUE_FAMILY_EXTERNAL in GENERAL, matching Chromium's import acquire).
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
             let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
-                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u; Modifier = 0UL
+                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u
+                  Modifier = 0xFFFFFFFFFFFFFFFEUL   // OPAQUE_FD sentinel — consumer imports as OPAQUE_FD
                   Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
-            printfn "[opaquefd-send] sending GRADIENT memfd=%d 256x256 size=%d" opaque.MemFd opaque.Size
-            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/opaque.sock" dst -1
-            System.Threading.Thread.Sleep 1000
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
+            printfn "[opaquefd-send] sending SOLID TEAL (OPAQUE_FD) memfd=%d 256x256 size=%d -> /tmp/dmabuf.sock" opaque.MemFd opaque.Size
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst -1
+            System.Threading.Thread.Sleep 2000
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
             exit 0
         | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
