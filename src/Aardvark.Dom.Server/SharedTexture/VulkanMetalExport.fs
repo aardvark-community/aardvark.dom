@@ -136,6 +136,23 @@ module MetalExport =
                 Marshal.WriteByte(px, 3, byte a)
         IOSurfaceUnlock(img.IOSurface, 0u, 0n) |> ignore
 
+    /// CPU-fill the whole IOSurface (LINEAR, shared storage) with a solid (R,G,B,A) color.
+    /// Used for the "teal pixel" milestone: a single uniform color the browser composites.
+    let fillSolid (img : MetalSharedImage) (r : int) (g : int) (b : int) (a : int) =
+        IOSurfaceLock(img.IOSurface, 0u (* read/write *), 0n) |> ignore
+        let baseA = IOSurfaceGetBaseAddress(img.IOSurface)
+        let bpr = int (IOSurfaceGetBytesPerRow(img.IOSurface))
+        for y in 0 .. img.Height - 1 do
+            let row = baseA + nativeint (y * bpr)
+            for x in 0 .. img.Width - 1 do
+                let px = row + nativeint (x * 4)
+                // B8G8R8A8: byte order B,G,R,A
+                Marshal.WriteByte(px, 0, byte b)
+                Marshal.WriteByte(px, 1, byte g)
+                Marshal.WriteByte(px, 2, byte r)
+                Marshal.WriteByte(px, 3, byte a)
+        IOSurfaceUnlock(img.IOSurface, 0u, 0n) |> ignore
+
     /// Lock the IOSurface and read the pixel at (x,y) as (R,G,B,A). `surf` is a raw
     /// IOSurfaceRef (works for both a producer-owned and a cross-process looked-up surface).
     let readPixel (surf : nativeint) (x : int) (y : int) : int * int * int * int =

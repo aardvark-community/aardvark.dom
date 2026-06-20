@@ -1025,6 +1025,37 @@ let main argv =
             exit 0
         | r -> eprintfn "[iosurface-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
+    // macOS "teal pixel" PRODUCER (the consumer side is Chromium's native IOSurfaceImageBacking).
+    // Export an IOSurface via VK_EXT_metal_objects, CPU-fill SOLID TEAL (51,102,153,255), write the
+    // global IOSurfaceID to /tmp/iosurface.id, and stay alive holding the surface so the macbook
+    // content_shell can IOSurfaceLookup(id) and composite it. Analog of the Linux/Windows
+    // teal-pixel producers (opaquewin32-send / dmabuf). CPU LINEAR fill is fine for a first pixel:
+    // Chromium GPU-samples the imported IOSurface regardless of how the producer wrote it.
+    if Array.contains "iosurface-send-teal" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let (tr, tg, tb, ta) = (51, 102, 153, 255)   // teal pixel
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev W H
+            if img.IOSurface = 0n then eprintfn "[iosurface-send-teal] export FAILED (null IOSurface)"; exit 1
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.fillSolid img tr tg tb ta
+            let gid = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetID img.IOSurface
+            printfn "[iosurface-send-teal] IOSurface=0x%X  globalID=%u  %dx%d stride=%d  color=(%d,%d,%d,%d)" (int64 img.IOSurface) gid W H img.Stride tr tg tb ta
+            // local self-check at corners + center
+            for (x,y) in [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ] do
+                let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
+                printfn "[iosurface-send-teal] local (%3d,%3d) got=%A expected=(%d,%d,%d,%d)" x y got tr tg tb ta
+            // handoff file the content_shell import branch reads (global id; the secure
+            // production handoff is IOSurfaceCreateMachPort -> IOSurfaceLookupFromMachPort)
+            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)
+            printfn "[iosurface-send-teal] wrote /tmp/iosurface.id=%u ; holding surface alive (Ctrl-C to exit) ..." gid
+            System.Threading.Thread.Sleep System.Threading.Timeout.Infinite
+            exit 0
+        | r -> eprintfn "[iosurface-send-teal] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
     // CONSUMER (separate process, no Vulkan needed — mirrors Chromium's GPU process
     // importing via IOSurfaceImageBacking): IOSurfaceLookup(globalID) -> read the gradient
     // cross-process at corners + center and compare to the producer's reference.
