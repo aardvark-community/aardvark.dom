@@ -109,6 +109,107 @@ module MetalExport =
     // (a mach port sent over the GPU-channel), since global ids are guessable/host-wide.
     [<DllImport(framework)>] extern uint32 IOSurfaceGetID(nativeint surf)
     [<DllImport(framework)>] extern nativeint IOSurfaceLookup(uint32 csid)
+    [<DllImport(framework)>] extern uint32 IOSurfaceGetPixelFormat(nativeint surf)
+    // Create an IOSurface from a CFDictionary of properties (we stamp kIOSurfacePixelFormat
+    // = 'BGRA', which the MoltenVK-exported surface lacks → the property Chromium's
+    // IOSurfaceImageBackingFactory validates against the SharedImage format).
+    [<DllImport(framework)>] extern nativeint IOSurfaceCreate(nativeint properties)
+
+    // --- CoreFoundation, to build the IOSurfaceCreate property dictionary ---
+    [<Literal>]
+    let private cf = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+    [<DllImport(cf)>] extern nativeint CFDictionaryCreateMutable(nativeint alloc, nativeint capacity, nativeint keyCb, nativeint valCb)
+    [<DllImport(cf)>] extern void CFDictionarySetValue(nativeint dict, nativeint key, nativeint value)
+    [<DllImport(cf)>] extern void CFRelease(nativeint cf)
+    [<DllImport(cf)>] extern nativeint CFNumberCreate(nativeint alloc, int theType, nativeint valuePtr)
+    [<DllImport(cf)>] extern nativeint CFStringCreateWithCString(nativeint alloc, string cStr, uint32 encoding)
+    // kCFNumberSInt32Type = 3 ; kCFStringEncodingASCII = 0x0600
+    [<Literal>]
+    let private kCFNumberSInt32Type = 3
+    [<Literal>]
+    let private kCFStringEncodingASCII = 0x0600u
+
+    let private cfStr (s : string) = CFStringCreateWithCString(0n, s, kCFStringEncodingASCII)
+    let private cfInt (v : int) =
+        let p = Marshal.AllocHGlobal 4
+        Marshal.WriteInt32(p, v)
+        let n = CFNumberCreate(0n, kCFNumberSInt32Type, p)
+        Marshal.FreeHGlobal p
+        n
+
+    // BGRA OSType ('BGRA') — the IOSurface pixel format Chromium's IOSurfaceImageBackingFactory
+    // expects for viz::SinglePlaneFormat::kBGRA_8888 (vs the property-less surface MoltenVK mints).
+    [<Literal>]
+    let BGRA_OSType = 0x42475241u
+
+    // Build the CFDictionary of IOSurface properties (width/height/bpe/bpr/pixelFormat) with
+    // kIOSurfacePixelFormat stamped, then IOSurfaceCreate it. Returns the IOSurfaceRef (+1).
+    let private createBGRAIOSurface (width : int) (height : int) : nativeint =
+        let bpe = 4
+        let bpr = width * bpe   // tightly packed; IOSurface may round up internally
+        let dict = CFDictionaryCreateMutable(0n, 0n, 0n, 0n)
+        let set (k : string) (v : nativeint) =
+            let key = cfStr k
+            CFDictionarySetValue(dict, key, v)
+            CFRelease key
+            CFRelease v
+        set "IOSurfaceWidth" (cfInt width)
+        set "IOSurfaceHeight" (cfInt height)
+        set "IOSurfaceBytesPerElement" (cfInt bpe)
+        set "IOSurfaceBytesPerRow" (cfInt bpr)
+        set "IOSurfacePixelFormat" (cfInt (int BGRA_OSType))
+        let surf = IOSurfaceCreate dict
+        CFRelease dict
+        surf
+
+    /// Create a properly-formatted BGRA IOSurface (with kIOSurfacePixelFormat), then IMPORT it
+    /// into a VkImage via VK_EXT_metal_objects (VkImportMetalIOSurfaceInfoEXT) so MoltenVK backs
+    /// the VkImage with OUR surface. This is the macOS teal-pixel handoff: the surface carries
+    /// the format property Chromium validates, unlike the property-less MoltenVK-exported one.
+    let createImported (device : Device) (width : int) (height : int) : MetalSharedImage =
+        let dev = device.Handle
+        let format = VkFormat.B8g8r8a8Unorm
+
+        // 1) our IOSurface, format-stamped
+        let surf = createBGRAIOSurface width height
+        if surf = 0n then failwith "[MetalExport] IOSurfaceCreate returned null"
+        let pf = IOSurfaceGetPixelFormat surf
+        if pf <> BGRA_OSType then
+            failwithf "[MetalExport] IOSurface pixel format=0x%X (expected 0x%X 'BGRA')" pf BGRA_OSType
+
+        // 2) import it: chain VkImportMetalIOSurfaceInfoEXT into the image create-info pNext
+        let mutable impImg = EXTMetalObjects.VkImportMetalIOSurfaceInfoEXT(surf)
+        let mutable info =
+            VkImageCreateInfo(
+                NativePtr.toNativeInt &&impImg, VkImageCreateFlags.None, VkImageType.D2d, format,
+                VkExtent3D(uint32 width, uint32 height, 1u), 1u, 1u, VkSampleCountFlags.D1Bit,
+                VkImageTiling.Linear,
+                VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.TransferSrcBit,
+                VkSharingMode.Exclusive, 0u, NativePtr.zero, VkImageLayout.Undefined)
+        let mutable image = Unchecked.defaultof<VkImage>
+        VkRaw.vkCreateImage(dev, &&info, NativePtr.zero, &&image) |> check "vkCreateImage(import)"
+
+        let mutable req = VkMemoryRequirements()
+        VkRaw.vkGetImageMemoryRequirements(dev, image, &&req)
+        let memType =
+            findMemoryType device req.memoryTypeBits
+                (VkMemoryPropertyFlags.HostVisibleBit ||| VkMemoryPropertyFlags.HostCoherentBit)
+        let mutable dedicated = VkMemoryDedicatedAllocateInfo(image, VkBuffer.Null)
+        let mutable alloc = VkMemoryAllocateInfo(NativePtr.toNativeInt &&dedicated, req.size, memType)
+        let mutable mem = Unchecked.defaultof<VkDeviceMemory>
+        VkRaw.vkAllocateMemory(dev, &&alloc, NativePtr.zero, &&mem) |> check "vkAllocateMemory(import)"
+        VkRaw.vkBindImageMemory(dev, image, mem, 0UL) |> check "vkBindImageMemory(import)"
+
+        let mutable sub = VkImageSubresource(VkImageAspectFlags.ColorBit, 0u, 0u)
+        let mutable layout = VkSubresourceLayout()
+        VkRaw.vkGetImageSubresourceLayout(dev, image, &&sub, &&layout)
+
+        {
+            IOSurface = surf   // OUR surface — carries the format property + (after fill) the teal
+            Width = width; Height = height
+            Offset = uint64 layout.offset; Stride = uint64 layout.rowPitch
+            Format = format; Image = image; Memory = mem; Size = uint64 req.size
+        }
 
     /// The non-uniform reference gradient: R varies along X, G varies along Y, B fixed.
     /// 2-axis so a transposed / wrong-stride read would be caught (not just blank-vs-not).

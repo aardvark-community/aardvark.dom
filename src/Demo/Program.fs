@@ -1039,11 +1039,15 @@ let main argv =
             let dev = vk.Device
             let W, H = 256, 256
             let (tr, tg, tb, ta) = (51, 102, 153, 255)   // teal pixel
-            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev W H
+            // create-and-IMPORT (not export): OUR IOSurface carries kIOSurfacePixelFormat='BGRA',
+            // which Chromium's IOSurfaceImageBackingFactory validates (the MoltenVK-exported
+            // surface had pixel format 0x0 -> "IOSurface pixel format does not match" rejection).
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.createImported dev W H
             if img.IOSurface = 0n then eprintfn "[iosurface-send-teal] export FAILED (null IOSurface)"; exit 1
             Aardvark.Dom.Remote.SharedTexture.MetalExport.fillSolid img tr tg tb ta
             let gid = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetID img.IOSurface
-            printfn "[iosurface-send-teal] IOSurface=0x%X  globalID=%u  %dx%d stride=%d  color=(%d,%d,%d,%d)" (int64 img.IOSurface) gid W H img.Stride tr tg tb ta
+            let pf = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetPixelFormat img.IOSurface
+            printfn "[iosurface-send-teal] IOSurface=0x%X  globalID=%u  %dx%d stride=%d  pixelFormat=0x%X  color=(%d,%d,%d,%d)" (int64 img.IOSurface) gid W H img.Stride pf tr tg tb ta
             // local self-check at corners + center
             for (x,y) in [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ] do
                 let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
