@@ -137,7 +137,8 @@ module SilkD3D11Alloc =
         desc.Usage <- Usage.Default
         desc.BindFlags <- uint32 (int BindFlag.ShaderResource ||| int BindFlag.RenderTarget)
         desc.CPUAccessFlags <- 0u
-        desc.MiscFlags <- uint32 (0x20 ||| 0x800)   // SHARED_KEYEDMUTEX | SHARED_NTHANDLE
+        // D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX = 0x100 (NOT 0x20), SHARED_NTHANDLE = 0x800.
+        desc.MiscFlags <- uint32 (0x100 ||| 0x800)   // = 0x900
         printfn "[silk-alloc] desc: %dx%d mip=%d arr=%d fmt=%A samples=%d usage=%A bind=0x%X cpu=0x%X misc=0x%X"
             desc.Width desc.Height desc.MipLevels desc.ArraySize desc.Format desc.SampleDesc.Count
             desc.Usage desc.BindFlags desc.CPUAccessFlags desc.MiscFlags
