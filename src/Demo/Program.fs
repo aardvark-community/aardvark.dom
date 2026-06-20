@@ -1225,6 +1225,8 @@ let main argv =
             let mutable frame = 0
             let mutable running = true
             let fpsTimer = System.Diagnostics.Stopwatch.StartNew()
+            let paceTimer = System.Diagnostics.Stopwatch.StartNew()
+            let targetFrameMs = 1000.0 / 60.0   // cap at ~display rate (producer ceiling is ~2000fps)
             let mutable fpsCount = 0
             while running do
                 match pollResize () with
@@ -1252,6 +1254,12 @@ let main argv =
                     printfn "[opaquefd-stream] %d fps (gen=%d %dx%d)" fpsCount gen W H
                     fpsCount <- 0; fpsTimer.Restart()
                 frame <- frame + 1
+                // Pace to the display rate (cumulative deadline avoids drift). The proper
+                // robustness fix is release-callback recycling (render only when the compositor
+                // FREEs a buffer) — the per-frame acquire fence already prevents tearing.
+                let dueMs = float frame * targetFrameMs
+                let nowMs = paceTimer.Elapsed.TotalMilliseconds
+                if nowMs < dueMs then System.Threading.Thread.Sleep(int (dueMs - nowMs))
             printfn "[opaquefd-stream] streamed %d frames; closing" frame
             Aardvark.Rendering.Vulkan.VkRaw.vkDeviceWaitIdle devH |> ignore
             ST.streamClose conn
