@@ -25,6 +25,7 @@
     <Compile Include="SharedTexture\VulkanGpuCopy.fs" />
     <Compile Include="SharedTexture\FdHandoff.fs" />
     <Compile Include="SharedTexture\VulkanOpaqueFd.fs" />
+    <Compile Include="SharedTexture\SharedTextureTransfer.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Remote\Aardvark.Dom.Remote.fsproj" />

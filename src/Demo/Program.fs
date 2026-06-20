@@ -995,7 +995,7 @@ let main argv =
     // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
     // with it enabled for the dma-buf hooks.
     let dmaBufRuntime =
-        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream"; "opaquefd-transfer-selftest"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
             let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
             (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
         else app.Runtime
@@ -1127,6 +1127,13 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
             exit (if ok then 0 else 1)
         | r -> eprintfn "[opaquefd-selftest] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // R1 SERVER-SIDE SELF-TEST: drive the real SharedTextureRenderTarget over a scene
+    // for a few frames and read the ring slot back via the validated OPAQUE_FD readback.
+    if Array.contains "opaquefd-transfer-selftest" argv then
+        let ok = Aardvark.Dom.Remote.SharedTexture.SharedTextureSelfTest.run dmaBufRuntime
+        printfn "[opaquefd-transfer-selftest] %s" (if ok then "PASS" else "FAIL")
+        exit (if ok then 0 else 1)
 
     // OPAQUE_FD cross-instance test producer: GPU-fill an OPTIMAL image exported as
     // VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD and hand its memory fd + sync_fd to a
