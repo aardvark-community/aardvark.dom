@@ -17,6 +17,46 @@ open Aardvark.Application.Slim
 open Demo
 open Aardvark.Dom.Utilities
 
+// L2: a rotating shaded cube rendered offscreen, streamed zero-copy into the browser.
+// In its own module so `open Aardvark.SceneGraph` (whose `Sg` clashes with Aardvark.Dom's)
+// stays local. Renders to a Bgra8 colour texture so the copy into the BGRA ring is a
+// straight vkCmdCopyImage (no R/B swizzle).
+module CubeRender =
+    open Aardvark.Base
+    open Aardvark.Rendering
+    open Aardvark.SceneGraph
+    open FShade
+    open FSharp.Data.Adaptive
+
+    type T = { angle : cval<float>; color : IAdaptiveResource<IBackendTexture> }
+
+    let create (runtime : IRuntime) (w : int) (h : int) : T =
+        Aardvark.Base.IntrospectionProperties.CustomEntryAssembly <- System.Reflection.Assembly.GetAssembly(typeof<ISg>)
+        let signature =
+            runtime.CreateFramebufferSignature([
+                DefaultSemantic.Colors, TextureFormat.Bgra8
+                DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8
+            ])
+        let angle = cval 0.0
+        let sg =
+            Sg.box' C4b.White (Box3d.FromCenterAndSize(V3d.Zero, V3d(2.0, 2.0, 2.0)))
+            |> Sg.shader {
+                do! DefaultSurfaces.trafo
+                do! DefaultSurfaces.simpleLighting
+            }
+            |> Sg.trafo (angle |> AVal.map (fun a -> Trafo3d.RotationZ a * Trafo3d.RotationX (a * 0.5)))
+            |> Sg.viewTrafo (CameraView.lookAt (V3d(3.5, 3.5, 3.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant)
+            |> Sg.projTrafo (Frustum.perspective 60.0 0.1 100.0 (float w / float h) |> Frustum.projTrafo |> AVal.constant)
+        let task = sg |> Sg.compile runtime signature
+        let color = task |> RenderTask.renderToColor (AVal.constant (V2i(w, h)))
+        color.Acquire()
+        { angle = angle; color = color }
+
+    /// Advance the rotation and render the frame; returns the freshly-rendered colour texture.
+    let render (t : T) (frame : int) : IBackendTexture =
+        transact (fun () -> t.angle.Value <- float frame * 0.04)
+        t.color.GetValue()
+
 module Shader =
     open FShade
     
@@ -1113,7 +1153,7 @@ let main argv =
             let dev = vk.Device
             let W, H = 256, 256
             let ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
-            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let cube = CubeRender.create vk W H
             let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamConnect "/tmp/dmabuf.sock"
             Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamHello conn
                 (sprintf "STREAM %d %d 3" W H) (ring |> Array.map (fun o -> o.MemFd))
@@ -1122,18 +1162,17 @@ let main argv =
             let mutable running = true
             while running && frame < 600 do
                 let i = frame % 3
-                let t = float frame * 0.05
-                let col = V4f(float32 (0.5 + 0.5 * sin t),
-                              float32 (0.5 + 0.5 * sin (t + 2.0)),
-                              float32 (0.5 + 0.5 * sin (t + 4.0)), 1.0f)
                 let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
                     { Fd = ring.[i].MemFd; Width = W; Height = H; Fourcc = 0u
                       Modifier = 0xFFFFFFFFFFFFFFFEUL; Offset = 0UL; Stride = 0UL
                       Image = ring.[i].Image; Memory = ring.[i].Memory; Size = ring.[i].Size }
-                // GPU-fill this ring buffer; clearAndCopy releases it to EXTERNAL and
-                // returns an acquire sync_fd the consumer waits to re-acquire the fresh
-                // content. Send it as the per-frame tick's fd, then close our copy.
-                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col
+                // Render the rotating cube offscreen, then copy its colour image into this
+                // ring buffer. renderCopyExternal waits the render, copies (BGRA->BGRA, no
+                // swizzle), releases dst to EXTERNAL, restores the source layout, and
+                // returns an acquire sync_fd the consumer waits to re-acquire fresh content.
+                let tex = CubeRender.render cube frame
+                let cimg = unbox<Aardvark.Rendering.Vulkan.Image> tex
+                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.renderCopyExternal dev cimg.Handle cimg.Layout dst
                 if not (Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrameFd conn (sprintf "F %d\n" i) fenceFd) then
                     running <- false
                 Aardvark.Dom.Remote.SharedTexture.FdHandoff.closeFd fenceFd
@@ -1144,7 +1183,6 @@ let main argv =
                 frame <- frame + 1
             printfn "[opaquefd-stream] streamed %d frames; closing" frame
             Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamClose conn
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
             exit 0
         | r -> eprintfn "[opaquefd-stream] runtime is not Vulkan: %A" (r.GetType()); exit 2

@@ -160,6 +160,9 @@ module DmaBufGpu =
     let private recordRenderCopySubmit (device : Device) (src : VkImage) (srcLayout : VkImageLayout)
                                        (dstImage : VkImage) (dstW : int) (dstH : int) (signalSem : VkSemaphore) =
         let dev = device.Handle
+        // The cube render is a SEPARATE submit on the same queue; same-queue submits may
+        // overlap, so wait for it to finish before copying its output.
+        VkRaw.vkDeviceWaitIdle(dev) |> ignore
         let qfi = uint32 device.GraphicsFamily.Index
         let mutable queue = Unchecked.defaultof<VkQueue>
         VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
