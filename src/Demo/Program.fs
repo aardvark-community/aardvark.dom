@@ -931,7 +931,7 @@ let main argv =
     // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
     // with it enabled for the dma-buf hooks.
     let dmaBufRuntime =
-        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send" ] |> List.exists (fun h -> Array.contains h argv) then
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest" ] |> List.exists (fun h -> Array.contains h argv) then
             let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
             (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
         else app.Runtime
@@ -996,6 +996,69 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
             exit 0
         | r -> eprintfn "[dmabuf-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_FD same-instance CONTROL: fill + read back in ONE instance. Proves the
+    // fill/usage/readback path is correct before trusting a cross-instance zero.
+    if Array.contains "opaquefd-selftest" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u; Modifier = 0UL
+                  Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
+            let got = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev opaque
+            let exp = (51, 102, 153, 255)
+            let cl (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = cl got exp
+            printfn "[opaquefd-selftest] SAME-INSTANCE center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[opaquefd-selftest] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_FD cross-instance test producer: GPU-fill an OPTIMAL image exported as
+    // VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD and hand its memory fd + sync_fd to a
+    // separate-instance consumer (the Vulkan-native path, vs dma-buf interop).
+    if Array.contains "opaquefd-send" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u; Modifier = 0UL
+                  Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
+            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            printfn "[opaquefd-send] sending memfd=%d fence=%d 256x256 size=%d" opaque.MemFd fenceFd opaque.Size
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/opaque.sock" dst fenceFd
+            System.Threading.Thread.Sleep 1000
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
+            exit 0
+        | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_FD cross-instance test consumer (SEPARATE process + VkInstance): import the
+    // memory + sync_fd, acquire from EXTERNAL, copy to host, read the centre pixel.
+    // Variants: `no-sem` skips the semaphore wait; `undef-layout` acquires from UNDEFINED.
+    if Array.contains "opaquefd-recv-vk" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let (img, syncFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.recvFd2 "/tmp/opaque.sock"
+            let useSem = not (Array.contains "no-sem" argv)
+            let useGeneral = not (Array.contains "undef-layout" argv)
+            printfn "[opaquefd-recv-vk] received memfd=%d sync=%d %dx%d useSem=%b generalLayout=%b"
+                img.Fd syncFd img.Width img.Height useSem useGeneral
+            let got = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importAndRead dev img.Fd syncFd img.Width img.Height useSem useGeneral
+            let exp = (51, 102, 153, 255)
+            let cl (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = cl got exp
+            printfn "[opaquefd-recv-vk] center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[opaquefd-recv-vk] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
     // Windows milestone (analog of dmabuf-test): export a color image's memory as a
     // Win32 NT handle and confirm it's valid.

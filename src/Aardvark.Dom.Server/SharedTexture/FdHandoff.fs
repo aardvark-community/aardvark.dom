@@ -156,3 +156,65 @@ module FdHandoff =
             Memory   = Unchecked.defaultof<VkDeviceMemory>
             Size     = 0UL
         }
+
+    /// Like `recvFd` but RETURNS the optional 2nd fd (the acquire sync_fd / semaphore;
+    /// -1 if none) instead of closing it. Used by the OPAQUE_FD cross-instance test.
+    let recvFd2 (sockPath : string) : DmaBufImage * int =
+        unlink sockPath |> ignore
+        let s = socket(AF_UNIX, SOCK_STREAM, 0)
+        if s < 0 then failwithf "[FdHandoff] socket failed (errno %d)" (errno())
+        let addr, alen = sockaddr sockPath
+        if bind(s, addr, alen) < 0 then failwithf "[FdHandoff] bind failed (errno %d)" (errno())
+        if listen(s, 1) < 0 then failwithf "[FdHandoff] listen failed (errno %d)" (errno())
+        let conn = accept(s, 0n, 0n)
+        if conn < 0 then failwithf "[FdHandoff] accept failed (errno %d)" (errno())
+
+        let cap = 256
+        let pPayload = Marshal.AllocHGlobal cap
+        let pIov = Marshal.AllocHGlobal 16
+        Marshal.WriteIntPtr(pIov, 0, pPayload)
+        Marshal.WriteInt64(pIov, 8, int64 cap)
+
+        let pControl = Marshal.AllocHGlobal CMSG_SPACE
+        for i in 0 .. 2 do Marshal.WriteInt64(pControl, i * 8, 0L)
+
+        let pMsg = Marshal.AllocHGlobal 56
+        for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
+        Marshal.WriteIntPtr(pMsg, 16, pIov)
+        Marshal.WriteInt64(pMsg, 24, 1L)
+        Marshal.WriteIntPtr(pMsg, 32, pControl)
+        Marshal.WriteInt64(pMsg, 40, int64 CMSG_SPACE)
+
+        let n = recvmsg(conn, pMsg, 0)
+        if n.ToInt64() < 0L then failwithf "[FdHandoff] recvmsg failed (errno %d)" (errno())
+
+        let level = Marshal.ReadInt32(pControl, 8)
+        let typ = Marshal.ReadInt32(pControl, 12)
+        if level <> SOL_SOCKET || typ <> SCM_RIGHTS then
+            failwithf "[FdHandoff] no SCM_RIGHTS in control message (level=%d type=%d)" level typ
+        let fd = Marshal.ReadInt32(pControl, 16)
+
+        let len = int (n.ToInt64())
+        let bytes = Array.zeroCreate<byte> len
+        Marshal.Copy(pPayload, bytes, 0, len)
+        let p = (Encoding.ASCII.GetString bytes).Trim().Split(' ')
+        let fence = if p.Length > 6 && p.[6] = "1" then Marshal.ReadInt32(pControl, 20) else -1
+
+        Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
+        Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
+        close conn |> ignore; close s |> ignore; unlink sockPath |> ignore
+
+        let img =
+            {
+                Fd       = fd
+                Width    = int p.[0]
+                Height   = int p.[1]
+                Fourcc   = uint32 (int64 p.[2])
+                Modifier = uint64 (int64 p.[3])
+                Offset   = uint64 (int64 p.[4])
+                Stride   = uint64 (int64 p.[5])
+                Image    = Unchecked.defaultof<VkImage>
+                Memory   = Unchecked.defaultof<VkDeviceMemory>
+                Size     = 0UL
+            }
+        img, fence
