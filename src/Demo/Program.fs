@@ -1550,8 +1550,9 @@ let main argv =
             // Vulkan imports the Silk-allocated texture IN-PROCESS (same handle value) ...
             let imp = Aardvark.Dom.Remote.SharedTexture.D3D11Export.importD3D11 dev silk.Handle W H
             printfn "[d3d11-consume-fill] imported Silk D3D11 texture into Vulkan; filling TEAL + keyed-mutex acquire(0)/release(0)"
-            // ... and GPU-fills it TEAL with a SINGLE-KEY-0 keyed mutex (acquire 0 / release 0).
-            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillRelease dev imp 0UL 0UL
+            // ... and GPU-fills it solid TEAL (51,102,153,255) with a SINGLE-KEY-0 keyed mutex
+            // (acquire 0 / release 0). BGRA byte order: B=153, G=102, R=51, A=255.
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillReleaseColor dev imp 153uy 102uy 51uy 255uy 0UL 0UL
             printfn "[d3d11-consume-fill] filled + released keyed mutex (key 0); a D3D11 reader can now AcquireSync(0)"
             let handoffPath =
                 let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))

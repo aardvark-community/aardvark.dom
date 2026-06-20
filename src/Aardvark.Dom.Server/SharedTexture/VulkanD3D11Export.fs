@@ -289,6 +289,91 @@ module D3D11Export =
         VkRaw.vkDestroyBuffer(dev, buffer, NativePtr.zero)
         VkRaw.vkFreeMemory(dev, bmem, NativePtr.zero)
 
+    /// Same as importFillRelease but fills the IMPORTED D3D11 texture with a SOLID BGRA color
+    /// (e.g. TEAL = B=153,G=102,R=51,A=255), wrapped in a keyed-mutex acquire(acquireKey) /
+    /// release(releaseKey). Used by the standalone producer de-risk with key 0 / key 0.
+    let importFillReleaseColor (device : Device) (img : ImportedD3D11Image)
+                               (b : byte) (g : byte) (r : byte) (a : byte)
+                               (acquireKey : uint64) (releaseKey : uint64) =
+        let dev = device.Handle
+        let w, h = img.W, img.H
+        let bufSize = uint64 (w * h * 4)
+
+        let mutable bufInfo =
+            VkBufferCreateInfo(VkBufferCreateFlags.None, bufSize, VkBufferUsageFlags.TransferSrcBit,
+                               VkSharingMode.Exclusive, 0u, NativePtr.zero)
+        let mutable buffer = VkBuffer.Null
+        VkRaw.vkCreateBuffer(dev, &&bufInfo, NativePtr.zero, &&buffer) |> check "vkCreateBuffer(impcol)"
+        let mutable breq = VkMemoryRequirements()
+        VkRaw.vkGetBufferMemoryRequirements(dev, buffer, &&breq)
+        let mutable balloc = VkMemoryAllocateInfo(0n, breq.size, hostVisibleType device breq.memoryTypeBits)
+        let mutable bmem = VkDeviceMemory.Null
+        VkRaw.vkAllocateMemory(dev, &&balloc, NativePtr.zero, &&bmem) |> check "vkAllocateMemory(impcol)"
+        VkRaw.vkBindBufferMemory(dev, buffer, bmem, 0UL) |> check "vkBindBufferMemory(impcol)"
+        let mutable ptr = 0n
+        VkRaw.vkMapMemory(dev, bmem, 0UL, bufSize, VkMemoryMapFlags.None, &&ptr) |> check "vkMapMemory(impcol)"
+        for i in 0 .. w * h - 1 do
+            let o = i * 4
+            Marshal.WriteByte(ptr, o + 0, b)
+            Marshal.WriteByte(ptr, o + 1, g)
+            Marshal.WriteByte(ptr, o + 2, r)
+            Marshal.WriteByte(ptr, o + 3, a)
+        VkRaw.vkUnmapMemory(dev, bmem)
+
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        let mutable poolInfo = VkCommandPoolCreateInfo(0n, VkCommandPoolCreateFlags.None, qfi)
+        let mutable pool = Unchecked.defaultof<VkCommandPool>
+        VkRaw.vkCreateCommandPool(dev, &&poolInfo, NativePtr.zero, &&pool) |> check "vkCreateCommandPool(impcol)"
+        let mutable cai = VkCommandBufferAllocateInfo(0n, pool, VkCommandBufferLevel.Primary, 1u)
+        let mutable cmd = Unchecked.defaultof<VkCommandBuffer>
+        VkRaw.vkAllocateCommandBuffers(dev, &&cai, &&cmd) |> check "vkAllocateCommandBuffers(impcol)"
+        let mutable cbi = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&cbi) |> check "vkBeginCommandBuffer(impcol)"
+
+        let range = VkImageSubresourceRange(VkImageAspectFlags.ColorBit, 0u, 1u, 0u, 1u)
+        let mutable b1 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.None, VkAccessFlags.TransferWriteBit,
+                                 VkImageLayout.Undefined, VkImageLayout.TransferDstOptimal,
+                                 0xFFFFFFFFu, 0xFFFFFFFFu, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TopOfPipeBit, VkPipelineStageFlags.TransferBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b1)
+        let subres = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkBufferImageCopy(0UL, 0u, 0u, subres, VkOffset3D(0, 0, 0), VkExtent3D(uint32 w, uint32 h, 1u))
+        VkRaw.vkCmdCopyBufferToImage(cmd, buffer, img.Image, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        let mutable b2 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.TransferWriteBit, VkAccessFlags.None,
+                                 VkImageLayout.TransferDstOptimal, VkImageLayout.General,
+                                 0xFFFFFFFFu, 0xFFFFFFFFu, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TransferBit, VkPipelineStageFlags.BottomOfPipeBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b2)
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer(impcol)"
+
+        let mutable pcmd = cmd
+        let acqMem = [| img.Memory |]
+        let acqKeys = [| acquireKey |]
+        let acqTimeouts = [| 0xFFFFFFFFu |]
+        let relMem = [| img.Memory |]
+        let relKeys = [| releaseKey |]
+        use pAcqMem = fixed acqMem
+        use pAcqKeys = fixed acqKeys
+        use pAcqTimeouts = fixed acqTimeouts
+        use pRelMem = fixed relMem
+        use pRelKeys = fixed relKeys
+        let mutable km =
+            Aardvark.Rendering.Vulkan.Extensions.KHRWin32KeyedMutex.VkWin32KeyedMutexAcquireReleaseInfoKHR(
+                1u, pAcqMem, pAcqKeys, pAcqTimeouts, 1u, pRelMem, pRelKeys)
+        let mutable submit =
+            VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 0u, NativePtr.zero)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit(impcol,km)"
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle(impcol,km)"
+
+        VkRaw.vkDestroyCommandPool(dev, pool, NativePtr.zero)
+        VkRaw.vkDestroyBuffer(dev, buffer, NativePtr.zero)
+        VkRaw.vkFreeMemory(dev, bmem, NativePtr.zero)
+
     let destroy (device : Device) (img : D3D11SharedImage) =
         VkRaw.vkDestroyImage(device.Handle, img.Image, NativePtr.zero)
         VkRaw.vkFreeMemory(device.Handle, img.Memory, NativePtr.zero)

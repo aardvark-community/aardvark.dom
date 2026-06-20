@@ -46,9 +46,12 @@ int main(int argc, char** argv) {
     // &desc.AdapterLuid. (Do NOT strtoull as a big-endian uint64 — that mismatches the byte order.)
     uint8_t wantLuidBytes[8] = {0};
     bool keyedMutex = false;
+    bool teal = false;   // expect a solid TEAL fill (51,102,153,255) instead of the 2-axis gradient
     uint64_t releaseKey = 1;
     for (int i = 2; i < argc; i++) {
-        if (strcmp(argv[i], "--luid") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--teal") == 0) {
+            teal = true;
+        } else if (strcmp(argv[i], "--luid") == 0 && i + 1 < argc) {
             wantLuid = true;
             const char* hx = argv[++i];
             for (int b = 0; b < 8 && hx[b*2] && hx[b*2+1]; b++) {
@@ -177,7 +180,11 @@ int main(int argc, char** argv) {
     for (auto& p : pts) {
         const uint8_t* px = base + (size_t)p.y * pitch + (size_t)p.x * 4;
         int b = px[0], g = px[1], r = px[2], a = px[3];
-        int er = p.x * 255 / (w - 1), eg = p.y * 255 / (h - 1), eb = 128, ea = 255;
+        // TEAL mode expects a solid (51,102,153,255) fill; gradient mode expects R=x,G=y,B=128.
+        int er = teal ? 51  : (p.x * 255 / (w - 1));
+        int eg = teal ? 102 : (p.y * 255 / (h - 1));
+        int eb = teal ? 153 : 128;
+        int ea = 255;
         bool ok = abs(r-er)<=4 && abs(g-eg)<=4 && abs(b-eb)<=4 && abs(a-ea)<=4;
         if (!ok) allok = false;
         printf("[d3d11-recv] (%3d,%3d) got=(%3d,%3d,%3d,%3d) exp=(%3d,%3d,%3d,%3d) %s\n",
