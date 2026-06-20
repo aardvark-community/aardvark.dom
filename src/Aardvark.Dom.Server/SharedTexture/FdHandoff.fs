@@ -44,30 +44,40 @@ module FdHandoff =
         Array.blit pb 0 buf 2 pb.Length
         buf, 2 + pb.Length + 1
 
-    let private payloadOf (img : DmaBufImage) =
-        sprintf "%d %d %d %d %d %d" img.Width img.Height
+    // payload gains a 7th field `hasFence` (0/1). When 1, a SECOND SCM_RIGHTS fd
+    // follows the dma-buf fd: an exported sync_fd semaphore the consumer must wait
+    // on before sampling (carries cross-instance memory-availability on NVIDIA).
+    let private payloadOf (img : DmaBufImage) (hasFence : bool) =
+        sprintf "%d %d %d %d %d %d %d" img.Width img.Height
             (int64 img.Fourcc) (int64 img.Modifier) (int64 img.Offset) (int64 img.Stride)
+            (if hasFence then 1 else 0)
         |> Encoding.ASCII.GetBytes
 
-    /// Client: connect to `sockPath` and send the dma-buf fd + layout.
-    let sendFd (sockPath : string) (img : DmaBufImage) =
+    /// Client: connect to `sockPath` and send the dma-buf fd + layout, plus an
+    /// optional acquire sync_fd (`fenceFd >= 0`) as a second SCM_RIGHTS fd.
+    let sendFd (sockPath : string) (img : DmaBufImage) (fenceFd : int) =
         let s = socket(AF_UNIX, SOCK_STREAM, 0)
         if s < 0 then failwithf "[FdHandoff] socket failed (errno %d)" (errno())
         let addr, alen = sockaddr sockPath
         if connect(s, addr, alen) < 0 then failwithf "[FdHandoff] connect failed (errno %d)" (errno())
 
-        let payload = payloadOf img
+        let hasFence = fenceFd >= 0
+        let payload = payloadOf img hasFence
         let pPayload = Marshal.AllocHGlobal payload.Length
         Marshal.Copy(payload, 0, pPayload, payload.Length)
         let pIov = Marshal.AllocHGlobal 16
         Marshal.WriteIntPtr(pIov, 0, pPayload)
         Marshal.WriteInt64(pIov, 8, int64 payload.Length)
 
+        // 1 fd -> cmsg_len 20; 2 fds -> cmsg_len 24 (both fit in CMSG_SPACE=24).
+        let nfds = if hasFence then 2 else 1
+        let cmsgLen = int64 (16 + 4 * nfds)
         let pControl = Marshal.AllocHGlobal CMSG_SPACE
-        Marshal.WriteInt64(pControl, 0, CMSG_LEN)
+        Marshal.WriteInt64(pControl, 0, cmsgLen)
         Marshal.WriteInt32(pControl, 8, SOL_SOCKET)
         Marshal.WriteInt32(pControl, 12, SCM_RIGHTS)
         Marshal.WriteInt32(pControl, 16, img.Fd)
+        if hasFence then Marshal.WriteInt32(pControl, 20, fenceFd)
 
         let pMsg = Marshal.AllocHGlobal 56
         for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
@@ -123,6 +133,12 @@ module FdHandoff =
         let bytes = Array.zeroCreate<byte> len
         Marshal.Copy(pPayload, bytes, 0, len)
         let p = (Encoding.ASCII.GetString bytes).Trim().Split(' ')
+
+        // a second SCM_RIGHTS fd (the acquire sync_fd) may follow — this self-test
+        // consumer doesn't need it, so just close it to avoid leaking the fd.
+        if p.Length > 6 && p.[6] = "1" then
+            let fenceFd = Marshal.ReadInt32(pControl, 20)
+            if fenceFd >= 0 then close fenceFd |> ignore
 
         Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
         Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload

@@ -987,10 +987,10 @@ let main argv =
             let dev = vk.Device
             let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
             let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
-            printfn "[dmabuf-send] sending dma-buf fd=%d (pid=%d) over /tmp/dmabuf.sock"
-                dst.Fd (System.Diagnostics.Process.GetCurrentProcess().Id)
-            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst
+            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            printfn "[dmabuf-send] sending dma-buf fd=%d fence=%d (pid=%d) over /tmp/dmabuf.sock"
+                dst.Fd fenceFd (System.Diagnostics.Process.GetCurrentProcess().Id)
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst fenceFd
             System.Threading.Thread.Sleep 500 // let the consumer recvmsg before we free
             Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
