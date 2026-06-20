@@ -33,6 +33,21 @@ module Shader =
             return { vp = vp.XYZ }
         }
     
+/// Gradient fidelity check for the OPAQUE_FD tiling test: expects R=x-ramp, G=y-ramp, B=128
+/// (what OpaqueFd.fillGradient wrote) at 9 spread-out points. A scrambled OPTIMAL tiling fails.
+module OpaqueGrad =
+    let check (tag : string) (buf : byte[]) (w : int) (h : int) : bool =
+        let pts = [ (0,0); (w-1,0); (0,h-1); (w-1,h-1); (w/4,h/4); (3*w/4,h/4); (w/4,3*h/4); (3*w/4,3*h/4); (w/2,h/2) ]
+        let mutable allok = true
+        for (x, y) in pts do
+            let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.pixelAt buf w x y
+            let er, eg, eb, ea = x * 255 / (w - 1), y * 255 / (h - 1), 128, 255
+            let ok = abs (r-er) <= 4 && abs (g-eg) <= 4 && abs (b-eb) <= 4 && abs (a-ea) <= 4
+            if not ok then allok <- false
+            printfn "[%s] (%d,%d) got=(%d,%d,%d,%d) exp=(%d,%d,%d,%d) %s" tag x y r g b a er eg eb ea (if ok then "ok" else "BAD")
+        printfn "[%s] gradient fidelity: %s" tag (if allok then "PASS — tiling preserved" else "FAIL — scrambled")
+        allok
+
 let testApp (_runtime : IRuntime) =
     let content = cval 0
     let text = cval ""
@@ -1004,17 +1019,9 @@ let main argv =
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
-            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
-            let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
-                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u; Modifier = 0UL
-                  Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
-            let got = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev opaque
-            let exp = (51, 102, 153, 255)
-            let cl (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
-            let ok = cl got exp
-            printfn "[opaquefd-selftest] SAME-INSTANCE center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.fillGradient dev opaque
+            let buf = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readAllLocal dev opaque
+            let ok = OpaqueGrad.check "opaquefd-selftest SAME-INSTANCE" buf 256 256
             Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
             exit (if ok then 0 else 1)
         | r -> eprintfn "[opaquefd-selftest] runtime is not Vulkan: %A" (r.GetType()); exit 2
@@ -1027,15 +1034,13 @@ let main argv =
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
-            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.fillGradient dev opaque
             let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
                 { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u; Modifier = 0UL
                   Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
-            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
-            printfn "[opaquefd-send] sending memfd=%d fence=%d 256x256 size=%d" opaque.MemFd fenceFd opaque.Size
-            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/opaque.sock" dst fenceFd
+            printfn "[opaquefd-send] sending GRADIENT memfd=%d 256x256 size=%d" opaque.MemFd opaque.Size
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/opaque.sock" dst -1
             System.Threading.Thread.Sleep 1000
-            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
             exit 0
         | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
@@ -1052,11 +1057,8 @@ let main argv =
             let useGeneral = not (Array.contains "undef-layout" argv)
             printfn "[opaquefd-recv-vk] received memfd=%d sync=%d %dx%d useSem=%b generalLayout=%b"
                 img.Fd syncFd img.Width img.Height useSem useGeneral
-            let got = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importAndRead dev img.Fd syncFd img.Width img.Height useSem useGeneral
-            let exp = (51, 102, 153, 255)
-            let cl (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
-            let ok = cl got exp
-            printfn "[opaquefd-recv-vk] center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+            let buf = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importAndReadAll dev img.Fd syncFd img.Width img.Height useSem useGeneral
+            let ok = OpaqueGrad.check "opaquefd-recv-vk CROSS-INSTANCE" buf img.Width img.Height
             exit (if ok then 0 else 1)
         | r -> eprintfn "[opaquefd-recv-vk] runtime is not Vulkan: %A" (r.GetType()); exit 2
 

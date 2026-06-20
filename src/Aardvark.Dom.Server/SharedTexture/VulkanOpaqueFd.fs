@@ -72,11 +72,11 @@ module OpaqueFd =
         image
 
     /// Acquire `image` (oldLayout, from queue family `srcQF` to `dstQF`), optionally waiting
-    /// `sem`, copy it to a host buffer and return the centre pixel (R,G,B,A). Shared by the
+    /// `sem`, copy it to a host buffer and return the FULL BGRA bytes. Shared by the
     /// cross-instance consumer and the producer's same-instance control readback.
-    let private copyCenterToHost (device : Device) (image : VkImage) (w : int) (h : int)
-                                 (srcQF : uint32) (dstQF : uint32) (oldLayout : VkImageLayout)
-                                 (sem : VkSemaphore) (wait : bool) : int * int * int * int =
+    let private copyToHost (device : Device) (image : VkImage) (w : int) (h : int)
+                           (srcQF : uint32) (dstQF : uint32) (oldLayout : VkImageLayout)
+                           (sem : VkSemaphore) (wait : bool) : byte[] =
         let dev = device.Handle
         let bufSize = uint64 (w * h * 4)
         let mutable bufInfo =
@@ -129,13 +129,15 @@ module OpaqueFd =
 
         let mutable ptr = 0n
         VkRaw.vkMapMemory(dev, bmem, 0UL, bufSize, VkMemoryMapFlags.None, &&ptr) |> check "vkMapMemory"
-        let off = ((h / 2) * w + (w / 2)) * 4
-        let b = int (Marshal.ReadByte(ptr, off + 0))
-        let g = int (Marshal.ReadByte(ptr, off + 1))
-        let r = int (Marshal.ReadByte(ptr, off + 2))
-        let a = int (Marshal.ReadByte(ptr, off + 3))
+        let buf = Array.zeroCreate<byte> (int bufSize)
+        Marshal.Copy(ptr, buf, 0, int bufSize)
         VkRaw.vkUnmapMemory(dev, bmem)
-        (r, g, b, a)
+        buf
+
+    /// extract pixel (x,y) as (R,G,B,A) from a BGRA buffer.
+    let pixelAt (buf : byte[]) (w : int) (x : int) (y : int) : int * int * int * int =
+        let o = (y * w + x) * 4
+        (int buf.[o + 2], int buf.[o + 1], int buf.[o + 0], int buf.[o + 3])
 
     /// PRODUCER: create an OPTIMAL device-local image exported as OPAQUE_FD.
     let create (device : Device) (w : int) (h : int) : OpaqueImage =
@@ -164,16 +166,93 @@ module OpaqueFd =
     /// image. If this is correct but the cross-instance consumer is zero, the zero is a REAL
     /// cross-instance result; if this is also zero, the fill/usage/readback path has a bug.
     let readCenterLocal (device : Device) (img : OpaqueImage) : int * int * int * int =
-        copyCenterToHost device img.Image img.Width img.Height
-                         QUEUE_FAMILY_IGNORED QUEUE_FAMILY_IGNORED VkImageLayout.General
-                         Unchecked.defaultof<VkSemaphore> false
+        let buf =
+            copyToHost device img.Image img.Width img.Height
+                       QUEUE_FAMILY_IGNORED QUEUE_FAMILY_IGNORED VkImageLayout.General
+                       Unchecked.defaultof<VkSemaphore> false
+        pixelAt buf img.Width (img.Width / 2) (img.Height / 2)
+
+    /// Same-instance full readback (for the producer-side gradient fidelity control).
+    let readAllLocal (device : Device) (img : OpaqueImage) : byte[] =
+        copyToHost device img.Image img.Width img.Height
+                   QUEUE_FAMILY_IGNORED QUEUE_FAMILY_IGNORED VkImageLayout.General
+                   Unchecked.defaultof<VkSemaphore> false
+
+    /// PRODUCER fill: CPU-write a 2-axis gradient (R=x-ramp, G=y-ramp, B=128) into a staging
+    /// buffer and copy it into the OPAQUE export image, leaving it GENERAL + released to
+    /// EXTERNAL (matches the consumer's acquire). A solid colour can't reveal a scrambled
+    /// tiling; this gradient can.
+    let fillGradient (device : Device) (img : OpaqueImage) =
+        let dev = device.Handle
+        let w, h = img.Width, img.Height
+        let bufSize = uint64 (w * h * 4)
+        let mutable bufInfo =
+            VkBufferCreateInfo(VkBufferCreateFlags.None, bufSize, VkBufferUsageFlags.TransferSrcBit,
+                               VkSharingMode.Exclusive, 0u, NativePtr.zero)
+        let mutable buffer = VkBuffer.Null
+        VkRaw.vkCreateBuffer(dev, &&bufInfo, NativePtr.zero, &&buffer) |> check "vkCreateBuffer(grad)"
+        let mutable breq = VkMemoryRequirements()
+        VkRaw.vkGetBufferMemoryRequirements(dev, buffer, &&breq)
+        let mutable balloc = VkMemoryAllocateInfo(0n, breq.size, hostVisibleType device breq.memoryTypeBits)
+        let mutable bmem = VkDeviceMemory.Null
+        VkRaw.vkAllocateMemory(dev, &&balloc, NativePtr.zero, &&bmem) |> check "vkAllocateMemory(grad)"
+        VkRaw.vkBindBufferMemory(dev, buffer, bmem, 0UL) |> check "vkBindBufferMemory(grad)"
+
+        let mutable ptr = 0n
+        VkRaw.vkMapMemory(dev, bmem, 0UL, bufSize, VkMemoryMapFlags.None, &&ptr) |> check "vkMapMemory(grad)"
+        for y in 0 .. h - 1 do
+            for x in 0 .. w - 1 do
+                let o = (y * w + x) * 4
+                Marshal.WriteByte(ptr, o + 0, 128uy)                          // B
+                Marshal.WriteByte(ptr, o + 1, byte (y * 255 / (h - 1)))       // G
+                Marshal.WriteByte(ptr, o + 2, byte (x * 255 / (w - 1)))       // R
+                Marshal.WriteByte(ptr, o + 3, 255uy)                          // A
+        VkRaw.vkUnmapMemory(dev, bmem)
+
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        let mutable poolInfo = VkCommandPoolCreateInfo(0n, VkCommandPoolCreateFlags.None, qfi)
+        let mutable pool = Unchecked.defaultof<VkCommandPool>
+        VkRaw.vkCreateCommandPool(dev, &&poolInfo, NativePtr.zero, &&pool) |> check "vkCreateCommandPool(grad)"
+        let mutable cai = VkCommandBufferAllocateInfo(0n, pool, VkCommandBufferLevel.Primary, 1u)
+        let mutable cmd = Unchecked.defaultof<VkCommandBuffer>
+        VkRaw.vkAllocateCommandBuffers(dev, &&cai, &&cmd) |> check "vkAllocateCommandBuffers(grad)"
+        let mutable cbi = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&cbi) |> check "vkBeginCommandBuffer(grad)"
+
+        let range = VkImageSubresourceRange(VkImageAspectFlags.ColorBit, 0u, 1u, 0u, 1u)
+        let mutable b1 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.None, VkAccessFlags.TransferWriteBit,
+                                 VkImageLayout.Undefined, VkImageLayout.TransferDstOptimal,
+                                 QUEUE_FAMILY_IGNORED, QUEUE_FAMILY_IGNORED, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TopOfPipeBit, VkPipelineStageFlags.TransferBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b1)
+        let subres = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkBufferImageCopy(0UL, 0u, 0u, subres, VkOffset3D(0, 0, 0), VkExtent3D(uint32 w, uint32 h, 1u))
+        VkRaw.vkCmdCopyBufferToImage(cmd, buffer, img.Image, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        let mutable b2 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.TransferWriteBit, VkAccessFlags.None,
+                                 VkImageLayout.TransferDstOptimal, VkImageLayout.General,
+                                 qfi, QUEUE_FAMILY_EXTERNAL, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TransferBit, VkPipelineStageFlags.BottomOfPipeBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b2)
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer(grad)"
+        let mutable pcmd = cmd
+        let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 0u, NativePtr.zero)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit(grad)"
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle(grad)"
+        VkRaw.vkDestroyCommandPool(dev, pool, NativePtr.zero)
+        VkRaw.vkDestroyBuffer(dev, buffer, NativePtr.zero)
+        VkRaw.vkFreeMemory(dev, bmem, NativePtr.zero)
 
     /// CONSUMER (separate VkInstance): import the OPAQUE_FD memory into a byte-identical image,
     /// acquire from VK_QUEUE_FAMILY_EXTERNAL (optionally waiting the producer's sync_fd), copy
     /// to host and return the centre pixel. `useSemaphore` toggles the acquire-semaphore wait;
     /// `useGeneralLayout` toggles the acquire oldLayout (GENERAL preserves, UNDEFINED discards).
-    let importAndRead (device : Device) (memFd : int) (syncFd : int) (w : int) (h : int)
-                      (useSemaphore : bool) (useGeneralLayout : bool) : int * int * int * int =
+    let private importImage (device : Device) (memFd : int) (syncFd : int) (w : int) (h : int)
+                            (useSemaphore : bool) : VkImage * VkSemaphore * bool =
         let dev = device.Handle
         let image = makeImage device w h
         let mutable req = VkMemoryRequirements()
@@ -200,7 +279,21 @@ module OpaqueFd =
                     sem, VkSemaphoreImportFlags.TemporaryBit,
                     VkExternalSemaphoreHandleTypeFlags.SyncFdBit, syncFd)
             KHRExternalSemaphoreFd.VkRaw.vkImportSemaphoreFdKHR(dev, &&imp) |> check "vkImportSemaphoreFdKHR"
+        (image, sem, wait)
 
+    let importAndRead (device : Device) (memFd : int) (syncFd : int) (w : int) (h : int)
+                      (useSemaphore : bool) (useGeneralLayout : bool) : int * int * int * int =
+        let (image, sem, wait) = importImage device memFd syncFd w h useSemaphore
         let oldLayout = if useGeneralLayout then VkImageLayout.General else VkImageLayout.Undefined
-        copyCenterToHost device image w h QUEUE_FAMILY_EXTERNAL (uint32 device.GraphicsFamily.Index)
-                         oldLayout sem wait
+        let buf =
+            copyToHost device image w h QUEUE_FAMILY_EXTERNAL (uint32 device.GraphicsFamily.Index)
+                       oldLayout sem wait
+        pixelAt buf w (w / 2) (h / 2)
+
+    /// Cross-instance full readback (for the gradient tiling-fidelity check).
+    let importAndReadAll (device : Device) (memFd : int) (syncFd : int) (w : int) (h : int)
+                         (useSemaphore : bool) (useGeneralLayout : bool) : byte[] =
+        let (image, sem, wait) = importImage device memFd syncFd w h useSemaphore
+        let oldLayout = if useGeneralLayout then VkImageLayout.General else VkImageLayout.Undefined
+        copyToHost device image w h QUEUE_FAMILY_EXTERNAL (uint32 device.GraphicsFamily.Index)
+                   oldLayout sem wait
