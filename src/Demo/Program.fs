@@ -1505,6 +1505,69 @@ let main argv =
             exit 0
         )
 
+    // ---- STANDALONE PRODUCER de-risk: Silk.NET mints a shared D3D11 keyed-mutex texture IN
+    // THIS process (no separate C++ allocator), Vulkan imports it in-process and GPU-fills it
+    // TEAL with a SINGLE-KEY-0 keyed mutex (acquire 0 / release 0 — NOT 0/1), then writes the
+    // handoff and stays alive so a separate D3D11 reader (AcquireSync(0)) can read teal back.
+    // This proves the entire Windows producer end before the Chromium painter milestone.
+    // Both the Silk D3D11 device and the Vulkan device live on the SAME adapter (LUID match,
+    // pinned via --gpu NVIDIA). Requires VK_KHR_win32_keyed_mutex. ----
+    if Array.contains "d3d11-consume-fill" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                Seq.singleton "VK_KHR_win32_keyed_mutex")
+        let rt : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-consume-fill] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let dev = rt.Device
+            let (luidValid, _luid, vkLuidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-consume-fill] VULKAN device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor vkLuidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let W, H = 256, 256
+            // Silk.NET allocates the shared keyed-mutex D3D11 texture on the SAME adapter as the
+            // Vulkan device (selected by the Vulkan deviceLUID).
+            let silk = Aardvark.Dom.Remote.SharedTexture.SilkD3D11Alloc.alloc vkLuidHex W H
+            printfn "[d3d11-consume-fill] SILK D3D11 adapter LUID=%s  handle=0x%X" silk.LuidHex (int64 silk.Handle)
+            // ASSERT the LUIDs match (both should be the pinned 4070).
+            if silk.LuidHex.ToUpperInvariant() <> vkLuidHex.ToUpperInvariant() then
+                eprintfn "[d3d11-consume-fill] LUID MISMATCH vk=%s silk=%s" vkLuidHex silk.LuidHex
+                exit 4
+            printfn "[d3d11-consume-fill] LUID MATCH OK: %s (Vulkan == Silk D3D11)" vkLuidHex
+            // Vulkan imports the Silk-allocated texture IN-PROCESS (same handle value) ...
+            let imp = Aardvark.Dom.Remote.SharedTexture.D3D11Export.importD3D11 dev silk.Handle W H
+            printfn "[d3d11-consume-fill] imported Silk D3D11 texture into Vulkan; filling TEAL + keyed-mutex acquire(0)/release(0)"
+            // ... and GPU-fills it TEAL with a SINGLE-KEY-0 keyed mutex (acquire 0 / release 0).
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillRelease dev imp 0UL 0UL
+            printfn "[d3d11-consume-fill] filled + released keyed mutex (key 0); a D3D11 reader can now AcquireSync(0)"
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11-consume.txt")
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath silk.Handle W H
+            printfn "[d3d11-consume-fill] HANDOFF -> %s  handle=0x%X pid=%d %dx%d"
+                handoffPath (int64 silk.Handle) (System.Diagnostics.Process.GetCurrentProcess().Id) W H
+            // stay alive so the C++ reader can DuplicateHandle + AcquireSync(0) + read.
+            printfn "[d3d11-consume-fill] staying alive 30s for the D3D11 reader ..."
+            System.Threading.Thread.Sleep 30000
+            printfn "[d3d11-consume-fill] done"
+            exit 0
+        )
+
     // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
     // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
     // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
