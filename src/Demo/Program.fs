@@ -758,6 +758,7 @@ open FSharp.Data.Adaptive
 open FSharp.Data.Traceable
 open FSharp.Core.CompilerServices
 open System.Runtime.CompilerServices
+open Microsoft.FSharp.NativeInterop
 
 [<AbstractClass; Sealed; Extension>]
 type ReaderExtensions private() = 
@@ -1164,6 +1165,37 @@ let main argv =
             let mutable ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
             let mutable cube = CubeRender.create vk W H
             let conn = ST.streamConnect "/tmp/dmabuf.sock"
+
+            // Persistent per-slot copy resources (allocated ONCE; no per-frame pool/semaphore
+            // churn, no waitIdle). Each ring slot has a reusable command buffer, an exportable
+            // signal semaphore (sync_fd → consumer's acquire), and a VkFence (CPU completion).
+            let devH = dev.Handle
+            let qfi = uint32 dev.GraphicsFamily.Index
+            let mutable poolInfo =
+                Aardvark.Rendering.Vulkan.VkCommandPoolCreateInfo(
+                    0n, Aardvark.Rendering.Vulkan.VkCommandPoolCreateFlags.ResetCommandBufferBit, qfi)
+            let mutable pool = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkCommandPool>
+            Aardvark.Rendering.Vulkan.VkRaw.vkCreateCommandPool(devH, &&poolInfo, NativePtr.zero, &&pool) |> ignore
+            let cmds =
+                Array.init 3 (fun _ ->
+                    let mutable ai = Aardvark.Rendering.Vulkan.VkCommandBufferAllocateInfo(0n, pool, Aardvark.Rendering.Vulkan.VkCommandBufferLevel.Primary, 1u)
+                    let mutable c = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkCommandBuffer>
+                    Aardvark.Rendering.Vulkan.VkRaw.vkAllocateCommandBuffers(devH, &&ai, &&c) |> ignore
+                    c)
+            let sems = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.DmaBufSync.createExportableSemaphore dev)
+            let fences =
+                Array.init 3 (fun _ ->
+                    let mutable fi = Aardvark.Rendering.Vulkan.VkFenceCreateInfo(Aardvark.Rendering.Vulkan.VkFenceCreateFlags.SignaledBit)
+                    let mutable f = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkFence>
+                    Aardvark.Rendering.Vulkan.VkRaw.vkCreateFence(devH, &&fi, NativePtr.zero, &&f) |> ignore
+                    f)
+            let waitFence (f : Aardvark.Rendering.Vulkan.VkFence) =
+                let mutable ff = f
+                Aardvark.Rendering.Vulkan.VkRaw.vkWaitForFences(devH, 1u, &&ff, 1u, System.UInt64.MaxValue) |> ignore
+            let resetFence (f : Aardvark.Rendering.Vulkan.VkFence) =
+                let mutable ff = f
+                Aardvark.Rendering.Vulkan.VkRaw.vkResetFences(devH, 1u, &&ff) |> ignore
+
             let sendHello () =
                 ST.streamHello conn (sprintf "STREAM %d %d 3 %d" W H gen) (ring |> Array.map (fun o -> o.MemFd))
                 printfn "[opaquefd-stream] HELLO gen=%d (3 OPAQUE_FD ring buffers %dx%d)" gen W H
@@ -1192,29 +1224,40 @@ let main argv =
                     result
             let mutable frame = 0
             let mutable running = true
+            let fpsTimer = System.Diagnostics.Stopwatch.StartNew()
+            let mutable fpsCount = 0
             while running do
                 match pollResize () with
                 | Some (nw, nh) when (nw, nh) <> (W, H) -> reallocate nw nh
                 | _ -> ()
                 let i = frame % 3
-                let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
-                    { Fd = ring.[i].MemFd; Width = W; Height = H; Fourcc = 0u
-                      Modifier = 0xFFFFFFFFFFFFFFFEUL; Offset = 0UL; Stride = 0UL
-                      Image = ring.[i].Image; Memory = ring.[i].Memory; Size = ring.[i].Size }
-                // Render the rotating cube offscreen, then copy its colour image into this
-                // ring buffer. renderCopyExternal waits the render, copies (BGRA->BGRA, no
-                // swizzle), releases dst to EXTERNAL, restores the source layout, and
-                // returns an acquire sync_fd the consumer waits to re-acquire fresh content.
+                let p = (frame + 2) % 3
+                // Shared cube FBO: the PREVIOUS frame's copy READS it, so it must finish before
+                // we re-render into it; also wait this slot's own last copy (3 frames ago) so its
+                // command buffer / semaphore / ring image are free to reuse. NO device-wide waitIdle.
+                if frame > 0 then waitFence fences.[p]
+                waitFence fences.[i]
+                resetFence fences.[i]
                 let tex = CubeRender.render cube frame
                 let cimg = unbox<Aardvark.Rendering.Vulkan.Image> tex
-                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.renderCopyExternal dev cimg.Handle cimg.Layout dst
+                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.recordCopyInto dev cmds.[i] cimg.Handle cimg.Layout ring.[i].Image W H sems.[i] fences.[i]
+                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufSync.exportSyncFd dev sems.[i]
+                // streamFrameFd blocks when the consumer's socket buffer fills → natural backpressure
+                // pacing the producer to the consumer's consumption rate.
                 if not (ST.streamFrameFd conn (sprintf "F %d %d\n" i gen) fenceFd) then
                     running <- false
                 ST.closeFd fenceFd
-                System.Threading.Thread.Sleep 16
+                fpsCount <- fpsCount + 1
+                if fpsTimer.Elapsed.TotalSeconds >= 1.0 then
+                    printfn "[opaquefd-stream] %d fps (gen=%d %dx%d)" fpsCount gen W H
+                    fpsCount <- 0; fpsTimer.Restart()
                 frame <- frame + 1
             printfn "[opaquefd-stream] streamed %d frames; closing" frame
+            Aardvark.Rendering.Vulkan.VkRaw.vkDeviceWaitIdle devH |> ignore
             ST.streamClose conn
+            fences |> Array.iter (fun f -> Aardvark.Rendering.Vulkan.VkRaw.vkDestroyFence(devH, f, NativePtr.zero))
+            sems |> Array.iter (Aardvark.Dom.Remote.SharedTexture.DmaBufSync.destroySemaphore dev)
+            Aardvark.Rendering.Vulkan.VkRaw.vkDestroyCommandPool(devH, pool, NativePtr.zero)
             ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
             exit 0
         | r -> eprintfn "[opaquefd-stream] runtime is not Vulkan: %A" (r.GetType()); exit 2

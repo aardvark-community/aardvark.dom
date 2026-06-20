@@ -206,6 +206,49 @@ module DmaBufGpu =
         VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit"
         struct (queue, pool)
 
+    /// Low-latency variant: record the `src`(srcLayout) -> `dst` copy into a CALLER-OWNED
+    /// (persistent, reset-capable) command buffer and submit, signaling `signalSem` (GPU,
+    /// for the consumer's acquire) and `fence` (CPU, so the caller knows when the copy is
+    /// done and the slot/FBO can be reused). NO pool creation, NO waitIdle — the producer
+    /// pipelines across a ring of these. The cube render (`GetValue`) is synchronous so its
+    /// output is ready; the caller must ensure the PREVIOUS copy out of the shared FBO has
+    /// completed (wait its fence) before re-rendering into the FBO.
+    let recordCopyInto (device : Device) (cmd : VkCommandBuffer) (src : VkImage) (srcLayout : VkImageLayout)
+                       (dstImage : VkImage) (dstW : int) (dstH : int)
+                       (signalSem : VkSemaphore) (fence : VkFence) =
+        let dev = device.Handle
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        VkRaw.vkResetCommandBuffer(cmd, VkCommandBufferResetFlags.None) |> ignore
+        let mutable beginInfo = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&beginInfo) |> check "vkBeginCommandBuffer"
+
+        barrier cmd src VkAccessFlags.MemoryWriteBit VkAccessFlags.TransferReadBit
+                srcLayout VkImageLayout.TransferSrcOptimal
+                VkPipelineStageFlags.AllCommandsBit VkPipelineStageFlags.TransferBit
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkImageCopy(layers, VkOffset3D(0, 0, 0), layers, VkOffset3D(0, 0, 0),
+                        VkExtent3D(uint32 dstW, uint32 dstH, 1u))
+        VkRaw.vkCmdCopyImage(cmd, src, VkImageLayout.TransferSrcOptimal,
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
+                VkImageLayout.TransferSrcOptimal srcLayout
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.AllCommandsBit
+        barrierReleaseExternal cmd dstImage VkAccessFlags.TransferWriteBit
+                               VkImageLayout.TransferDstOptimal VkImageLayout.General
+                               VkPipelineStageFlags.TransferBit qfi
+
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer"
+        let mutable psem = signalSem
+        let mutable pcmd = cmd
+        let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit"
+
     /// Copy an already-rendered source image (currently in `srcLayout`) into the
     /// OPAQUE/dma-buf `dst`, releasing dst to EXTERNAL. Returns a sync_fd fence;
     /// restores the source layout so Aardvark can keep rendering into it.
