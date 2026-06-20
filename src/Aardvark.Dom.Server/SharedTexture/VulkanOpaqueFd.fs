@@ -297,3 +297,45 @@ module OpaqueFd =
         let oldLayout = if useGeneralLayout then VkImageLayout.General else VkImageLayout.Undefined
         copyToHost device image w h QUEUE_FAMILY_EXTERNAL (uint32 device.GraphicsFamily.Index)
                    oldLayout sem wait
+
+    /// A cross-instance imported OPAQUE_FD image kept alive for REPEATED re-acquire reads.
+    type ImportedImage = { Image : VkImage; Memory : VkDeviceMemory; W : int; H : int }
+
+    /// CONSUMER: import the OPAQUE_FD memory ONCE into a byte-identical image and keep it.
+    let importOnce (device : Device) (memFd : int) (w : int) (h : int) : ImportedImage =
+        let dev = device.Handle
+        let image = makeImage device w h
+        let mutable req = VkMemoryRequirements()
+        VkRaw.vkGetImageMemoryRequirements(dev, image, &&req)
+        let memType = deviceLocalType device req.memoryTypeBits
+        let mutable dedicated = VkMemoryDedicatedAllocateInfo(image, VkBuffer.Null)
+        let mutable importInfo = KHRExternalMemoryFd.VkImportMemoryFdInfoKHR(OpaqueFdMem, memFd)
+        importInfo.pNext <- NativePtr.toNativeInt &&dedicated
+        let mutable alloc = VkMemoryAllocateInfo(NativePtr.toNativeInt &&importInfo, req.size, memType)
+        let mutable memory = VkDeviceMemory.Null
+        VkRaw.vkAllocateMemory(dev, &&alloc, NativePtr.zero, &&memory) |> check "vkAllocateMemory(importOnce)"
+        VkRaw.vkBindImageMemory(dev, image, memory, 0UL) |> check "vkBindImageMemory(importOnce)"
+        { Image = image; Memory = memory; W = w; H = h }
+
+    /// CONSUMER per-iteration (the crux of the repeated-in-place-write test): RE-acquire the
+    /// already-imported `img` from VK_QUEUE_FAMILY_EXTERNAL (oldLayout GENERAL — what the
+    /// producer re-released each iteration), optionally waiting a FRESH per-frame sync_fd,
+    /// copy out and return the centre pixel. Re-runs the queue-family acquire (availability
+    /// op) EVERY call — that is precisely what should surface the producer's newest write.
+    let readCenterCross (device : Device) (img : ImportedImage) (syncFd : int) (useSemaphore : bool) : int * int * int * int =
+        let dev = device.Handle
+        let mutable sem = Unchecked.defaultof<VkSemaphore>
+        let wait = useSemaphore && syncFd >= 0
+        if wait then
+            let mutable sinfo = VkSemaphoreCreateInfo(VkSemaphoreCreateFlags.None)
+            VkRaw.vkCreateSemaphore(dev, &&sinfo, NativePtr.zero, &&sem) |> check "vkCreateSemaphore(rd)"
+            let mutable imp =
+                KHRExternalSemaphoreFd.VkImportSemaphoreFdInfoKHR(
+                    sem, VkSemaphoreImportFlags.TemporaryBit,
+                    VkExternalSemaphoreHandleTypeFlags.SyncFdBit, syncFd)
+            KHRExternalSemaphoreFd.VkRaw.vkImportSemaphoreFdKHR(dev, &&imp) |> check "vkImportSemaphoreFdKHR(rd)"
+        let buf =
+            copyToHost device img.Image img.W img.H QUEUE_FAMILY_EXTERNAL (uint32 device.GraphicsFamily.Index)
+                       VkImageLayout.General sem wait
+        if wait then VkRaw.vkDestroySemaphore(dev, sem, NativePtr.zero)
+        pixelAt buf img.W (img.W / 2) (img.H / 2)

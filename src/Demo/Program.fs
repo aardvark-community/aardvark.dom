@@ -946,10 +946,63 @@ let main argv =
     // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
     // with it enabled for the dma-buf hooks.
     let dmaBufRuntime =
-        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream" ] |> List.exists (fun h -> Array.contains h argv) then
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
             let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
             (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
         else app.Runtime
+
+    // REPEATED-IN-PLACE cross-instance write test (standalone, no Chromium): does NVIDIA
+    // surface REPEATED writes to ONE OPAQUE_FD buffer the consumer imported ONCE, when the
+    // consumer re-acquires from EXTERNAL (+ optional fence) every iteration? Isolates the
+    // question from Chromium viz caching. Producer rewrites one buffer with distinct colors.
+    if Array.contains "opaque-rewrite-send" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamConnect "/tmp/opqrw.sock"
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamHello conn (sprintf "%d %d %d" W H opaque.Size) [| opaque.MemFd |]
+            printfn "[rw-send] HELLO memfd=%d %dx%d size=%d" opaque.MemFd W H opaque.Size
+            for k in 0 .. 30 do
+                let r = (k * 37) % 256
+                let g = (k * 53) % 256
+                let col = V4f(float32 r / 255.0f, float32 g / 255.0f, 0.5f, 1.0f)
+                let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                    { Fd = -1; Width = W; Height = H; Fourcc = 0u; Modifier = 0UL; Offset = 0UL; Stride = 0UL
+                      Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
+                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col
+                printfn "[rw-send] k=%d wrote expect~(%d,%d,128) fence=%d" k r g fenceFd
+                Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrameFd conn (sprintf "F %d\n" k) fenceFd |> ignore
+                System.Threading.Thread.Sleep 120
+            let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev opaque
+            printfn "[rw-send] FINAL producer same-instance center=(%d,%d,%d,%d) (= last color)" pr pg pb pa
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrame conn "BYE\n" |> ignore
+            exit 0
+        | r -> eprintfn "[rw-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    if Array.contains "opaque-rewrite-recv" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let useSem = not (Array.contains "nosem" argv)
+            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamServerAccept "/tmp/opqrw.sock"
+            let (hello, memFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamRecv conn
+            let parts = hello.Trim().Split(' ')
+            let W, H = int parts.[0], int parts.[1]
+            printfn "[rw-recv] HELLO memfd=%d %dx%d useSem=%b" memFd W H useSem
+            let imp = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importOnce dev memFd W H
+            let mutable go = true
+            while go do
+                let (msg, fenceFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamRecv conn
+                if msg = "" || msg.StartsWith "BYE" then go <- false
+                else
+                    let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterCross dev imp fenceFd useSem
+                    printfn "[rw-recv] %-7s CONSUMER center=(%d,%d,%d,%d)" (msg.Trim()) r g b a
+            printfn "[rw-recv] done"
+            exit 0
+        | r -> eprintfn "[rw-recv] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
     // Milestone 0 smoke test: prove the device can export a LINEAR color image as
     // a dma-buf fd (the real unknown on NVIDIA). Run with `Demo.dll dmabuf-test`.

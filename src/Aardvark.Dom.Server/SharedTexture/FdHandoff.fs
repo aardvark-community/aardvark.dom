@@ -219,6 +219,53 @@ module FdHandoff =
             }
         img, fence
 
+    // ---- streaming consumer side (standalone F# test): bind/listen/accept once, then
+    // recv HELLO + per-frame ticks over the SAME persistent connection. ----
+
+    /// Server: bind/listen/accept on `sockPath`, return the persistent connection fd.
+    let streamServerAccept (sockPath : string) : int =
+        unlink sockPath |> ignore
+        let s = socket(AF_UNIX, SOCK_STREAM, 0)
+        if s < 0 then failwithf "[FdHandoff] socket failed (errno %d)" (errno())
+        let addr, alen = sockaddr sockPath
+        if bind(s, addr, alen) < 0 then failwithf "[FdHandoff] bind failed (errno %d)" (errno())
+        if listen(s, 1) < 0 then failwithf "[FdHandoff] listen failed (errno %d)" (errno())
+        let conn = accept(s, 0n, 0n)
+        if conn < 0 then failwithf "[FdHandoff] accept failed (errno %d)" (errno())
+        close s |> ignore
+        conn
+
+    /// Receive ONE message on a persistent connection: returns (ascii payload, first
+    /// SCM_RIGHTS fd or -1). Returns ("", -1) on EOF / peer gone.
+    let streamRecv (conn : int) : string * int =
+        let cap = 256
+        let pPayload = Marshal.AllocHGlobal cap
+        let pIov = Marshal.AllocHGlobal 16
+        Marshal.WriteIntPtr(pIov, 0, pPayload)
+        Marshal.WriteInt64(pIov, 8, int64 cap)
+        let pControl = Marshal.AllocHGlobal CMSG_SPACE
+        for i in 0 .. 2 do Marshal.WriteInt64(pControl, i * 8, 0L)
+        let pMsg = Marshal.AllocHGlobal 56
+        for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
+        Marshal.WriteIntPtr(pMsg, 16, pIov)
+        Marshal.WriteInt64(pMsg, 24, 1L)
+        Marshal.WriteIntPtr(pMsg, 32, pControl)
+        Marshal.WriteInt64(pMsg, 40, int64 CMSG_SPACE)
+        let n = recvmsg(conn, pMsg, 0)
+        let result =
+            if n.ToInt64() <= 0L then ("", -1)
+            else
+                let level = Marshal.ReadInt32(pControl, 8)
+                let typ = Marshal.ReadInt32(pControl, 12)
+                let fd = if level = SOL_SOCKET && typ = SCM_RIGHTS then Marshal.ReadInt32(pControl, 16) else -1
+                let len = int (n.ToInt64())
+                let bytes = Array.zeroCreate<byte> len
+                Marshal.Copy(pPayload, bytes, 0, len)
+                (Encoding.ASCII.GetString bytes, fd)
+        Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
+        Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
+        result
+
     // ---- L1 streaming: a persistent connection. The producer (client) connects, sends a
     // HELLO with the ring's N memfds (one SCM_RIGHTS cmsg), then streams plain "F <i>\n"
     // frame ticks. The consumer (Chromium painter) is the server: bind/accept, recv HELLO +
