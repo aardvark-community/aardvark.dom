@@ -926,10 +926,20 @@ let main argv =
     // but we standardize on Vulkan for now.
     let app = new VulkanApplication()
 
+    // dma-buf export needs VK_EXT_image_drm_format_modifier (not in Aardvark's default
+    // device extension set) so the exported buffer's DRM layout matches what a Vulkan
+    // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
+    // with it enabled for the dma-buf hooks.
+    let dmaBufRuntime =
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send" ] |> List.exists (fun h -> Array.contains h argv) then
+            let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
+            (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
+        else app.Runtime
+
     // Milestone 0 smoke test: prove the device can export a LINEAR color image as
     // a dma-buf fd (the real unknown on NVIDIA). Run with `Demo.dll dmabuf-test`.
     if Array.contains "dmabuf-test" argv then
-        match app.Runtime with
+        match dmaBufRuntime with
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let img = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
@@ -946,7 +956,7 @@ let main argv =
     // Milestone 0c: fill the shared dma-buf purely on the GPU (clear a source image
     // + vkCmdCopyImage into it, no CPU map) and verify the colour survives via EGL.
     if Array.contains "dmabuf-gpu-test" argv then
-        match app.Runtime with
+        match dmaBufRuntime with
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
@@ -972,7 +982,7 @@ let main argv =
     // Cross-process producer: GPU-fill a dma-buf, publish its descriptor, and hold
     // it alive so a separate `dmabuf-recv` process can reopen + validate it.
     if Array.contains "dmabuf-send" argv then
-        match app.Runtime with
+        match dmaBufRuntime with
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
             let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256

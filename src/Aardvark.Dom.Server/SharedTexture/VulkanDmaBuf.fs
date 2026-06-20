@@ -67,26 +67,52 @@ module DmaBufExport =
         |> Option.map (fun mt -> uint32 mt.index)
         |> Option.defaultWith (fun () -> failwith "[DmaBuf] no host-visible/coherent memory type")
 
-    /// Create a LINEAR, dma-buf-exportable BGRA color image and export its fd.
-    /// Linear + host-visible lets us validate by writing a pattern from the CPU
-    /// before wiring the GPU render path; the export semantics are identical.
+    /// pick a memory type allowed by `typeBits`, preferring host-visible+coherent
+    /// (so CPU-map self-tests still work) but falling back to device-local — a
+    /// DRM-modifier image is not guaranteed to admit host-visible memory.
+    let private pickMemoryType (device : Device) (typeBits : uint32) =
+        let allowed =
+            device.PhysicalDevice.MemoryTypes
+            |> Array.filter (fun mt -> (typeBits &&& (1u <<< mt.index)) <> 0u)
+        let hostVisible =
+            allowed |> Array.tryFind (fun mt ->
+                (int mt.flags &&& int VkMemoryPropertyFlags.HostVisibleBit) <> 0 &&
+                (int mt.flags &&& int VkMemoryPropertyFlags.HostCoherentBit) <> 0)
+        match hostVisible |> Option.orElse (Array.tryHead allowed) with
+        | Some mt -> uint32 mt.index
+        | None -> failwith "[DmaBuf] no allowed memory type"
+
+    /// Create a dma-buf-exportable BGRA color image using an EXPLICIT DRM format
+    /// modifier (via VK_EXT_image_drm_format_modifier). A plain VK_IMAGE_TILING_LINEAR
+    /// image is NOT guaranteed to match the canonical DRM_FORMAT_MOD_LINEAR layout a
+    /// Vulkan importer (Chromium's ExternalVkImageBacking) reconstructs — on NVIDIA the
+    /// two differ and the importer samples blank. Declaring the modifier explicitly and
+    /// reporting the driver's ACTUAL modifier + memory-plane layout makes both sides agree.
     let create (device : Device) (width : int) (height : int) : DmaBufImage =
         let dev = device.Handle
         let format = VkFormat.B8g8r8a8Unorm
 
-        // ---- image (external memory, linear tiling) ----
+        // VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT (no named case in the wrapper enum)
+        let drmModifierTiling : VkImageTiling = unbox 1000158000
+
+        // ---- image: external memory + explicit DRM modifier list (request LINEAR) ----
         let mutable extImg = VkExternalMemoryImageCreateInfo(DmaBufBit)
+        let mods = [| DRM_FORMAT_MOD_LINEAR |]
+        use pMods = fixed mods
+        let mutable modList =
+            EXTImageDrmFormatModifier.VkImageDrmFormatModifierListCreateInfoEXT(1u, pMods)
+        modList.pNext <- NativePtr.toNativeInt &&extImg
 
         let mutable imgInfo =
             VkImageCreateInfo(
-                NativePtr.toNativeInt &&extImg,
+                NativePtr.toNativeInt &&modList,
                 VkImageCreateFlags.None,
                 VkImageType.D2d,
                 format,
                 VkExtent3D(uint32 width, uint32 height, 1u),
                 1u, 1u,
                 VkSampleCountFlags.D1Bit,
-                VkImageTiling.Linear,
+                drmModifierTiling,
                 VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.TransferSrcBit ||| VkImageUsageFlags.SampledBit,
                 VkSharingMode.Exclusive,
                 0u, NativePtr.zero,
@@ -98,7 +124,7 @@ module DmaBufExport =
 
         let mutable req = VkMemoryRequirements()
         VkRaw.vkGetImageMemoryRequirements(dev, image, &&req)
-        let memType = findHostVisibleMemoryType device req.memoryTypeBits
+        let memType = pickMemoryType device req.memoryTypeBits
 
         // ---- memory: dedicated + exportable as dma-buf ----
         let mutable dedicated = VkMemoryDedicatedAllocateInfo(image, VkBuffer.Null)
@@ -112,8 +138,16 @@ module DmaBufExport =
         VkRaw.vkAllocateMemory(dev, &&allocInfo, NativePtr.zero, &&memory) |> check "vkAllocateMemory"
         VkRaw.vkBindImageMemory(dev, image, memory, 0UL) |> check "vkBindImageMemory"
 
-        // ---- query plane layout (offset / row pitch) ----
-        let mutable sub = VkImageSubresource(VkImageAspectFlags.ColorBit, 0u, 0u)
+        // ---- query the ACTUAL DRM modifier the driver chose ----
+        let mutable modProps = EXTImageDrmFormatModifier.VkImageDrmFormatModifierPropertiesEXT(0UL)
+        EXTImageDrmFormatModifier.VkRaw.vkGetImageDrmFormatModifierPropertiesEXT(dev, image, &&modProps)
+            |> check "vkGetImageDrmFormatModifierPropertiesEXT"
+
+        // ---- query plane layout via the MEMORY-plane aspect (DRM-modifier images
+        //      must use VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT, not COLOR) ----
+        // VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT = 0x80 (no named case in the wrapper enum)
+        let memoryPlane0 : VkImageAspectFlags = unbox 0x00000080
+        let mutable sub = VkImageSubresource(memoryPlane0, 0u, 0u)
         let mutable layout = VkSubresourceLayout()
         VkRaw.vkGetImageSubresourceLayout(dev, image, &&sub, &&layout)
 
@@ -127,7 +161,7 @@ module DmaBufExport =
             Width    = width
             Height   = height
             Fourcc   = DRM_FORMAT_ARGB8888
-            Modifier = DRM_FORMAT_MOD_LINEAR
+            Modifier = modProps.drmFormatModifier
             Offset   = uint64 layout.offset
             Stride   = uint64 layout.rowPitch
             Image    = image
