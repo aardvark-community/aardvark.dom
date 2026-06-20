@@ -249,6 +249,51 @@ module DmaBufGpu =
         let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
         VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit"
 
+    /// Like recordCopyInto, but uses vkCmdBlitImage instead of vkCmdCopyImage. The
+    /// framework's DOM render task is compiled for an Rgba8 (R8G8B8A8) signature, while
+    /// the shared ring image is B8G8R8A8 (the browser imports it as kBGRA_8888). A raw
+    /// vkCmdCopyImage would byte-copy and swap R/B in the browser; vkCmdBlitImage goes
+    /// through the format-aware path (reads src as RGBA, writes dst as BGRA) so the R/B
+    /// swizzle happens for free. src and dst are the SAME size so there is no scaling
+    /// (filter is irrelevant; use Nearest). Same sync contract as recordCopyInto.
+    let recordBlitInto (device : Device) (cmd : VkCommandBuffer) (src : VkImage) (srcLayout : VkImageLayout)
+                       (dstImage : VkImage) (dstW : int) (dstH : int)
+                       (signalSem : VkSemaphore) (fence : VkFence) =
+        let dev = device.Handle
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        VkRaw.vkResetCommandBuffer(cmd, VkCommandBufferResetFlags.None) |> ignore
+        let mutable beginInfo = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&beginInfo) |> check "vkBeginCommandBuffer"
+
+        barrier cmd src VkAccessFlags.MemoryWriteBit VkAccessFlags.TransferReadBit
+                srcLayout VkImageLayout.TransferSrcOptimal
+                VkPipelineStageFlags.AllCommandsBit VkPipelineStageFlags.TransferBit
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        // src/dst offset ranges [min,max] for the (full-image, same-size) blit.
+        let mutable offsets = VkOffset3D_2()
+        offsets.[0] <- VkOffset3D(0, 0, 0)
+        offsets.[1] <- VkOffset3D(dstW, dstH, 1)
+        let mutable region = VkImageBlit(layers, offsets, layers, offsets)
+        VkRaw.vkCmdBlitImage(cmd, src, VkImageLayout.TransferSrcOptimal,
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region, VkFilter.Nearest)
+        barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
+                VkImageLayout.TransferSrcOptimal srcLayout
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.AllCommandsBit
+        barrierReleaseExternal cmd dstImage VkAccessFlags.TransferWriteBit
+                               VkImageLayout.TransferDstOptimal VkImageLayout.General
+                               VkPipelineStageFlags.TransferBit qfi
+
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer"
+        let mutable psem = signalSem
+        let mutable pcmd = cmd
+        let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit"
+
     /// Copy an already-rendered source image (currently in `srcLayout`) into the
     /// OPAQUE/dma-buf `dst`, releasing dst to EXTERNAL. Returns a sync_fd fence;
     /// restores the source layout so Aardvark can keep rendering into it.

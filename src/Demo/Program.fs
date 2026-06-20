@@ -17,54 +17,6 @@ open Aardvark.Application.Slim
 open Demo
 open Aardvark.Dom.Utilities
 
-// L2: a rotating shaded cube rendered offscreen, streamed zero-copy into the browser.
-// In its own module so `open Aardvark.SceneGraph` (whose `Sg` clashes with Aardvark.Dom's)
-// stays local. Renders to a Bgra8 colour texture so the copy into the BGRA ring is a
-// straight vkCmdCopyImage (no R/B swizzle).
-module ST = Aardvark.Dom.Remote.SharedTexture.FdHandoff
-
-module CubeRender =
-    open Aardvark.Base
-    open Aardvark.Rendering
-    open Aardvark.SceneGraph
-    open FShade
-    open FSharp.Data.Adaptive
-
-    type T = { angle : cval<float>; color : IAdaptiveResource<IBackendTexture>; dispose : unit -> unit }
-
-    let create (runtime : IRuntime) (w : int) (h : int) : T =
-        Aardvark.Base.IntrospectionProperties.CustomEntryAssembly <- System.Reflection.Assembly.GetAssembly(typeof<ISg>)
-        let signature =
-            runtime.CreateFramebufferSignature([
-                DefaultSemantic.Colors, TextureFormat.Bgra8
-                DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8
-            ])
-        let angle = cval 0.0
-        let sg =
-            Sg.box' (C4b(255uy, 150uy, 30uy, 255uy)) (Box3d.FromCenterAndSize(V3d.Zero, V3d(2.0, 2.0, 2.0)))
-            |> Sg.shader {
-                do! DefaultSurfaces.trafo
-                do! DefaultSurfaces.simpleLighting
-            }
-            |> Sg.trafo (angle |> AVal.map (fun a -> Trafo3d.RotationZ a * Trafo3d.RotationX (a * 0.5)))
-            |> Sg.viewTrafo (CameraView.lookAt (V3d(5.0, 5.0, 4.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant)
-            |> Sg.projTrafo (Frustum.perspective 60.0 0.1 100.0 (float w / float h) |> Frustum.projTrafo |> AVal.constant)
-        let task = sg |> Sg.compile runtime signature
-        // opaque dark background so the cube is high-contrast (and unambiguous in a screenshot)
-        let clearValues = clear { color (C4b(10uy, 12uy, 34uy, 255uy)); depth 1.0 }
-        let color = task |> RenderTask.renderToColorWithClear (AVal.constant (V2i(w, h))) clearValues
-        color.Acquire()
-        { angle = angle; color = color
-          dispose = fun () -> (try color.Release() with _ -> ()); (try task.Dispose() with _ -> ()) }
-
-    /// Advance the rotation and render the frame; returns the freshly-rendered colour texture.
-    let render (t : T) (frame : int) : IBackendTexture =
-        transact (fun () -> t.angle.Value <- float frame * 0.04)
-        t.color.GetValue()
-
-    /// Free the offscreen FBO/render task (used when the surface is reallocated on resize).
-    let destroy (t : T) = t.dispose ()
-
 module Shader =
     open FShade
     
@@ -928,6 +880,65 @@ let snapDemo (_runtime : IRuntime) =
     }
 
 
+// R3 — the REAL aardvark.dom zero-copy app: a rotating lit cube in a renderControl
+// DOM node, served through the genuine framework (DomNode.toRoute → RemoteHtmlBackend
+// → transfer negotiation). With the R2-patched browser exposing aardvark.openSharedTexture,
+// the framework AUTO-SELECTS SharedTextureTransfer (priority 200 > shm 100) — no special
+// wiring here, this is just an ordinary renderControl scene. The rotation is driven by
+// RenderControl.Time (the framework's animation clock), so the render task is continuously
+// out-of-date → render-when-dirty produces frames; the size aval (RenderControl.ViewportSize,
+// fed by aardvark.onResize → requestImage) drives the render-target resize.
+let sharedTextureApp (_runtime : IRuntime) =
+    let view (_env : Env<unit>) (_) =
+        body {
+            Style [ Background "#202124"; Color "white"; FontFamily "monospace"; Margin "0"; Padding "0" ]
+
+            div {
+                Style [Padding "8px"; FontSize "14px"]
+                "R3: rotating cube, zero-copy via SharedTextureTransfer (real aardvark.dom channel)."
+            }
+
+            renderControl {
+                Style [Width "100%"; Height "600px"; Background "#202124"; Outline "none"]
+                Samples 4
+                TabIndex 0
+
+                // size feeds the projection aspect AND the render-target realloc (resize path).
+                let! size = RenderControl.ViewportSize
+                // the framework animation clock — makes the render task continuously dirty.
+                let! time = RenderControl.Time
+
+                let proj =
+                    size |> AVal.map (fun s ->
+                        Frustum.perspective 60.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
+                Sg.Proj proj
+                Sg.View (CameraView.lookAt (V3d(5.0, 5.0, 4.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo)
+
+                Sg.Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
+
+                // rotation angle from the wall clock (continuous animation → render-when-dirty).
+                let angle = time |> AVal.map (fun t -> float t.Ticks / 1.0e7)
+                let rot = angle |> AVal.map (fun a -> Trafo3d.RotationZ a * Trafo3d.RotationX (a * 0.5))
+
+                sg {
+                    Sg.Trafo rot
+                    Primitives.Box(Box3d.FromCenterAndSize(V3d.Zero, V3d(3.0, 3.0, 3.0)), C4b(255uy, 150uy, 30uy, 255uy))
+                }
+            }
+        }
+
+    {
+        initial = ()
+        update = fun _ () () -> ()
+        view = view
+        unpersist =
+            {
+                 init = fun () -> ()
+                 update = fun () () -> ()
+            }
+    }
+
+
 [<EntryPoint>]
 let main argv =
     Aardvark.Init()
@@ -995,7 +1006,7 @@ let main argv =
     // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
     // with it enabled for the dma-buf hooks.
     let dmaBufRuntime =
-        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream"; "opaquefd-transfer-selftest"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-transfer-selftest"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
             let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
             (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
         else app.Runtime
@@ -1159,124 +1170,6 @@ let main argv =
             exit 0
         | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
-    // L1 STREAM: a ring of 3 OPAQUE_FD buffers, streamed continuously to the Chromium
-    // painter. HELLO sends the 3 memfds once; each frame GPU-fills the next ring buffer
-    // (round-robin, waitIdle inside clearAndCopy so it's tear-free without a fence yet) and
-    // sends a tiny "F <i>" tick. The painter swaps the composited buffer per tick.
-    if Array.contains "opaquefd-stream" argv then
-        match dmaBufRuntime with
-        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
-            let dev = vk.Device
-            let mutable W, H = 256, 256
-            let mutable gen = 0
-            let mutable ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
-            let mutable cube = CubeRender.create vk W H
-            let conn = ST.streamConnect "/tmp/dmabuf.sock"
-
-            // Persistent per-slot copy resources (allocated ONCE; no per-frame pool/semaphore
-            // churn, no waitIdle). Each ring slot has a reusable command buffer, an exportable
-            // signal semaphore (sync_fd → consumer's acquire), and a VkFence (CPU completion).
-            let devH = dev.Handle
-            let qfi = uint32 dev.GraphicsFamily.Index
-            let mutable poolInfo =
-                Aardvark.Rendering.Vulkan.VkCommandPoolCreateInfo(
-                    0n, Aardvark.Rendering.Vulkan.VkCommandPoolCreateFlags.ResetCommandBufferBit, qfi)
-            let mutable pool = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkCommandPool>
-            Aardvark.Rendering.Vulkan.VkRaw.vkCreateCommandPool(devH, &&poolInfo, NativePtr.zero, &&pool) |> ignore
-            let cmds =
-                Array.init 3 (fun _ ->
-                    let mutable ai = Aardvark.Rendering.Vulkan.VkCommandBufferAllocateInfo(0n, pool, Aardvark.Rendering.Vulkan.VkCommandBufferLevel.Primary, 1u)
-                    let mutable c = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkCommandBuffer>
-                    Aardvark.Rendering.Vulkan.VkRaw.vkAllocateCommandBuffers(devH, &&ai, &&c) |> ignore
-                    c)
-            let sems = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.DmaBufSync.createExportableSemaphore dev)
-            let fences =
-                Array.init 3 (fun _ ->
-                    let mutable fi = Aardvark.Rendering.Vulkan.VkFenceCreateInfo(Aardvark.Rendering.Vulkan.VkFenceCreateFlags.SignaledBit)
-                    let mutable f = Unchecked.defaultof<Aardvark.Rendering.Vulkan.VkFence>
-                    Aardvark.Rendering.Vulkan.VkRaw.vkCreateFence(devH, &&fi, NativePtr.zero, &&f) |> ignore
-                    f)
-            let waitFence (f : Aardvark.Rendering.Vulkan.VkFence) =
-                let mutable ff = f
-                Aardvark.Rendering.Vulkan.VkRaw.vkWaitForFences(devH, 1u, &&ff, 1u, System.UInt64.MaxValue) |> ignore
-            let resetFence (f : Aardvark.Rendering.Vulkan.VkFence) =
-                let mutable ff = f
-                Aardvark.Rendering.Vulkan.VkRaw.vkResetFences(devH, 1u, &&ff) |> ignore
-
-            let sendHello () =
-                ST.streamHello conn (sprintf "STREAM %d %d 3 %d" W H gen) (ring |> Array.map (fun o -> o.MemFd))
-                printfn "[opaquefd-stream] HELLO gen=%d (3 OPAQUE_FD ring buffers %dx%d)" gen W H
-            sendHello ()
-            // Reallocate the ring + offscreen FBO to a new size and re-announce (HELLO).
-            let reallocate (nw : int) (nh : int) =
-                Aardvark.Rendering.Vulkan.VkRaw.vkDeviceWaitIdle dev.Handle |> ignore
-                ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
-                CubeRender.destroy cube
-                W <- nw; H <- nh; gen <- gen + 1
-                ring <- Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
-                cube <- CubeRender.create vk W H
-                sendHello ()
-            // Consumer is authoritative for size: parse the LAST "R <w> <h>" it sent.
-            let pollResize () : (int * int) option =
-                let s = ST.streamPoll conn
-                if s = "" then None
-                else
-                    let mutable result = None
-                    for line in s.Split('\n') do
-                        let parts = line.Trim().Split(' ')
-                        if parts.Length >= 3 && parts.[0] = "R" then
-                            match System.Int32.TryParse parts.[1], System.Int32.TryParse parts.[2] with
-                            | (true, w), (true, h) when w > 0 && h > 0 -> result <- Some (w, h)
-                            | _ -> ()
-                    result
-            let mutable frame = 0
-            let mutable running = true
-            let fpsTimer = System.Diagnostics.Stopwatch.StartNew()
-            let paceTimer = System.Diagnostics.Stopwatch.StartNew()
-            let targetFrameMs = 1000.0 / 60.0   // cap at ~display rate (producer ceiling is ~2000fps)
-            let mutable fpsCount = 0
-            while running do
-                match pollResize () with
-                | Some (nw, nh) when (nw, nh) <> (W, H) -> reallocate nw nh
-                | _ -> ()
-                let i = frame % 3
-                let p = (frame + 2) % 3
-                // Shared cube FBO: the PREVIOUS frame's copy READS it, so it must finish before
-                // we re-render into it; also wait this slot's own last copy (3 frames ago) so its
-                // command buffer / semaphore / ring image are free to reuse. NO device-wide waitIdle.
-                if frame > 0 then waitFence fences.[p]
-                waitFence fences.[i]
-                resetFence fences.[i]
-                let tex = CubeRender.render cube frame
-                let cimg = unbox<Aardvark.Rendering.Vulkan.Image> tex
-                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.recordCopyInto dev cmds.[i] cimg.Handle cimg.Layout ring.[i].Image W H sems.[i] fences.[i]
-                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufSync.exportSyncFd dev sems.[i]
-                // streamFrameFd blocks when the consumer's socket buffer fills → natural backpressure
-                // pacing the producer to the consumer's consumption rate.
-                if not (ST.streamFrameFd conn (sprintf "F %d %d\n" i gen) fenceFd) then
-                    running <- false
-                ST.closeFd fenceFd
-                fpsCount <- fpsCount + 1
-                if fpsTimer.Elapsed.TotalSeconds >= 1.0 then
-                    printfn "[opaquefd-stream] %d fps (gen=%d %dx%d)" fpsCount gen W H
-                    fpsCount <- 0; fpsTimer.Restart()
-                frame <- frame + 1
-                // Pace to the display rate (cumulative deadline avoids drift). The proper
-                // robustness fix is release-callback recycling (render only when the compositor
-                // FREEs a buffer) — the per-frame acquire fence already prevents tearing.
-                let dueMs = float frame * targetFrameMs
-                let nowMs = paceTimer.Elapsed.TotalMilliseconds
-                if nowMs < dueMs then System.Threading.Thread.Sleep(int (dueMs - nowMs))
-            printfn "[opaquefd-stream] streamed %d frames; closing" frame
-            Aardvark.Rendering.Vulkan.VkRaw.vkDeviceWaitIdle devH |> ignore
-            ST.streamClose conn
-            fences |> Array.iter (fun f -> Aardvark.Rendering.Vulkan.VkRaw.vkDestroyFence(devH, f, NativePtr.zero))
-            sems |> Array.iter (Aardvark.Dom.Remote.SharedTexture.DmaBufSync.destroySemaphore dev)
-            Aardvark.Rendering.Vulkan.VkRaw.vkDestroyCommandPool(devH, pool, NativePtr.zero)
-            ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
-            exit 0
-        | r -> eprintfn "[opaquefd-stream] runtime is not Vulkan: %A" (r.GetType()); exit 2
-
     // OPAQUE_FD cross-instance test consumer (SEPARATE process + VkInstance): import the
     // memory + sync_fd, acquire from EXTERNAL, copy to host, read the centre pixel.
     // Variants: `no-sem` skips the semaphore wait; `undef-layout` acquires from UNDEFINED.
@@ -1342,7 +1235,10 @@ let main argv =
 
 
     let run (ctx : DomContext) =
-        App.start ctx (snapDemo ctx.Runtime)
+        if Array.contains "sharedtexture-app" argv then
+            App.start ctx (sharedTextureApp ctx.Runtime)
+        else
+            App.start ctx (snapDemo ctx.Runtime)
         //App.start ctx (testApp ctx.Runtime)
         //App.start ctx Elm.app
 

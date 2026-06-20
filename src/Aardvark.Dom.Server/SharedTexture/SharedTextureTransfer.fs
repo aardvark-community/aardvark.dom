@@ -144,7 +144,14 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                 runtime.DeleteRenderbuffer c
                 runtime.DeleteRenderbuffer d
             | None -> ()
-            let c = runtime.CreateRenderbuffer(s, TextureFormat.Bgra8, signature.Samples)
+            // Match the GIVEN signature's color format (the framework's DOM render task is
+            // compiled for it — typically Rgba8). The ring image is BGRA, so the copy into
+            // it is a vkCmdBlitImage (format-aware R/B swizzle), NOT a raw vkCmdCopyImage.
+            let colorFormat =
+                match signature.ColorAttachments |> Map.tryFind 0 with
+                | Some att -> att.Format
+                | None -> TextureFormat.Rgba8
+            let c = runtime.CreateRenderbuffer(s, colorFormat, signature.Samples)
             let d = runtime.CreateRenderbuffer(s, TextureFormat.Depth24Stencil8, signature.Samples)
             let f =
                 runtime.CreateFramebuffer(signature, [
@@ -162,18 +169,22 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
 
     // ---- lazy side-channel connection to the browser native layer ----
     let mutable conn = -1                 // -1 until connected
-    let mutable triedConnect = false
+    let mutable nextConnectAttempt = DateTime.MinValue   // backoff clock for retries
 
+    // The browser binds/listens on sockPath; the server connects as the client.
+    // The browser may not be up at the first frame, so RETRY with a short backoff
+    // (the browser begins listening only once the page calls bindSharedTextureChannel).
     let tryConnect () =
-        if conn < 0 && not triedConnect then
-            triedConnect <- true
+        if conn < 0 && DateTime.UtcNow >= nextConnectAttempt then
             try conn <- FdHandoff.streamConnect sockPath
-            with _ -> conn <- -1          // browser not up yet — fall back to round-robin
+            with _ ->
+                conn <- -1                // browser not up yet — retry after the backoff
+                nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
         conn >= 0
 
     let disconnect () =
         if conn >= 0 then (try FdHandoff.streamClose conn with _ -> ()); conn <- -1
-        triedConnect <- false
+        nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
 
     let destroySlot (s : RingSlot) =
         OpaqueFd.destroy device s.Opaque
@@ -298,8 +309,10 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let fbo = unbox<Framebuffer> fbo
             let img = fbo.Attachments.[DefaultSemantic.Colors].Image
 
-            // GPU copy FBO color -> ring slot; per-slot fence (CPU) + semaphore (GPU acquire).
-            DmaBufGpu.recordCopyInto device slot.Cmd img.Handle img.Layout slot.Opaque.Image s.X s.Y slot.Sem slot.Fence
+            // GPU blit FBO color -> ring slot; per-slot fence (CPU) + semaphore (GPU acquire).
+            // Blit (not copy) because the FBO is the framework's Rgba8 format while the ring
+            // is BGRA — vkCmdBlitImage's format-aware path swizzles R/B for free.
+            DmaBufGpu.recordBlitInto device slot.Cmd img.Handle img.Layout slot.Opaque.Image s.X s.Y slot.Sem slot.Fence
 
             // mark the slot in-flight; the browser FREEs it after compositing.
             slot.Busy <- true
