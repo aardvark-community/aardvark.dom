@@ -102,19 +102,57 @@ module MetalExport =
     [<DllImport(framework)>] extern int IOSurfaceUnlock(nativeint surf, uint32 options, nativeint seed)
     [<DllImport(framework)>] extern nativeint IOSurfaceGetBaseAddress(nativeint surf)
     [<DllImport(framework)>] extern unativeint IOSurfaceGetBytesPerRow(nativeint surf)
+    [<DllImport(framework)>] extern unativeint IOSurfaceGetWidth(nativeint surf)
+    [<DllImport(framework)>] extern unativeint IOSurfaceGetHeight(nativeint surf)
+    // Global (per-host) IOSurface id — simplest cross-process lookup for the standalone
+    // de-risk. NOTE: for the secure Chromium handoff use IOSurfaceCreateMachPort instead
+    // (a mach port sent over the GPU-channel), since global ids are guessable/host-wide.
+    [<DllImport(framework)>] extern uint32 IOSurfaceGetID(nativeint surf)
+    [<DllImport(framework)>] extern nativeint IOSurfaceLookup(uint32 csid)
 
-    /// Lock the IOSurface and read the center pixel as (R,G,B,A).
-    let readbackCenter (_device : Device) (img : MetalSharedImage) : int * int * int * int =
-        IOSurfaceLock(img.IOSurface, 1u (* kIOSurfaceLockReadOnly *), 0n) |> ignore
+    /// The non-uniform reference gradient: R varies along X, G varies along Y, B fixed.
+    /// 2-axis so a transposed / wrong-stride read would be caught (not just blank-vs-not).
+    let expectedAt (w : int) (h : int) (x : int) (y : int) : int * int * int * int =
+        let r = (x * 255) / (max 1 (w - 1))
+        let g = (y * 255) / (max 1 (h - 1))
+        (r, g, 128, 255)
+
+    /// CPU-fill the IOSurface (LINEAR, shared storage) with the reference gradient.
+    /// On unified-memory Apple Silicon this is the producer write the consumer will read
+    /// from another process; it exercises the real stride/layout of the shared surface.
+    let fillGradient (img : MetalSharedImage) =
+        IOSurfaceLock(img.IOSurface, 0u (* read/write *), 0n) |> ignore
         let baseA = IOSurfaceGetBaseAddress(img.IOSurface)
         let bpr = int (IOSurfaceGetBytesPerRow(img.IOSurface))
-        let px = baseA + nativeint ((img.Height / 2) * bpr + (img.Width / 2) * 4)
+        for y in 0 .. img.Height - 1 do
+            let row = baseA + nativeint (y * bpr)
+            for x in 0 .. img.Width - 1 do
+                let (r, g, b, a) = expectedAt img.Width img.Height x y
+                let px = row + nativeint (x * 4)
+                // B8G8R8A8: byte order B,G,R,A
+                Marshal.WriteByte(px, 0, byte b)
+                Marshal.WriteByte(px, 1, byte g)
+                Marshal.WriteByte(px, 2, byte r)
+                Marshal.WriteByte(px, 3, byte a)
+        IOSurfaceUnlock(img.IOSurface, 0u, 0n) |> ignore
+
+    /// Lock the IOSurface and read the pixel at (x,y) as (R,G,B,A). `surf` is a raw
+    /// IOSurfaceRef (works for both a producer-owned and a cross-process looked-up surface).
+    let readPixel (surf : nativeint) (x : int) (y : int) : int * int * int * int =
+        IOSurfaceLock(surf, 1u (* kIOSurfaceLockReadOnly *), 0n) |> ignore
+        let baseA = IOSurfaceGetBaseAddress(surf)
+        let bpr = int (IOSurfaceGetBytesPerRow(surf))
+        let px = baseA + nativeint (y * bpr + x * 4)
         let b = int (Marshal.ReadByte(px, 0))
         let g = int (Marshal.ReadByte(px, 1))
         let r = int (Marshal.ReadByte(px, 2))
         let a = int (Marshal.ReadByte(px, 3))
-        IOSurfaceUnlock(img.IOSurface, 1u, 0n) |> ignore
+        IOSurfaceUnlock(surf, 1u, 0n) |> ignore
         (r, g, b, a)
+
+    /// Lock the IOSurface and read the center pixel as (R,G,B,A).
+    let readbackCenter (_device : Device) (img : MetalSharedImage) : int * int * int * int =
+        readPixel img.IOSurface (img.Width / 2) (img.Height / 2)
 
     let destroy (device : Device) (img : MetalSharedImage) =
         VkRaw.vkDestroyImage(device.Handle, img.Image, NativePtr.zero)

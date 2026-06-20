@@ -993,6 +993,65 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev dst
             exit (if ok then 0 else 1)
         | r -> eprintfn "[metal-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // macOS W0-analog (cross-PROCESS IOSurface sharing, the de-risk for Chromium's native
+    // IOSurfaceImageBacking import). PRODUCER: export an IOSurface via VK_EXT_metal_objects,
+    // CPU-fill a non-uniform 2-axis gradient, print the global IOSurfaceID, then stay alive
+    // holding the surface so a SEPARATE `iosurface-recv` process can look it up and read it.
+    if Array.contains "iosurface-send" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev W H
+            if img.IOSurface = 0n then eprintfn "[iosurface-send] export FAILED (null IOSurface)"; exit 1
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.fillGradient img
+            let gid = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetID img.IOSurface
+            // local self-check + the points the consumer will probe
+            let pts = [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ]
+            printfn "[iosurface-send] IOSurface=0x%X  globalID=%u  %dx%d stride=%d" (int64 img.IOSurface) gid W H img.Stride
+            printfn "[iosurface-send] handoff: global IOSurfaceID=%u (pass to `iosurface-recv %u`)." gid gid
+            printfn "[iosurface-send] (secure handoff for Chromium phase = IOSurfaceCreateMachPort; global id used here for the standalone de-risk)"
+            for (x,y) in pts do
+                let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
+                let exp = Aardvark.Dom.Remote.SharedTexture.MetalExport.expectedAt W H x y
+                printfn "[iosurface-send] local (%3d,%3d) got=%A expected=%A" x y got exp
+            // also publish the id to a file so a launcher can chain send->recv without parsing stdout
+            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)
+            printfn "[iosurface-send] wrote /tmp/iosurface.id ; holding surface alive (Ctrl-C to exit) ..."
+            System.Threading.Thread.Sleep System.Threading.Timeout.Infinite
+            exit 0
+        | r -> eprintfn "[iosurface-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // CONSUMER (separate process, no Vulkan needed — mirrors Chromium's GPU process
+    // importing via IOSurfaceImageBacking): IOSurfaceLookup(globalID) -> read the gradient
+    // cross-process at corners + center and compare to the producer's reference.
+    if Array.contains "iosurface-recv" argv then
+        let gid =
+            argv |> Array.tryPick (fun s -> match System.UInt32.TryParse s with | true, v when v <> 0u -> Some v | _ -> None)
+            |> Option.defaultWith (fun () ->
+                if System.IO.File.Exists "/tmp/iosurface.id" then uint32 (System.IO.File.ReadAllText("/tmp/iosurface.id").Trim())
+                else eprintfn "[iosurface-recv] no global id given (arg or /tmp/iosurface.id)"; exit 2)
+        printfn "[iosurface-recv] IOSurfaceLookup(globalID=%u) ..." gid
+        let surf = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceLookup gid
+        if surf = 0n then eprintfn "[iosurface-recv] IOSurfaceLookup returned null (producer dead or wrong id)"; exit 1
+        let W = int (Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetWidth surf)
+        let H = int (Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetHeight surf)
+        printfn "[iosurface-recv] looked up IOSurface=0x%X  %dx%d" (int64 surf) W H
+        let pts = [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ]
+        let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=2 && abs(b-f)<=2 && abs(c-g)<=2 && abs(d-h)<=2
+        let mutable allOk = true
+        for (x,y) in pts do
+            let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel surf x y
+            let exp = Aardvark.Dom.Remote.SharedTexture.MetalExport.expectedAt W H x y
+            let ok = close got exp
+            allOk <- allOk && ok
+            printfn "[iosurface-recv] (%3d,%3d) got=%A expected=%A %s" x y got exp (if ok then "PASS" else "FAIL")
+        printfn "[iosurface-recv] cross-process IOSurface read %s" (if allOk then "PASS" else "FAIL")
+        exit (if allOk then 0 else 1)
+
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
 
