@@ -111,7 +111,7 @@ module SilkD3D11Alloc =
                 adapterUnk.Handle,                              // IDXGIAdapter*
                 D3DDriverType.Unknown,
                 0n,
-                0x20u,                                          // D3D11_CREATE_DEVICE_BGRA_SUPPORT (needed for B8G8R8A8 RT/SRV)
+                0u,                                             // flags (matches the known-good C++ allocator)
                 NativePtr.ofNativeInt<D3DFeatureLevel> 0n,      // pFeatureLevels = null
                 0u,                                             // FeatureLevels = 0
                 uint32 D3D11.SdkVersion,
@@ -136,9 +136,12 @@ module SilkD3D11Alloc =
         desc.BindFlags <- uint32 (int BindFlag.ShaderResource ||| int BindFlag.RenderTarget)
         desc.CPUAccessFlags <- 0u
         desc.MiscFlags <- uint32 (0x20 ||| 0x800)   // SHARED_KEYEDMUTEX | SHARED_NTHANDLE
+        printfn "[silk-alloc] desc: %dx%d mip=%d arr=%d fmt=%A samples=%d usage=%A bind=0x%X cpu=0x%X misc=0x%X"
+            desc.Width desc.Height desc.MipLevels desc.ArraySize desc.Format desc.SampleDesc.Count
+            desc.Usage desc.BindFlags desc.CPUAccessFlags desc.MiscFlags
         let mutable texPtr = NativePtr.ofNativeInt<ID3D11Texture2D> 0n
         let hrTex =
-            device.CreateTexture2D(&desc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&texPtr)
+            device.CreateTexture2D(&&desc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&texPtr)
         check "CreateTexture2D" hrTex
         let tex = ComPtr<ID3D11Texture2D>(texPtr)
 
