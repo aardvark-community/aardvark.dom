@@ -39,16 +39,18 @@ module CubeRender =
             ])
         let angle = cval 0.0
         let sg =
-            Sg.box' C4b.White (Box3d.FromCenterAndSize(V3d.Zero, V3d(2.0, 2.0, 2.0)))
+            Sg.box' (C4b(255uy, 150uy, 30uy, 255uy)) (Box3d.FromCenterAndSize(V3d.Zero, V3d(2.0, 2.0, 2.0)))
             |> Sg.shader {
                 do! DefaultSurfaces.trafo
                 do! DefaultSurfaces.simpleLighting
             }
             |> Sg.trafo (angle |> AVal.map (fun a -> Trafo3d.RotationZ a * Trafo3d.RotationX (a * 0.5)))
-            |> Sg.viewTrafo (CameraView.lookAt (V3d(3.5, 3.5, 3.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant)
+            |> Sg.viewTrafo (CameraView.lookAt (V3d(5.0, 5.0, 4.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo |> AVal.constant)
             |> Sg.projTrafo (Frustum.perspective 60.0 0.1 100.0 (float w / float h) |> Frustum.projTrafo |> AVal.constant)
         let task = sg |> Sg.compile runtime signature
-        let color = task |> RenderTask.renderToColor (AVal.constant (V2i(w, h)))
+        // opaque dark background so the cube is high-contrast (and unambiguous in a screenshot)
+        let clearValues = clear { color (C4b(10uy, 12uy, 34uy, 255uy)); depth 1.0 }
+        let color = task |> RenderTask.renderToColorWithClear (AVal.constant (V2i(w, h))) clearValues
         color.Acquire()
         { angle = angle; color = color }
 
