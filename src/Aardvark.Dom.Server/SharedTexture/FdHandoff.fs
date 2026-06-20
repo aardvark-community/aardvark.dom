@@ -218,3 +218,64 @@ module FdHandoff =
                 Size     = 0UL
             }
         img, fence
+
+    // ---- L1 streaming: a persistent connection. The producer (client) connects, sends a
+    // HELLO with the ring's N memfds (one SCM_RIGHTS cmsg), then streams plain "F <i>\n"
+    // frame ticks. The consumer (Chromium painter) is the server: bind/accept, recv HELLO +
+    // import the N buffers, then read frame ticks and swap the composited buffer.
+
+    /// Client: connect to a streaming server, return the connection fd.
+    let streamConnect (sockPath : string) : int =
+        let s = socket(AF_UNIX, SOCK_STREAM, 0)
+        if s < 0 then failwithf "[FdHandoff] stream socket failed (errno %d)" (errno())
+        let addr, alen = sockaddr sockPath
+        if connect(s, addr, alen) < 0 then failwithf "[FdHandoff] stream connect failed (errno %d)" (errno())
+        s
+
+    /// Send the HELLO: an ASCII payload + N fds (the ring memfds) via one SCM_RIGHTS cmsg.
+    let streamHello (conn : int) (payload : string) (fds : int[]) =
+        let pb = Encoding.ASCII.GetBytes payload
+        let pPayload = Marshal.AllocHGlobal pb.Length
+        Marshal.Copy(pb, 0, pPayload, pb.Length)
+        let pIov = Marshal.AllocHGlobal 16
+        Marshal.WriteIntPtr(pIov, 0, pPayload)
+        Marshal.WriteInt64(pIov, 8, int64 pb.Length)
+
+        let n = fds.Length
+        let cmsgLen = 16 + 4 * n
+        let controlLen = ((cmsgLen + 7) / 8) * 8
+        let pControl = Marshal.AllocHGlobal 128
+        Marshal.WriteInt64(pControl, 0, int64 cmsgLen)
+        Marshal.WriteInt32(pControl, 8, SOL_SOCKET)
+        Marshal.WriteInt32(pControl, 12, SCM_RIGHTS)
+        for i in 0 .. n - 1 do Marshal.WriteInt32(pControl, 16 + i * 4, fds.[i])
+
+        let pMsg = Marshal.AllocHGlobal 56
+        for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
+        Marshal.WriteIntPtr(pMsg, 16, pIov)
+        Marshal.WriteInt64(pMsg, 24, 1L)
+        Marshal.WriteIntPtr(pMsg, 32, pControl)
+        Marshal.WriteInt64(pMsg, 40, int64 controlLen)
+
+        let r = sendmsg(conn, pMsg, 0)
+        if r.ToInt64() < 0L then failwithf "[FdHandoff] stream HELLO sendmsg failed (errno %d)" (errno())
+        Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
+        Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
+
+    /// Send one frame tick (plain bytes, no fd). Returns false if the peer is gone.
+    let streamFrame (conn : int) (msg : string) : bool =
+        let pb = Encoding.ASCII.GetBytes msg
+        let pPayload = Marshal.AllocHGlobal pb.Length
+        Marshal.Copy(pb, 0, pPayload, pb.Length)
+        let pIov = Marshal.AllocHGlobal 16
+        Marshal.WriteIntPtr(pIov, 0, pPayload)
+        Marshal.WriteInt64(pIov, 8, int64 pb.Length)
+        let pMsg = Marshal.AllocHGlobal 56
+        for i in 0 .. 6 do Marshal.WriteInt64(pMsg, i * 8, 0L)
+        Marshal.WriteIntPtr(pMsg, 16, pIov)
+        Marshal.WriteInt64(pMsg, 24, 1L)
+        let r = sendmsg(conn, pMsg, 0)
+        Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
+        r.ToInt64() >= 0L
+
+    let streamClose (conn : int) = close conn |> ignore

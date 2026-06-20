@@ -946,7 +946,7 @@ let main argv =
     // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
     // with it enabled for the dma-buf hooks.
     let dmaBufRuntime =
-        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest" ] |> List.exists (fun h -> Array.contains h argv) then
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-stream" ] |> List.exists (fun h -> Array.contains h argv) then
             let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
             (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
         else app.Runtime
@@ -1049,6 +1049,45 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
             exit 0
         | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // L1 STREAM: a ring of 3 OPAQUE_FD buffers, streamed continuously to the Chromium
+    // painter. HELLO sends the 3 memfds once; each frame GPU-fills the next ring buffer
+    // (round-robin, waitIdle inside clearAndCopy so it's tear-free without a fence yet) and
+    // sends a tiny "F <i>" tick. The painter swaps the composited buffer per tick.
+    if Array.contains "opaquefd-stream" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamConnect "/tmp/dmabuf.sock"
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamHello conn
+                (sprintf "STREAM %d %d 3" W H) (ring |> Array.map (fun o -> o.MemFd))
+            printfn "[opaquefd-stream] HELLO sent (3 OPAQUE_FD ring buffers %dx%d); streaming ~600 frames..." W H
+            let mutable frame = 0
+            let mutable running = true
+            while running && frame < 600 do
+                let i = frame % 3
+                let t = float frame * 0.05
+                let col = V4f(float32 (0.5 + 0.5 * sin t),
+                              float32 (0.5 + 0.5 * sin (t + 2.0)),
+                              float32 (0.5 + 0.5 * sin (t + 4.0)), 1.0f)
+                let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                    { Fd = ring.[i].MemFd; Width = W; Height = H; Fourcc = 0u
+                      Modifier = 0xFFFFFFFFFFFFFFFEUL; Offset = 0UL; Stride = 0UL
+                      Image = ring.[i].Image; Memory = ring.[i].Memory; Size = ring.[i].Size }
+                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col |> ignore
+                if not (Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrame conn (sprintf "F %d\n" i)) then
+                    running <- false
+                System.Threading.Thread.Sleep 16
+                frame <- frame + 1
+            printfn "[opaquefd-stream] streamed %d frames; closing" frame
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamClose conn
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
+            exit 0
+        | r -> eprintfn "[opaquefd-stream] runtime is not Vulkan: %A" (r.GetType()); exit 2
 
     // OPAQUE_FD cross-instance test consumer (SEPARATE process + VkInstance): import the
     // memory + sync_fd, acquire from EXTERNAL, copy to host, read the centre pixel.
