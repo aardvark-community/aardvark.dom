@@ -114,7 +114,7 @@ module SilkD3D11Alloc =
                 0u,                                             // flags
                 NativePtr.ofNativeInt<D3DFeatureLevel> 0n,      // pFeatureLevels = null
                 0u,                                             // FeatureLevels = 0
-                D3D11.SdkVersion,
+                uint32 D3D11.SdkVersion,
                 NativePtr.toByRef &&devPtr,                     // ppDevice : ID3D11Device**
                 &&fl,                                           // pFeatureLevel
                 NativePtr.toByRef &&ctxPtr)                     // ppImmediateContext
