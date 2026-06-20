@@ -1052,10 +1052,14 @@ let main argv =
             for (x,y) in [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ] do
                 let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
                 printfn "[iosurface-send-teal] local (%3d,%3d) got=%A expected=(%d,%d,%d,%d)" x y got tr tg tb ta
-            // handoff file the content_shell import branch reads (global id; the secure
-            // production handoff is IOSurfaceCreateMachPort -> IOSurfaceLookupFromMachPort)
-            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)
-            printfn "[iosurface-send-teal] wrote /tmp/iosurface.id=%u ; holding surface alive (Ctrl-C to exit) ..." gid
+            // PUBLISH via the mach-port bridge under a bootstrap service name — the only
+            // cross-process-discoverable handoff for a created (format-stamped) surface on
+            // macOS 26 (global IDs no longer work). content_shell looks it up by name.
+            let svc = Aardvark.Dom.Remote.SharedTexture.MetalExport.MachServiceName
+            let pubRc = Aardvark.Dom.Remote.SharedTexture.MetalExport.aardvark_publish(svc, img.IOSurface)
+            if pubRc <> 0 then eprintfn "[iosurface-send-teal] aardvark_publish FAILED rc=%d" pubRc; exit 1
+            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)   // legacy/debug
+            printfn "[iosurface-send-teal] published IOSurface under mach service '%s' (id=%u); holding alive (Ctrl-C to exit) ..." svc gid
             System.Threading.Thread.Sleep System.Threading.Timeout.Infinite
             exit 0
         | r -> eprintfn "[iosurface-send-teal] runtime is not Vulkan: %A" (r.GetType()); exit 2

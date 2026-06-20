@@ -110,6 +110,19 @@ module MetalExport =
     [<DllImport(framework)>] extern uint32 IOSurfaceGetID(nativeint surf)
     [<DllImport(framework)>] extern nativeint IOSurfaceLookup(uint32 csid)
     [<DllImport(framework)>] extern uint32 IOSurfaceGetPixelFormat(nativeint surf)
+
+    // mach-port handoff bridge (libaardvark_machbridge.dylib, from native/machbridge.c):
+    // publish an IOSurface under a bootstrap service name; the consumer (content_shell)
+    // bootstrap_look_up's it + IOSurfaceLookupFromMachPort. Replaces the dead global-id
+    // path (kIOSurfaceIsGlobal is ignored on macOS 26; a created surface isn't globally
+    // findable, unlike the MoltenVK-exported one which lacks the pixel-format property).
+    [<Literal>]
+    let MachServiceName = "de.aardvark.iosurface"
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern int aardvark_publish(string name, nativeint surface)
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern nativeint aardvark_lookup(string name)
+
     // Create an IOSurface from a CFDictionary of properties (we stamp kIOSurfacePixelFormat
     // = 'BGRA', which the MoltenVK-exported surface lacks → the property Chromium's
     // IOSurfaceImageBackingFactory validates against the SharedImage format).
