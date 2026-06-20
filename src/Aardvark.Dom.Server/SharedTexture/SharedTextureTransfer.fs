@@ -412,12 +412,13 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let s = ring.[i]
             if not s.Busy && fenceSignaled s.Fence then chosen <- i
             k <- k + 1
-        // all busy / in-flight: on Windows DON'T fall back to a busy slot — re-blitting a slot
-        // whose keyed mutex the compositor still holds would block the SHARED graphics queue on
-        // the INFINITE acquire(0), wedging Aardvark AND the compositor (deadlock). Return -1 to
-        // SKIP this frame (show the last one); the browser's FREE frees a slot. Linux/macOS have
-        // no shared-queue-blocking acquire, so they keep the round-robin fallback (cap pacing).
-        if chosen < 0 && not strategy.SyncAfterCopy then chosen <- i0
+        // all busy / in-flight: fall back to round-robin (overwrite the oldest in-flight slot).
+        // The 2-in-flight FREE cap normally keeps a slot free; this fallback only fires before the
+        // browser starts FREEing (R1/bootstrap) — same as the validated opaquefd-stream behavior.
+        // (We must NOT skip-and-stall here: a starved producer that stops rendering never sends a
+        // new {id} message, so the browser never composites past the REG race, never FREEs, and
+        // the pipeline deadlocks. Keeping frames flowing lets a post-REG {id} land + composite.)
+        if chosen < 0 then chosen <- i0
         chosen
 
     member x.Size = size
@@ -463,12 +464,6 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
 
             let fbo = getFramebuffer s
             let i = pickSlot ()
-            if i < 0 then
-                // no free slot (all in-flight, browser hasn't FREE'd yet) — SKIP rendering this
-                // frame and re-show the last one. Avoids a blocking keyed-mutex acquire on the
-                // shared queue. The framework re-evaluates on the next dirty tick.
-                (lastId, s)
-            else
             let slot = ring.[i]
 
             // ensure this slot's previous copy is done before reusing its cmd/sem/image.
