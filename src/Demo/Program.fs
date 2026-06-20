@@ -1228,9 +1228,39 @@ let main argv =
     // We must STAY ALIVE holding the image+handle until the consumer has duplicated it, so we
     // sleep generously before exiting.
     if Array.contains "opaquewin32-send" argv then
-        match app.Runtime with
-        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+        // GPU PINNING (hybrid laptop: NVIDIA 4070 dGPU + AMD 890M iGPU). OPAQUE_WIN32
+        // cross-instance sharing only works when the producer's VkDevice and Chromium's
+        // Vulkan device are the SAME physical device (matching deviceLUID). Aardvark's
+        // default DeviceChooserAuto prefers the dedicated GPU (NVIDIA); pass `--gpu <substr>`
+        // (e.g. `--gpu AMD` or `--gpu Radeon`) to pin selection to the device whose Name
+        // contains <substr>, matching whatever adapter Chromium chose. We build a dedicated
+        // HeadlessVulkanApplication with a scoring chooser so the pin is honoured.
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let pinnedRuntime : Aardvark.Rendering.Vulkan.Runtime =
+            match gpuPin with
+            | Some substr ->
+                let chooser =
+                    Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                        if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                        debug = false, deviceChooser = chooser)).Runtime with
+                | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+                | r -> eprintfn "[opaquewin32-send] pinned runtime is not Vulkan: %A" (r.GetType()); exit 2
+            | None ->
+                match app.Runtime with
+                | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+                | r -> eprintfn "[opaquewin32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let vk = pinnedRuntime
             let dev = vk.Device
+            // Log the SELECTED physical device + its LUID so we can assert it matches
+            // Chromium's chosen adapter (the same-GPU requirement for OPAQUE_WIN32).
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.deviceLUID dev
+            printfn "[opaquewin32-send] PRODUCER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
             let W, H = 256, 256
             // Fixed, well-known handoff path the Chromium import branch reads (analog of the
             // Linux /tmp/dmabuf.sock). Overridable via 1st non-flag arg if provided.
@@ -1257,7 +1287,7 @@ let main argv =
             Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
             Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.destroy dev opaque
             exit 0
-        | r -> eprintfn "[opaquewin32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        )
 
     // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
     // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process

@@ -41,6 +41,25 @@ module OpaqueWin32 =
     let private check (what : string) (res : VkResult) =
         if res <> VkResult.Success then failwithf "[OpaqueWin32] %s failed: %A" what res
 
+    /// Query the device's 8-byte LUID via VkPhysicalDeviceIDProperties (vkGetPhysicalDeviceProperties2).
+    /// On a hybrid system (NVIDIA + AMD) OPAQUE_WIN32 cross-instance sharing only works when the
+    /// PRODUCER and the CONSUMER (Chromium) both pick the SAME physical device — and "same" is
+    /// defined by a matching deviceLUID. Returns (luidValid, 8-byte LUID, hex string) so the
+    /// producer can log/assert it matches Chromium's chosen adapter.
+    let deviceLUID (device : Device) : bool * byte[] * string =
+        let phys = device.PhysicalDevice.Handle
+        let mutable idProps = VkPhysicalDeviceIDProperties.Empty
+        let mutable props2 = VkPhysicalDeviceProperties2.Empty
+        props2.pNext <- NativePtr.toNativeInt &&idProps
+        // VK1.1 core entry (Vulkan11 module exposes vkGetPhysicalDeviceProperties2)
+        VkRaw.vkGetPhysicalDeviceProperties2(phys, &&props2)
+        let luid = Array.zeroCreate<byte> 8
+        let src = idProps.deviceLUID
+        for i in 0 .. 7 do luid.[i] <- src.[i]
+        let valid = idProps.deviceLUIDValid <> 0u
+        let hex = luid |> Array.map (sprintf "%02X") |> String.concat ""
+        (valid, luid, hex)
+
     let private deviceLocalType (device : Device) (typeBits : uint32) =
         device.PhysicalDevice.MemoryTypes
         |> Array.find (fun mt ->
