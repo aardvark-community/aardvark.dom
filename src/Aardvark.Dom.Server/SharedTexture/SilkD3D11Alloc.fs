@@ -111,7 +111,7 @@ module SilkD3D11Alloc =
                 adapterUnk.Handle,                              // IDXGIAdapter*
                 D3DDriverType.Unknown,
                 0n,
-                0u,                                             // flags
+                0x20u,                                          // D3D11_CREATE_DEVICE_BGRA_SUPPORT (needed for B8G8R8A8 RT/SRV)
                 NativePtr.ofNativeInt<D3DFeatureLevel> 0n,      // pFeatureLevels = null
                 0u,                                             // FeatureLevels = 0
                 uint32 D3D11.SdkVersion,
