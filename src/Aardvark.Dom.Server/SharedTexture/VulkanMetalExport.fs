@@ -137,6 +137,17 @@ module MetalExport =
         Marshal.FreeHGlobal p
         n
 
+    // The standard CF callback structs (kCFTypeDictionaryKeyCallBacks /
+    // kCFTypeDictionaryValueCallBacks) are EXPORTED DATA symbols, not functions —
+    // resolve their addresses so the mutable dict retains/releases CF objects.
+    // (A null-callbacks dict stores raw pointers and crashes when IOSurfaceCreate
+    // copies it via setObject:forKey:.)
+    let private cfHandle = System.Runtime.InteropServices.NativeLibrary.Load(cf)
+    let private kCFTypeDictionaryKeyCallBacks =
+        System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFTypeDictionaryKeyCallBacks")
+    let private kCFTypeDictionaryValueCallBacks =
+        System.Runtime.InteropServices.NativeLibrary.GetExport(cfHandle, "kCFTypeDictionaryValueCallBacks")
+
     // BGRA OSType ('BGRA') — the IOSurface pixel format Chromium's IOSurfaceImageBackingFactory
     // expects for viz::SinglePlaneFormat::kBGRA_8888 (vs the property-less surface MoltenVK mints).
     [<Literal>]
@@ -147,7 +158,7 @@ module MetalExport =
     let private createBGRAIOSurface (width : int) (height : int) : nativeint =
         let bpe = 4
         let bpr = width * bpe   // tightly packed; IOSurface may round up internally
-        let dict = CFDictionaryCreateMutable(0n, 0n, 0n, 0n)
+        let dict = CFDictionaryCreateMutable(0n, 0n, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
         let set (k : string) (v : nativeint) =
             let key = cfStr k
             CFDictionarySetValue(dict, key, v)
