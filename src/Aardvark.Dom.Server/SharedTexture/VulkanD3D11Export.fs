@@ -147,6 +147,148 @@ module D3D11Export =
         |> check "vkGetMemoryWin32HandleKHR(D3D11_TEXTURE)"
         { Handle = handle; Width = w; Height = h; Size = uint64 req.size; Image = image; Memory = memory; KeyedMutex = keyedMutex }
 
+    // ====================================================================================
+    // REVERSE (supported) direction: D3D11 ALLOCATES the shared keyed-mutex texture and exports
+    // an NT handle (IDXGIResource1::CreateSharedHandle). Vulkan IMPORTS that memory
+    // (VkImportMemoryWin32HandleInfoKHR(D3d11TextureBit) — the ImportableBit the driver supports),
+    // GPU-fills a gradient, and releases the keyed mutex to the key D3D will acquire. This is the
+    // production Chromium D3DImageBacking path (Chromium owns the texture, Aardvark renders into it).
+    // ====================================================================================
+
+    /// A Vulkan image whose memory was IMPORTED from a D3D11-allocated shared keyed-mutex texture.
+    type ImportedD3D11Image = { Image : VkImage; Memory : VkDeviceMemory; W : int; H : int }
+
+    /// VkImageCreateInfo MUST match the D3D11 allocation: B8G8R8A8_UNORM, OPTIMAL. D3D created it
+    /// with BIND_SHADER_RESOURCE|BIND_RENDER_TARGET, so the Vulkan usage covers SAMPLED|COLOR_ATTACHMENT
+    /// plus TRANSFER_DST|TRANSFER_SRC for the gradient copy. Marked for D3D11_TEXTURE external memory.
+    let private makeImportImage (device : Device) (w : int) (h : int) : VkImage =
+        let dev = device.Handle
+        let mutable ext = VkExternalMemoryImageCreateInfo(D3D11Mem)
+        let mutable info =
+            VkImageCreateInfo(
+                NativePtr.toNativeInt &&ext, VkImageCreateFlags.None, VkImageType.D2d, VkFormat.B8g8r8a8Unorm,
+                VkExtent3D(uint32 w, uint32 h, 1u), 1u, 1u, VkSampleCountFlags.D1Bit, VkImageTiling.Optimal,
+                VkImageUsageFlags.TransferDstBit ||| VkImageUsageFlags.TransferSrcBit |||
+                VkImageUsageFlags.SampledBit ||| VkImageUsageFlags.ColorAttachmentBit,
+                VkSharingMode.Exclusive, 0u, NativePtr.zero, VkImageLayout.Undefined)
+        let mutable image = VkImage.Null
+        VkRaw.vkCreateImage(dev, &&info, NativePtr.zero, &&image) |> check "vkCreateImage(import)"
+        image
+
+    /// IMPORT the D3D11-allocated shared texture's memory into a matching Vulkan image.
+    /// `handle` must already be valid IN THIS process (DuplicateHandle'd from the D3D11 allocator).
+    let importD3D11 (device : Device) (handle : nativeint) (w : int) (h : int) : ImportedD3D11Image =
+        let dev = device.Handle
+        let image = makeImportImage device w h
+        let mutable req = VkMemoryRequirements()
+        VkRaw.vkGetImageMemoryRequirements(dev, image, &&req)
+        let memType = deviceLocalType device req.memoryTypeBits
+        let mutable dedicated = VkMemoryDedicatedAllocateInfo(image, VkBuffer.Null)
+        let mutable importInfo =
+            Aardvark.Rendering.Vulkan.Extensions.KHRExternalMemoryWin32.VkImportMemoryWin32HandleInfoKHR(
+                D3D11Mem, handle, NativePtr.zero)
+        importInfo.pNext <- NativePtr.toNativeInt &&dedicated
+        let mutable alloc = VkMemoryAllocateInfo(NativePtr.toNativeInt &&importInfo, req.size, memType)
+        let mutable memory = VkDeviceMemory.Null
+        VkRaw.vkAllocateMemory(dev, &&alloc, NativePtr.zero, &&memory) |> check "vkAllocateMemory(importD3D11)"
+        VkRaw.vkBindImageMemory(dev, image, memory, 0UL) |> check "vkBindImageMemory(importD3D11)"
+        { Image = image; Memory = memory; W = w; H = h }
+
+    let destroyImported (device : Device) (img : ImportedD3D11Image) =
+        VkRaw.vkDestroyImage(device.Handle, img.Image, NativePtr.zero)
+        VkRaw.vkFreeMemory(device.Handle, img.Memory, NativePtr.zero)
+
+    /// GPU-fill the IMPORTED D3D11 texture with a 2-axis gradient, WRAPPED in a keyed-mutex
+    /// acquire/release: acquire `acquireKey` (0 — the initial key D3D released the texture at),
+    /// release `releaseKey` (1 — what the D3D reader acquires). The texture was allocated by D3D
+    /// so its initial layout to Vulkan is UNDEFINED; we transition UNDEFINED->TRANSFER_DST, copy
+    /// the staging gradient, then TRANSFER_DST->GENERAL. The keyed mutex (not a queue-family
+    /// EXTERNAL release) is the cross-API ownership/visibility primitive here.
+    let importFillRelease (device : Device) (img : ImportedD3D11Image) (acquireKey : uint64) (releaseKey : uint64) =
+        let dev = device.Handle
+        let w, h = img.W, img.H
+        let bufSize = uint64 (w * h * 4)
+
+        // staging buffer with the gradient
+        let mutable bufInfo =
+            VkBufferCreateInfo(VkBufferCreateFlags.None, bufSize, VkBufferUsageFlags.TransferSrcBit,
+                               VkSharingMode.Exclusive, 0u, NativePtr.zero)
+        let mutable buffer = VkBuffer.Null
+        VkRaw.vkCreateBuffer(dev, &&bufInfo, NativePtr.zero, &&buffer) |> check "vkCreateBuffer(impgrad)"
+        let mutable breq = VkMemoryRequirements()
+        VkRaw.vkGetBufferMemoryRequirements(dev, buffer, &&breq)
+        let mutable balloc = VkMemoryAllocateInfo(0n, breq.size, hostVisibleType device breq.memoryTypeBits)
+        let mutable bmem = VkDeviceMemory.Null
+        VkRaw.vkAllocateMemory(dev, &&balloc, NativePtr.zero, &&bmem) |> check "vkAllocateMemory(impgrad)"
+        VkRaw.vkBindBufferMemory(dev, buffer, bmem, 0UL) |> check "vkBindBufferMemory(impgrad)"
+        let mutable ptr = 0n
+        VkRaw.vkMapMemory(dev, bmem, 0UL, bufSize, VkMemoryMapFlags.None, &&ptr) |> check "vkMapMemory(impgrad)"
+        for y in 0 .. h - 1 do
+            for x in 0 .. w - 1 do
+                let o = (y * w + x) * 4
+                Marshal.WriteByte(ptr, o + 0, 128uy)                    // B
+                Marshal.WriteByte(ptr, o + 1, byte (y * 255 / (h - 1))) // G
+                Marshal.WriteByte(ptr, o + 2, byte (x * 255 / (w - 1))) // R
+                Marshal.WriteByte(ptr, o + 3, 255uy)                    // A
+        VkRaw.vkUnmapMemory(dev, bmem)
+
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        let mutable poolInfo = VkCommandPoolCreateInfo(0n, VkCommandPoolCreateFlags.None, qfi)
+        let mutable pool = Unchecked.defaultof<VkCommandPool>
+        VkRaw.vkCreateCommandPool(dev, &&poolInfo, NativePtr.zero, &&pool) |> check "vkCreateCommandPool(impgrad)"
+        let mutable cai = VkCommandBufferAllocateInfo(0n, pool, VkCommandBufferLevel.Primary, 1u)
+        let mutable cmd = Unchecked.defaultof<VkCommandBuffer>
+        VkRaw.vkAllocateCommandBuffers(dev, &&cai, &&cmd) |> check "vkAllocateCommandBuffers(impgrad)"
+        let mutable cbi = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&cbi) |> check "vkBeginCommandBuffer(impgrad)"
+
+        let range = VkImageSubresourceRange(VkImageAspectFlags.ColorBit, 0u, 1u, 0u, 1u)
+        // UNDEFINED -> TRANSFER_DST (keyed mutex gives us ownership; no queue-family transfer needed)
+        let mutable b1 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.None, VkAccessFlags.TransferWriteBit,
+                                 VkImageLayout.Undefined, VkImageLayout.TransferDstOptimal,
+                                 0xFFFFFFFFu, 0xFFFFFFFFu, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TopOfPipeBit, VkPipelineStageFlags.TransferBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b1)
+        let subres = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable region =
+            VkBufferImageCopy(0UL, 0u, 0u, subres, VkOffset3D(0, 0, 0), VkExtent3D(uint32 w, uint32 h, 1u))
+        VkRaw.vkCmdCopyBufferToImage(cmd, buffer, img.Image, VkImageLayout.TransferDstOptimal, 1u, &&region)
+        // TRANSFER_DST -> GENERAL (leave it in a layout the D3D reader can CopyResource from)
+        let mutable b2 =
+            VkImageMemoryBarrier(0n, VkAccessFlags.TransferWriteBit, VkAccessFlags.None,
+                                 VkImageLayout.TransferDstOptimal, VkImageLayout.General,
+                                 0xFFFFFFFFu, 0xFFFFFFFFu, img.Image, range)
+        VkRaw.vkCmdPipelineBarrier(cmd, VkPipelineStageFlags.TransferBit, VkPipelineStageFlags.BottomOfPipeBit,
+                                   VkDependencyFlags.None, 0u, NativePtr.zero, 0u, NativePtr.zero, 1u, &&b2)
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer(impgrad)"
+
+        // submit WRAPPED in the keyed-mutex acquire/release
+        let mutable pcmd = cmd
+        let acqMem = [| img.Memory |]
+        let acqKeys = [| acquireKey |]
+        let acqTimeouts = [| 0xFFFFFFFFu |]   // INFINITE
+        let relMem = [| img.Memory |]
+        let relKeys = [| releaseKey |]
+        use pAcqMem = fixed acqMem
+        use pAcqKeys = fixed acqKeys
+        use pAcqTimeouts = fixed acqTimeouts
+        use pRelMem = fixed relMem
+        use pRelKeys = fixed relKeys
+        let mutable km =
+            Aardvark.Rendering.Vulkan.Extensions.KHRWin32KeyedMutex.VkWin32KeyedMutexAcquireReleaseInfoKHR(
+                1u, pAcqMem, pAcqKeys, pAcqTimeouts, 1u, pRelMem, pRelKeys)
+        let mutable submit =
+            VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 0u, NativePtr.zero)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, Unchecked.defaultof<VkFence>) |> check "vkQueueSubmit(impgrad,km)"
+        VkRaw.vkQueueWaitIdle(queue) |> check "vkQueueWaitIdle(impgrad,km)"
+
+        VkRaw.vkDestroyCommandPool(dev, pool, NativePtr.zero)
+        VkRaw.vkDestroyBuffer(dev, buffer, NativePtr.zero)
+        VkRaw.vkFreeMemory(dev, bmem, NativePtr.zero)
+
     let destroy (device : Device) (img : D3D11SharedImage) =
         VkRaw.vkDestroyImage(device.Handle, img.Image, NativePtr.zero)
         VkRaw.vkFreeMemory(device.Handle, img.Memory, NativePtr.zero)

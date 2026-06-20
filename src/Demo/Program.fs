@@ -1448,6 +1448,55 @@ let main argv =
             exit 0
         )
 
+    // ---- REVERSE (supported, production) direction: D3D11 ALLOCATES the shared keyed-mutex
+    // texture (tools/d3d11-consumer/d3d11_alloc.exe) + writes the handoff; THIS Vulkan process
+    // imports it (VkImportMemoryWin32HandleInfoKHR(D3D11_TEXTURE) — the ImportableBit direction),
+    // GPU-fills a 2-axis gradient WRAPPED in a keyed-mutex acquire(0)/release(1), then the D3D11
+    // process AcquireSync(1) + reads. This is the Chromium D3DImageBacking path: Chromium owns the
+    // texture, Aardvark renders into it. Requires VK_KHR_win32_keyed_mutex. `--gpu NVIDIA` pin. ----
+    if Array.contains "d3d11-import-fill" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                Seq.singleton "VK_KHR_win32_keyed_mutex")
+        let rt : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-import-fill] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let dev = rt.Device
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-import-fill] IMPORTER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11-rev.txt")
+            // D3D11 allocator writes the handoff first; wait for it + DuplicateHandle the handle in.
+            let h = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.readHandoff handoffPath
+            printfn "[d3d11-import-fill] handoff handle=0x%X allocPID=%d %dx%d" (int64 h.Handle) h.ProducerPID h.Width h.Height
+            let dup = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.duplicateIntoSelf h.ProducerPID h.Handle
+            printfn "[d3d11-import-fill] DuplicateHandle -> 0x%X (valid in this process)" (int64 dup)
+            let imp = Aardvark.Dom.Remote.SharedTexture.D3D11Export.importD3D11 dev dup h.Width h.Height
+            printfn "[d3d11-import-fill] imported D3D11 keyed-mutex texture; filling gradient + keyed-mutex acquire(0)/release(1)"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillRelease dev imp 0UL 1UL
+            printfn "[d3d11-import-fill] filled + released keyed mutex (key 1); the D3D11 reader can now AcquireSync(1)"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.destroyImported dev imp
+            exit 0
+        )
+
     // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
     // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
     // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
