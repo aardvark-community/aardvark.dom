@@ -40,13 +40,21 @@ int main(int argc, char** argv) {
     }
     const char* handoffPath = argv[1];
     bool wantLuid = false;
-    uint64_t wantLuidVal = 0;     // 8 bytes little-endian (as the producer prints them L->R)
+    // The producer prints VkPhysicalDeviceIDProperties.deviceLUID as 8 bytes hex left-to-right
+    // (byte[0]..byte[7]). The DXGI LUID struct in memory is LowPart(4 LE) then HighPart(4 LE) —
+    // the SAME 8-byte order. So parse the hex string into 8 bytes and compare raw against
+    // &desc.AdapterLuid. (Do NOT strtoull as a big-endian uint64 — that mismatches the byte order.)
+    uint8_t wantLuidBytes[8] = {0};
     bool keyedMutex = false;
     uint64_t releaseKey = 1;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--luid") == 0 && i + 1 < argc) {
             wantLuid = true;
-            wantLuidVal = strtoull(argv[++i], nullptr, 16);
+            const char* hx = argv[++i];
+            for (int b = 0; b < 8 && hx[b*2] && hx[b*2+1]; b++) {
+                char two[3] = { hx[b*2], hx[b*2+1], 0 };
+                wantLuidBytes[b] = (uint8_t)strtoul(two, nullptr, 16);
+            }
         } else if (strcmp(argv[i], "--keyedmutex") == 0) {
             keyedMutex = true;
         } else if (strcmp(argv[i], "--releasekey") == 0 && i + 1 < argc) {
@@ -90,24 +98,24 @@ int main(int argc, char** argv) {
 
     IDXGIAdapter1* chosen = nullptr;
     IDXGIAdapter1* adapter = nullptr;
+    auto luidHex = [](const LUID& l, char* out) {
+        const uint8_t* p = (const uint8_t*)&l;  // LowPart(4 LE) then HighPart(4 LE) = 8 bytes
+        for (int b = 0; b < 8; b++) sprintf(out + b*2, "%02X", p[b]);
+    };
     for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++) {
         DXGI_ADAPTER_DESC1 desc;
         adapter->GetDesc1(&desc);
-        // pack LUID the same way the producer prints VkPhysicalDeviceIDProperties.deviceLUID
-        // (LowPart then HighPart, little-endian bytes left-to-right).
-        uint64_t luid = ((uint64_t)(uint32_t)desc.AdapterLuid.LowPart) |
-                        ((uint64_t)(uint32_t)desc.AdapterLuid.HighPart << 32);
-        wchar_t* dn = desc.Description;
-        printf("[d3d11-recv]   adapter[%u] LUID=%016llX  '%ls'\n", i, (unsigned long long)luid, dn);
-        bool match = wantLuid ? (luid == wantLuidVal) : (i == 0);
+        char hx[17] = {0}; luidHex(desc.AdapterLuid, hx);
+        printf("[d3d11-recv]   adapter[%u] LUID=%s  '%ls'\n", i, hx, desc.Description);
+        bool match = wantLuid ? (memcmp(&desc.AdapterLuid, wantLuidBytes, 8) == 0) : (i == 0);
         if (match && !chosen) { chosen = adapter; chosen->AddRef(); }
         adapter->Release();
     }
-    if (!chosen) { fprintf(stderr, "[d3d11-recv] no matching DXGI adapter\n"); return 3; }
+    if (!chosen) { fprintf(stderr, "[d3d11-recv] no matching DXGI adapter (LUID mismatch)\n"); return 3; }
     {
         DXGI_ADAPTER_DESC1 d; chosen->GetDesc1(&d);
-        uint64_t luid = ((uint64_t)(uint32_t)d.AdapterLuid.LowPart) | ((uint64_t)(uint32_t)d.AdapterLuid.HighPart << 32);
-        printf("[d3d11-recv] chosen adapter LUID=%016llX '%ls'\n", (unsigned long long)luid, d.Description);
+        char hx[17] = {0}; luidHex(d.AdapterLuid, hx);
+        printf("[d3d11-recv] chosen adapter LUID=%s '%ls'\n", hx, d.Description);
     }
 
     // ---- create a D3D11 device on that adapter
