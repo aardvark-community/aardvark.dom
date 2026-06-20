@@ -124,8 +124,18 @@ module D3D11Export =
         VkRaw.vkGetImageMemoryRequirements(dev, image, &&req)
         let memType = deviceLocalType device req.memoryTypeBits
         let mutable dedicated = VkMemoryDedicatedAllocateInfo(image, VkBuffer.Null)
+        // For a D3D11_TEXTURE export, D3D11 (OpenSharedResource1) only accepts the handle if it
+        // carries DXGI shared-resource access rights. Chain VkExportMemoryWin32HandleInfoKHR with
+        // dwAccess = DXGI_SHARED_RESOURCE_READ (0x80000000) | DXGI_SHARED_RESOURCE_WRITE (0x1).
+        // Without this the handle opens with E_INVALIDARG. NULL pAttributes/name.
+        let DXGI_SHARED_RESOURCE_READ  = 0x80000000u
+        let DXGI_SHARED_RESOURCE_WRITE = 0x00000001u
+        let mutable exportWin32 =
+            Aardvark.Rendering.Vulkan.Extensions.KHRExternalMemoryWin32.VkExportMemoryWin32HandleInfoKHR(
+                NativePtr.ofNativeInt 0n, DXGI_SHARED_RESOURCE_READ ||| DXGI_SHARED_RESOURCE_WRITE, NativePtr.zero)
+        exportWin32.pNext <- NativePtr.toNativeInt &&dedicated
         let mutable export = VkExportMemoryAllocateInfo(D3D11Mem)
-        export.pNext <- NativePtr.toNativeInt &&dedicated
+        export.pNext <- NativePtr.toNativeInt &&exportWin32
         let mutable alloc = VkMemoryAllocateInfo(NativePtr.toNativeInt &&export, req.size, memType)
         let mutable memory = VkDeviceMemory.Null
         VkRaw.vkAllocateMemory(dev, &&alloc, NativePtr.zero, &&memory) |> check "vkAllocateMemory"
