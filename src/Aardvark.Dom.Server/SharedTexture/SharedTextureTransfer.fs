@@ -113,6 +113,12 @@ type private PlatformStrategy =
       SideChannelConnect : string -> int64
       SideChannelPoll    : int64 -> string
       SideChannelClose   : int64 -> unit
+      /// Windows keyed-mutex: WAIT the slot's copy fence before publishing the frame to the
+      /// browser, so the keyed-mutex release(0) is GPU-complete before the compositor's
+      /// AcquireKeyedMutex(0) — otherwise the browser acquires a key the producer's pending
+      /// submit still holds and the compositor stalls. Linux/macOS (EXTERNAL release) don't
+      /// need it (the per-frame acquire fence carries availability).
+      SyncAfterCopy : bool
       /// self-test readback (BGRA bytes); [||] where unsupported.
       Readback : PlatformBuffer -> byte[] }
 
@@ -132,6 +138,7 @@ module private Platform =
               SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
               SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
               SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)
+              SyncAfterCopy = false
               Readback = fun buf -> OpaqueFd.readAllLocal device (buf.Tag :?> OpaqueImage) }
 
         let macos () : PlatformStrategy =
@@ -152,6 +159,7 @@ module private Platform =
               SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
               SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
               SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)
+              SyncAfterCopy = false
               Readback = fun _ -> [||] }
 
         let windows () : PlatformStrategy =
@@ -185,6 +193,7 @@ module private Platform =
               SideChannelConnect = fun ch -> int64 (NamedPipeHandoff.connect ch)
               SideChannelPoll    = fun conn -> NamedPipeHandoff.poll (nativeint conn)
               SideChannelClose   = fun conn -> NamedPipeHandoff.close (nativeint conn)
+              SyncAfterCopy = true
               Readback = fun _ -> [||] }
 
         if RuntimeInformation.IsOSPlatform OSPlatform.OSX then macos ()
@@ -211,7 +220,7 @@ type private RingSlot =
 type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : aval<V2i>, channelName : string) =
     inherit AdaptiveObject()
 
-    static let RING_N = 3            // ring depth
+    static let RING_N = 4            // ring depth (compositor holds <=2 in-flight + producer 1 + 1 spare)
     // the side-channel path/pipe is keyed by channelName inside the platform strategy
     // (Linux /tmp/aardvark-sharedtexture-<channel>.sock; Windows \\.\pipe\aardvark-<channel>).
 
@@ -446,6 +455,12 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             // strategy supplies the cross-process sync (EXTERNAL release on Linux/macOS,
             // keyed-mutex acquire/release on Windows).
             strategy.CopyInto slot.Cmd img.Handle img.Layout slot.Buf s.X s.Y slot.Sem slot.Fence
+
+            // Windows keyed-mutex: block until the copy (incl. release(0)) is GPU-complete so
+            // the browser's AcquireKeyedMutex(0) won't race the producer's pending release. The
+            // fence is reset at the top of the slot's NEXT use, so re-wait it next cycle is a
+            // no-op fast path. (Linux/macOS skip this — their per-frame acquire fence handles it.)
+            if strategy.SyncAfterCopy then waitFence slot.Fence
 
             // mark the slot in-flight; the browser FREEs it after compositing.
             slot.Busy <- true
