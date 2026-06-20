@@ -22,6 +22,7 @@ module FdHandoff =
     [<DllImport("libc", SetLastError = true)>] extern int unlink(string path)
     [<DllImport("libc", SetLastError = true)>] extern nativeint sendmsg(int fd, nativeint msg, int flags)
     [<DllImport("libc", SetLastError = true)>] extern nativeint recvmsg(int fd, nativeint msg, int flags)
+    [<DllImport("libc", SetLastError = true)>] extern nativeint recv(int fd, byte[] buf, nativeint len, int flags)
 
     let private AF_UNIX = 1
     let private SOCK_STREAM = 1
@@ -350,6 +351,16 @@ module FdHandoff =
         Marshal.FreeHGlobal pMsg; Marshal.FreeHGlobal pControl
         Marshal.FreeHGlobal pIov; Marshal.FreeHGlobal pPayload
         r.ToInt64() >= 0L
+
+    // Non-blocking read of any pending plain bytes on the connection (the consumer's
+    // reverse-channel "R <w> <h>" resize requests). Returns "" if nothing is waiting
+    // (EAGAIN) or on EOF. SOCK_STREAM may coalesce several lines — caller takes the last.
+    let private MSG_DONTWAIT = 0x40
+    let streamPoll (conn : int) : string =
+        let buf = Array.zeroCreate<byte> 256
+        let n = recv(conn, buf, nativeint 256, MSG_DONTWAIT)
+        let ni = n.ToInt64()
+        if ni > 0L then Encoding.ASCII.GetString(buf, 0, int ni) else ""
 
     let closeFd (fd : int) = if fd >= 0 then close fd |> ignore
 

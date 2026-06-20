@@ -21,6 +21,8 @@ open Aardvark.Dom.Utilities
 // In its own module so `open Aardvark.SceneGraph` (whose `Sg` clashes with Aardvark.Dom's)
 // stays local. Renders to a Bgra8 colour texture so the copy into the BGRA ring is a
 // straight vkCmdCopyImage (no R/B swizzle).
+module ST = Aardvark.Dom.Remote.SharedTexture.FdHandoff
+
 module CubeRender =
     open Aardvark.Base
     open Aardvark.Rendering
@@ -28,7 +30,7 @@ module CubeRender =
     open FShade
     open FSharp.Data.Adaptive
 
-    type T = { angle : cval<float>; color : IAdaptiveResource<IBackendTexture> }
+    type T = { angle : cval<float>; color : IAdaptiveResource<IBackendTexture>; dispose : unit -> unit }
 
     let create (runtime : IRuntime) (w : int) (h : int) : T =
         Aardvark.Base.IntrospectionProperties.CustomEntryAssembly <- System.Reflection.Assembly.GetAssembly(typeof<ISg>)
@@ -52,12 +54,16 @@ module CubeRender =
         let clearValues = clear { color (C4b(10uy, 12uy, 34uy, 255uy)); depth 1.0 }
         let color = task |> RenderTask.renderToColorWithClear (AVal.constant (V2i(w, h))) clearValues
         color.Acquire()
-        { angle = angle; color = color }
+        { angle = angle; color = color
+          dispose = fun () -> (try color.Release() with _ -> ()); (try task.Dispose() with _ -> ()) }
 
     /// Advance the rotation and render the frame; returns the freshly-rendered colour texture.
     let render (t : T) (frame : int) : IBackendTexture =
         transact (fun () -> t.angle.Value <- float frame * 0.04)
         t.color.GetValue()
+
+    /// Free the offscreen FBO/render task (used when the surface is reallocated on resize).
+    let destroy (t : T) = t.dispose ()
 
 module Shader =
     open FShade
@@ -1153,16 +1159,43 @@ let main argv =
         match dmaBufRuntime with
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             let dev = vk.Device
-            let W, H = 256, 256
-            let ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
-            let cube = CubeRender.create vk W H
-            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamConnect "/tmp/dmabuf.sock"
-            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamHello conn
-                (sprintf "STREAM %d %d 3" W H) (ring |> Array.map (fun o -> o.MemFd))
-            printfn "[opaquefd-stream] HELLO sent (3 OPAQUE_FD ring buffers %dx%d); streaming ~600 frames..." W H
+            let mutable W, H = 256, 256
+            let mutable gen = 0
+            let mutable ring = Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
+            let mutable cube = CubeRender.create vk W H
+            let conn = ST.streamConnect "/tmp/dmabuf.sock"
+            let sendHello () =
+                ST.streamHello conn (sprintf "STREAM %d %d 3 %d" W H gen) (ring |> Array.map (fun o -> o.MemFd))
+                printfn "[opaquefd-stream] HELLO gen=%d (3 OPAQUE_FD ring buffers %dx%d)" gen W H
+            sendHello ()
+            // Reallocate the ring + offscreen FBO to a new size and re-announce (HELLO).
+            let reallocate (nw : int) (nh : int) =
+                Aardvark.Rendering.Vulkan.VkRaw.vkDeviceWaitIdle dev.Handle |> ignore
+                ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
+                CubeRender.destroy cube
+                W <- nw; H <- nh; gen <- gen + 1
+                ring <- Array.init 3 (fun _ -> Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H)
+                cube <- CubeRender.create vk W H
+                sendHello ()
+            // Consumer is authoritative for size: parse the LAST "R <w> <h>" it sent.
+            let pollResize () : (int * int) option =
+                let s = ST.streamPoll conn
+                if s = "" then None
+                else
+                    let mutable result = None
+                    for line in s.Split('\n') do
+                        let parts = line.Trim().Split(' ')
+                        if parts.Length >= 3 && parts.[0] = "R" then
+                            match System.Int32.TryParse parts.[1], System.Int32.TryParse parts.[2] with
+                            | (true, w), (true, h) when w > 0 && h > 0 -> result <- Some (w, h)
+                            | _ -> ()
+                    result
             let mutable frame = 0
             let mutable running = true
-            while running && frame < 600 do
+            while running do
+                match pollResize () with
+                | Some (nw, nh) when (nw, nh) <> (W, H) -> reallocate nw nh
+                | _ -> ()
                 let i = frame % 3
                 let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
                     { Fd = ring.[i].MemFd; Width = W; Height = H; Fourcc = 0u
@@ -1175,16 +1208,13 @@ let main argv =
                 let tex = CubeRender.render cube frame
                 let cimg = unbox<Aardvark.Rendering.Vulkan.Image> tex
                 let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.renderCopyExternal dev cimg.Handle cimg.Layout dst
-                if not (Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrameFd conn (sprintf "F %d\n" i) fenceFd) then
+                if not (ST.streamFrameFd conn (sprintf "F %d %d\n" i gen) fenceFd) then
                     running <- false
-                Aardvark.Dom.Remote.SharedTexture.FdHandoff.closeFd fenceFd
-                if frame % 60 = 0 then
-                    let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev ring.[i]
-                    printfn "[opaquefd-stream] frame %d buf %d SAME-INSTANCE readback RGBA=(%d,%d,%d,%d)" frame i r g b a
+                ST.closeFd fenceFd
                 System.Threading.Thread.Sleep 16
                 frame <- frame + 1
             printfn "[opaquefd-stream] streamed %d frames; closing" frame
-            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamClose conn
+            ST.streamClose conn
             ring |> Array.iter (Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev)
             exit 0
         | r -> eprintfn "[opaquefd-stream] runtime is not Vulkan: %A" (r.GetType()); exit 2
