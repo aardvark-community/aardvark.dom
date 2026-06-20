@@ -294,6 +294,68 @@ module DmaBufGpu =
         let mutable submit = VkSubmitInfo(0n, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
         VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit"
 
+    /// WINDOWS variant of recordBlitInto: blit `src` -> the imported D3D11 `dstImage`,
+    /// with the submit WRAPPED in a keyed-mutex acquire(acquireKey)/release(releaseKey) on
+    /// `dstMem` instead of a QUEUE_FAMILY_EXTERNAL release. Chromium's D3DImageBacking owns
+    /// the keyed mutex (single-key 0): producer acquire(0)/blit/release(0); Chromium
+    /// BeginAccessD3D11 AcquireKeyedMutex(0)/sample/release(0). Per-slot cmd/sem/fence, no
+    /// waitIdle — the streaming analog of recordBlitInto. (Runtime-tested on zephyrus in the
+    /// follow-on; compiles here.)
+    let recordBlitIntoKeyed (device : Device) (cmd : VkCommandBuffer) (src : VkImage) (srcLayout : VkImageLayout)
+                            (dstImage : VkImage) (dstMem : VkDeviceMemory) (dstW : int) (dstH : int)
+                            (acquireKey : uint64) (releaseKey : uint64)
+                            (signalSem : VkSemaphore) (fence : VkFence) =
+        let dev = device.Handle
+        let qfi = uint32 device.GraphicsFamily.Index
+        let mutable queue = Unchecked.defaultof<VkQueue>
+        VkRaw.vkGetDeviceQueue(dev, qfi, 0u, &&queue)
+        VkRaw.vkResetCommandBuffer(cmd, VkCommandBufferResetFlags.None) |> ignore
+        let mutable beginInfo = VkCommandBufferBeginInfo(0n, VkCommandBufferUsageFlags.OneTimeSubmitBit, NativePtr.zero)
+        VkRaw.vkBeginCommandBuffer(cmd, &&beginInfo) |> check "vkBeginCommandBuffer(keyed)"
+
+        barrier cmd src VkAccessFlags.MemoryWriteBit VkAccessFlags.TransferReadBit
+                srcLayout VkImageLayout.TransferSrcOptimal
+                VkPipelineStageFlags.AllCommandsBit VkPipelineStageFlags.TransferBit
+        // keyed mutex gives ownership; no queue-family transfer — UNDEFINED -> TRANSFER_DST.
+        barrier cmd dstImage VkAccessFlags.None VkAccessFlags.TransferWriteBit
+                VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
+                VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
+        let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
+        let mutable offsets = VkOffset3D_2()
+        offsets.[0] <- VkOffset3D(0, 0, 0)
+        offsets.[1] <- VkOffset3D(dstW, dstH, 1)
+        let mutable region = VkImageBlit(layers, offsets, layers, offsets)
+        VkRaw.vkCmdBlitImage(cmd, src, VkImageLayout.TransferSrcOptimal,
+                             dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region, VkFilter.Nearest)
+        barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
+                VkImageLayout.TransferSrcOptimal srcLayout
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.AllCommandsBit
+        // TRANSFER_DST -> GENERAL (the layout D3D's CopyResource reads from); no EXTERNAL release.
+        barrier cmd dstImage VkAccessFlags.TransferWriteBit VkAccessFlags.None
+                VkImageLayout.TransferDstOptimal VkImageLayout.General
+                VkPipelineStageFlags.TransferBit VkPipelineStageFlags.BottomOfPipeBit
+        VkRaw.vkEndCommandBuffer(cmd) |> check "vkEndCommandBuffer(keyed)"
+
+        // submit WRAPPED in the keyed-mutex acquire/release on dstMem.
+        let acqMem = [| dstMem |]
+        let acqKeys = [| acquireKey |]
+        let acqTimeouts = [| 0xFFFFFFFFu |]   // INFINITE
+        let relMem = [| dstMem |]
+        let relKeys = [| releaseKey |]
+        use pAcqMem = fixed acqMem
+        use pAcqKeys = fixed acqKeys
+        use pAcqTimeouts = fixed acqTimeouts
+        use pRelMem = fixed relMem
+        use pRelKeys = fixed relKeys
+        let mutable km =
+            Aardvark.Rendering.Vulkan.Extensions.KHRWin32KeyedMutex.VkWin32KeyedMutexAcquireReleaseInfoKHR(
+                1u, pAcqMem, pAcqKeys, pAcqTimeouts, 1u, pRelMem, pRelKeys)
+        let mutable psem = signalSem
+        let mutable pcmd = cmd
+        let mutable submit =
+            VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, 1u, &&psem)
+        VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit(keyed)"
+
     /// Copy an already-rendered source image (currently in `srcLayout`) into the
     /// OPAQUE/dma-buf `dst`, releasing dst to EXTERNAL. Returns a sync_fd fence;
     /// restores the source layout so Aardvark can keep rendering into it.

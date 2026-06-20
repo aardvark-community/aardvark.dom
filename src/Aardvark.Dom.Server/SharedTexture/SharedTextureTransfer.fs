@@ -66,18 +66,113 @@ open Aardvark.Dom
 open Aardvark.Dom.Remote
 open Aardvark.Rendering.Vulkan
 open Microsoft.FSharp.NativeInterop
+open System.Runtime.InteropServices
 
 #nowarn "9"
 #nowarn "51"
 
-// One ring slot: its OPAQUE_FD image plus the persistent per-slot copy resources
+// ── Per-platform strategy ───────────────────────────────────────────────────
+// Everything in SharedTextureRenderTarget is platform-agnostic (the ring, the offscreen
+// FBO + scene render, render-when-dirty, the 2-in-flight FIFO, resize/realloc, the
+// REG/FREE protocol + gen tags, the {id,channel,size} message) EXCEPT four things that
+// genuinely differ by OS — factored out here:
+//   - ALLOC a w×h shared backing,
+//   - COPY the rendered FBO into it (incl. the cross-process sync),
+//   - DESTROY it,
+//   - HANDOFF / REGister its handle with the browser.
+// Mapping:
+//   Linux  : OPAQUE_FD dma-buf + EXTERNAL-release blit + SCM_RIGHTS fd handoff.   [tested on airtop]
+//   macOS  : IOSurface (VK_EXT_metal_objects) + EXTERNAL-release blit + mach-port. [compile-only; runtime follow-on]
+//   Windows: Silk.NET D3D11 keyed-mutex texture imported into Vulkan + keyed-mutex
+//            blit (single key 0) + Win32 NT-handle file handoff.                   [compile-only; runtime follow-on]
+
+/// One ring-slot backing: the Vulkan image to render into + the platform record (Tag).
+type private PlatformBuffer =
+    { Image  : VkImage
+      Width  : int
+      Height : int
+      Tag    : obj }   // OpaqueImage | MetalSharedImage | (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
+
+type private PlatformStrategy =
+    { /// allocate a w×h shared backing.
+      Alloc    : int -> int -> PlatformBuffer
+      /// blit the rendered FBO image (src/srcLayout) into the slot buffer, with the platform's
+      /// cross-process sync, signaling the per-slot semaphore (GPU) + fence (CPU).
+      CopyInto : VkCommandBuffer -> VkImage -> VkImageLayout -> PlatformBuffer -> int -> int -> VkSemaphore -> VkFence -> unit
+      /// free the backing.
+      Destroy  : PlatformBuffer -> unit
+      /// publish the slot's handle + send the REG line over the side-channel `conn` (Windows
+      /// uses a file handoff and ignores conn). textureId, w, h. returns true on success.
+      SendReg  : int -> PlatformBuffer -> string -> int -> int -> bool
+      /// self-test readback (BGRA bytes); [||] where unsupported.
+      Readback : PlatformBuffer -> byte[] }
+
+module private Platform =
+    /// build the strategy for the current OS over `device`.
+    let strategy (device : Device) : PlatformStrategy =
+        let linux () : PlatformStrategy =
+            { Alloc = fun w h ->
+                let o = OpaqueFd.create device w h
+                { Image = o.Image; Width = o.Width; Height = o.Height; Tag = box o }
+              CopyInto = fun cmd src srcLayout buf w h sem fence ->
+                DmaBufGpu.recordBlitInto device cmd src srcLayout buf.Image w h sem fence
+              Destroy = fun buf -> OpaqueFd.destroy device (buf.Tag :?> OpaqueImage)
+              SendReg = fun conn buf id w h ->
+                let o = buf.Tag :?> OpaqueImage
+                FdHandoff.streamFrameFd conn (sprintf "REG %s %d %d\n" id w h) o.MemFd
+              Readback = fun buf -> OpaqueFd.readAllLocal device (buf.Tag :?> OpaqueImage) }
+
+        let macos () : PlatformStrategy =
+            { Alloc = fun w h ->
+                let m = MetalExport.createImported device w h
+                { Image = m.Image; Width = m.Width; Height = m.Height; Tag = box m }
+              CopyInto = fun cmd src srcLayout buf w h sem fence ->
+                // IOSurface-backed image: the same EXTERNAL-release blit (Vulkan-generic).
+                DmaBufGpu.recordBlitInto device cmd src srcLayout buf.Image w h sem fence
+              Destroy = fun buf -> MetalExport.destroy device (buf.Tag :?> MetalSharedImage)
+              SendReg = fun conn buf id w h ->
+                let m = buf.Tag :?> MetalSharedImage
+                // publish the IOSurface under a per-textureId mach service name; REG names it so
+                // the browser does IOSurfaceLookupFromMachPort(name). (Streaming handoff: follow-on.)
+                let name = sprintf "%s.%s" MetalExport.MachServiceName id
+                MetalExport.aardvark_publish(name, m.IOSurface) |> ignore
+                FdHandoff.streamFrame conn (sprintf "REG %s %d %d %s\n" id w h name)
+              Readback = fun _ -> [||] }
+
+        let windows () : PlatformStrategy =
+            { Alloc = fun w h ->
+                let (_, _, luidHex) = D3D11Export.deviceLUID device
+                let tex = SilkD3D11Alloc.alloc luidHex w h
+                let imp = D3D11Export.importD3D11 device tex.Handle w h
+                { Image = imp.Image; Width = w; Height = h; Tag = box (tex, imp) }
+              CopyInto = fun cmd src srcLayout buf w h sem fence ->
+                let (_, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
+                // keyed-mutex blit, single key 0 (Chromium's D3DImageBacking owns the mutex).
+                DmaBufGpu.recordBlitIntoKeyed device cmd src srcLayout imp.Image imp.Memory w h 0UL 0UL sem fence
+              Destroy = fun buf ->
+                let (tex, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
+                D3D11Export.destroyImported device imp
+                SilkD3D11Alloc.destroy tex
+              SendReg = fun _conn buf id w h ->
+                let (tex, _) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
+                // Windows: NT-handle file handoff (the painter reads handle+PID from the file).
+                let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "aardvark-d3d11-%s.txt" id)
+                Win32Handoff.writeHandoff path tex.Handle w h
+                true
+              Readback = fun _ -> [||] }
+
+        if RuntimeInformation.IsOSPlatform OSPlatform.OSX then macos ()
+        elif RuntimeInformation.IsOSPlatform OSPlatform.Windows then windows ()
+        else linux ()
+
+// One ring slot: its shared backing plus the persistent per-slot copy resources
 // (command buffer + exportable signal semaphore + CPU fence) — allocated ONCE per
 // (re)allocation, reused every frame (NO per-frame pool/semaphore churn, NO waitIdle),
 // exactly the L4 opaquefd-stream producer pattern.
 type private RingSlot =
     {
         TextureId : string
-        Opaque    : OpaqueImage
+        Buf       : PlatformBuffer
         Cmd       : VkCommandBuffer
         Sem       : VkSemaphore
         Fence     : VkFence
@@ -101,6 +196,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     let device = vk.Device
     let devH = device.Handle
     let qfi = uint32 device.GraphicsFamily.Index
+    // platform alloc/copy/destroy/handoff selected by OS (Linux tested; macOS/Windows wired).
+    let strategy = Platform.strategy device
 
     // one reset-capable command pool for all slot command buffers (created once).
     let pool =
@@ -187,7 +284,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         nextConnectAttempt <- DateTime.UtcNow.AddMilliseconds 200.0
 
     let destroySlot (s : RingSlot) =
-        OpaqueFd.destroy device s.Opaque
+        strategy.Destroy s.Buf
         DmaBufSync.destroySemaphore device s.Sem
         VkRaw.vkDestroyFence(devH, s.Fence, NativePtr.zero)
         // command buffers freed with the pool at Dispose; nothing per-slot here.
@@ -203,7 +300,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             Array.init RING_N (fun i ->
                 {
                     TextureId  = sprintf "%d-%d" gen i
-                    Opaque     = OpaqueFd.create device s.X s.Y
+                    Buf        = strategy.Alloc s.X s.Y
                     Cmd        = newCmd ()
                     Sem        = DmaBufSync.createExportableSemaphore device
                     Fence      = newFence ()
@@ -218,8 +315,9 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         if tryConnect () then
             for s in ring do
                 if not s.Registered then
-                    // REG <textureId> <w> <h>\n  + the slot's memfd via SCM_RIGHTS.
-                    let ok = FdHandoff.streamFrameFd conn (sprintf "REG %s %d %d\n" s.TextureId s.Opaque.Width s.Opaque.Height) s.Opaque.MemFd
+                    // REG <textureId> <w> <h> [+ platform handle]: Linux SCM_RIGHTS memfd,
+                    // macOS mach-port name, Windows NT-handle file — via the strategy.
+                    let ok = strategy.SendReg conn s.Buf s.TextureId s.Buf.Width s.Buf.Height
                     if ok then s.Registered <- true
                     else disconnect ()
 
@@ -309,10 +407,12 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let fbo = unbox<Framebuffer> fbo
             let img = fbo.Attachments.[DefaultSemantic.Colors].Image
 
-            // GPU blit FBO color -> ring slot; per-slot fence (CPU) + semaphore (GPU acquire).
-            // Blit (not copy) because the FBO is the framework's Rgba8 format while the ring
-            // is BGRA — vkCmdBlitImage's format-aware path swizzles R/B for free.
-            DmaBufGpu.recordBlitInto device slot.Cmd img.Handle img.Layout slot.Opaque.Image s.X s.Y slot.Sem slot.Fence
+            // GPU blit FBO color -> ring slot via the platform strategy; per-slot fence (CPU)
+            // + semaphore (GPU acquire). Blit (not copy) because the FBO is the framework's
+            // Rgba8 while the ring is BGRA — the format-aware blit swizzles R/B for free. The
+            // strategy supplies the cross-process sync (EXTERNAL release on Linux/macOS,
+            // keyed-mutex acquire/release on Windows).
+            strategy.CopyInto slot.Cmd img.Handle img.Layout slot.Buf s.X s.Y slot.Sem slot.Fence
 
             // mark the slot in-flight; the browser FREEs it after compositing.
             slot.Busy <- true
@@ -327,7 +427,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         match ring |> Array.tryFind (fun s -> s.TextureId = textureId) with
         | Some s ->
             waitFence s.Fence          // ensure the copy into this slot finished
-            OpaqueFd.readAllLocal device s.Opaque
+            strategy.Readback s.Buf
         | None -> [||]
 
     interface IDisposable with
@@ -409,16 +509,17 @@ module SharedTextureSelfTest =
 
 type SharedTextureTransfer() =
 
-    // IsSupported: a Vulkan runtime that can actually export an OPAQUE_FD image.
-    // Probe by creating+exporting a tiny image and disposing it.
+    // IsSupported: a Vulkan runtime whose per-OS strategy can actually allocate a shared
+    // backing. Probe by allocating + destroying a tiny one through the platform strategy
+    // (Linux OPAQUE_FD / macOS IOSurface / Windows D3D11 keyed-mutex).
     let supported (runtime : IRuntime) =
         match runtime with
         | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
             try
-                let img = OpaqueFd.create vk.Device 16 16
-                let ok = img.MemFd >= 0
-                OpaqueFd.destroy vk.Device img
-                ok
+                let strat = Platform.strategy vk.Device
+                let buf = strat.Alloc 16 16
+                strat.Destroy buf
+                true
             with _ -> false
         | _ -> false
 
