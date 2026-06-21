@@ -402,9 +402,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     // If a release callback has populated Busy, this respects it; if no release has
     // arrived yet (R1 / browser absent), this degrades to round-robin — matching the
     // validated opaquefd-stream behavior.
-    let pickSlot () =
+    let scanFree () =
         let i0 = frame % RING_N
-        // try round-robin start, then scan for a non-busy + completed slot.
         let mutable chosen = -1
         let mutable k = 0
         while chosen < 0 && k < RING_N do
@@ -412,13 +411,23 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let s = ring.[i]
             if not s.Busy && fenceSignaled s.Fence then chosen <- i
             k <- k + 1
-        // all busy / in-flight: fall back to round-robin (overwrite the oldest in-flight slot).
-        // The 2-in-flight FREE cap normally keeps a slot free; this fallback only fires before the
-        // browser starts FREEing (R1/bootstrap) — same as the validated opaquefd-stream behavior.
-        // (We must NOT skip-and-stall here: a starved producer that stops rendering never sends a
-        // new {id} message, so the browser never composites past the REG race, never FREEs, and
-        // the pipeline deadlocks. Keeping frames flowing lets a post-REG {id} land + composite.)
-        if chosen < 0 then chosen <- i0
+        chosen
+
+    let pickSlot () =
+        let mutable chosen = scanFree ()
+        // Windows keyed-mutex: NEVER re-blit a slot the compositor may still hold — that would
+        // block the SHARED graphics queue on the INFINITE keyed acquire(0) and wedge everything.
+        // Instead CPU-WAIT (drain FREE meanwhile) until a slot frees. The browser eager-FREEs on
+        // each swap, so this returns within ~a frame. CPU waiting (not a GPU-queue block) is safe.
+        // Bounded so a (briefly) silent browser can't stall forever — then fall back to round-robin.
+        if chosen < 0 && strategy.SyncAfterCopy then
+            let deadline = DateTime.UtcNow.AddMilliseconds 250.0
+            while chosen < 0 && DateTime.UtcNow < deadline do
+                pollFree ()
+                chosen <- scanFree ()
+                if chosen < 0 then System.Threading.Thread.Sleep 2
+        // still nothing (bootstrap / browser absent): round-robin overwrite (keeps frames flowing).
+        if chosen < 0 then chosen <- frame % RING_N
         chosen
 
     member x.Size = size
