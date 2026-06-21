@@ -301,10 +301,14 @@ module DmaBufGpu =
     /// BeginAccessD3D11 AcquireKeyedMutex(0)/sample/release(0). Per-slot cmd/sem/fence, no
     /// waitIdle — the streaming analog of recordBlitInto. (Runtime-tested on zephyrus in the
     /// follow-on; compiles here.)
+    /// Returns the vkQueueSubmit result. With a FINITE acquireTimeoutMs the keyed-mutex
+    /// acquire can return VK_TIMEOUT — the command buffer is then NOT executed and `fence` is
+    /// NOT signaled. The caller must treat VK_TIMEOUT as "frame skipped" (don't wait the fence,
+    /// leave the slot reusable). acquireTimeoutMs = 0xFFFFFFFF = INFINITE (the old behavior).
     let recordBlitIntoKeyed (device : Device) (cmd : VkCommandBuffer) (src : VkImage) (srcLayout : VkImageLayout)
                             (dstImage : VkImage) (dstMem : VkDeviceMemory) (dstW : int) (dstH : int)
-                            (acquireKey : uint64) (releaseKey : uint64)
-                            (signalSem : VkSemaphore) (fence : VkFence) =
+                            (acquireKey : uint64) (releaseKey : uint64) (acquireTimeoutMs : uint32)
+                            (signalSem : VkSemaphore) (fence : VkFence) : VkResult =
         let dev = device.Handle
         let qfi = uint32 device.GraphicsFamily.Index
         let mutable queue = Unchecked.defaultof<VkQueue>
@@ -339,7 +343,7 @@ module DmaBufGpu =
         // submit WRAPPED in the keyed-mutex acquire/release on dstMem.
         let acqMem = [| dstMem |]
         let acqKeys = [| acquireKey |]
-        let acqTimeouts = [| 0xFFFFFFFFu |]   // INFINITE
+        let acqTimeouts = [| acquireTimeoutMs |]   // finite (ms) -> may VK_TIMEOUT; 0xFFFFFFFF = INFINITE
         let relMem = [| dstMem |]
         let relKeys = [| releaseKey |]
         use pAcqMem = fixed acqMem
@@ -359,7 +363,12 @@ module DmaBufGpu =
         let signalCount = if signalSem = Unchecked.defaultof<VkSemaphore> then 0u else 1u
         let mutable submit =
             VkSubmitInfo(NativePtr.toNativeInt &&km, 0u, NativePtr.zero, NativePtr.zero, 1u, &&pcmd, signalCount, &&psem)
-        VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence) |> check "vkQueueSubmit(keyed)"
+        // VK_TIMEOUT (keyed acquire timed out) is NOT an error here — return it so the caller skips
+        // the frame; anything else that isn't Success is a real failure.
+        let res = VkRaw.vkQueueSubmit(queue, 1u, &&submit, fence)
+        if res <> VkResult.Success && res <> VkResult.Timeout then
+            check "vkQueueSubmit(keyed)" res
+        res
 
     /// Copy an already-rendered source image (currently in `srcLayout`) into the
     /// OPAQUE/dma-buf `dst`, releasing dst to EXTERNAL. Returns a sync_fd fence;

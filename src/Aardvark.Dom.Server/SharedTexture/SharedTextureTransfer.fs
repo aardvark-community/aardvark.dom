@@ -97,8 +97,10 @@ type private PlatformStrategy =
     { /// allocate a w×h shared backing.
       Alloc    : int -> int -> PlatformBuffer
       /// blit the rendered FBO image (src/srcLayout) into the slot buffer, with the platform's
-      /// cross-process sync, signaling the per-slot semaphore (GPU) + fence (CPU).
-      CopyInto : VkCommandBuffer -> VkImage -> VkImageLayout -> PlatformBuffer -> int -> int -> VkSemaphore -> VkFence -> unit
+      /// cross-process sync, signaling the per-slot semaphore (GPU) + fence (CPU). Returns false
+      /// if the copy was SKIPPED (Windows: the keyed-mutex acquire timed out because the
+      /// compositor still holds the slot's key — the fence is NOT signaled in that case).
+      CopyInto : VkCommandBuffer -> VkImage -> VkImageLayout -> PlatformBuffer -> int -> int -> VkSemaphore -> VkFence -> bool
       /// free the backing.
       Destroy  : PlatformBuffer -> unit
       /// publish the slot's handle + send the REG line over the side-channel `conn`. textureId,
@@ -131,6 +133,7 @@ module private Platform =
                 { Image = o.Image; Width = o.Width; Height = o.Height; Tag = box o }
               CopyInto = fun cmd src srcLayout buf w h sem fence ->
                 DmaBufGpu.recordBlitInto device cmd src srcLayout buf.Image w h sem fence
+                true   // EXTERNAL-release blit never skips
               Destroy = fun buf -> OpaqueFd.destroy device (buf.Tag :?> OpaqueImage)
               SendReg = fun conn buf id w h ->
                 let o = buf.Tag :?> OpaqueImage
@@ -148,6 +151,7 @@ module private Platform =
               CopyInto = fun cmd src srcLayout buf w h sem fence ->
                 // IOSurface-backed image: the same EXTERNAL-release blit (Vulkan-generic).
                 DmaBufGpu.recordBlitInto device cmd src srcLayout buf.Image w h sem fence
+                true
               Destroy = fun buf -> MetalExport.destroy device (buf.Tag :?> MetalSharedImage)
               SendReg = fun conn buf id w h ->
                 let m = buf.Tag :?> MetalSharedImage
@@ -175,8 +179,14 @@ module private Platform =
                 // cross-process sync) and re-signaling the same per-slot BINARY semaphore every
                 // RING_N frames without a wait would hang the queue. The per-slot CPU fence
                 // alone tracks copy completion.
-                DmaBufGpu.recordBlitIntoKeyed device cmd src srcLayout imp.Image imp.Memory w h 0UL 0UL
-                    Unchecked.defaultof<VkSemaphore> fence
+                // FINITE acquire timeout (12ms): if the compositor still holds this slot's key 0,
+                // the submit returns VK_TIMEOUT instead of blocking the GPU queue forever — the
+                // producer then DROPS this frame (returns false). So a throttled/occluded/minimized
+                // compositor can never deadlock the producer; it just drops frames until it resumes.
+                let res =
+                    DmaBufGpu.recordBlitIntoKeyed device cmd src srcLayout imp.Image imp.Memory w h 0UL 0UL 12u
+                        Unchecked.defaultof<VkSemaphore> fence
+                res = VkResult.Success
               Destroy = fun buf ->
                 let (tex, imp) = buf.Tag :?> (SilkD3D11Texture * D3D11Export.ImportedD3D11Image)
                 D3D11Export.destroyImported device imp
@@ -215,6 +225,10 @@ type private RingSlot =
         mutable Busy : bool
         /// true once this slot's memfd has been registered over the side-channel.
         mutable Registered : bool
+        /// true when a copy submit is in flight on this slot's Fence (so waitFence is needed).
+        /// On a keyed-mutex TIMEOUT the submit never ran, so the fence stays unsignaled — track
+        /// this to avoid a future waitFence hang on a slot whose copy was skipped.
+        mutable Pending : bool
     }
 
 type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : aval<V2i>, channelName : string) =
@@ -349,6 +363,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                     Fence      = newFence ()
                     Busy       = false
                     Registered = false
+                    Pending    = false
                 })
 
     // Register every slot's memfd with the browser over the side-channel ONCE per
@@ -475,9 +490,11 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let i = pickSlot ()
             let slot = ring.[i]
 
-            // ensure this slot's previous copy is done before reusing its cmd/sem/image.
-            waitFence slot.Fence
+            // ensure this slot's previous copy is done before reusing its cmd/image (only if a
+            // submit is actually in flight — a prior keyed-mutex TIMEOUT leaves it unsignaled).
+            if slot.Pending then waitFence slot.Fence
             resetFence slot.Fence
+            slot.Pending <- false
 
             // render the GIVEN scene into the offscreen FBO.
             task.Run(token, RenderToken.Empty, fbo)
@@ -486,18 +503,26 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let fbo = unbox<Framebuffer> fbo
             let img = fbo.Attachments.[DefaultSemantic.Colors].Image
 
-            // GPU blit FBO color -> ring slot via the platform strategy; per-slot fence (CPU)
-            // + semaphore (GPU acquire). Blit (not copy) because the FBO is the framework's
-            // Rgba8 while the ring is BGRA — the format-aware blit swizzles R/B for free. The
-            // strategy supplies the cross-process sync (EXTERNAL release on Linux/macOS,
-            // keyed-mutex acquire/release on Windows).
-            strategy.CopyInto slot.Cmd img.Handle img.Layout slot.Buf s.X s.Y slot.Sem slot.Fence
+            // GPU blit FBO color -> ring slot via the platform strategy. Returns false if the copy
+            // was SKIPPED (Windows keyed-mutex acquire timed out — compositor still holds the key).
+            let copied = strategy.CopyInto slot.Cmd img.Handle img.Layout slot.Buf s.X s.Y slot.Sem slot.Fence
 
-            // Windows keyed-mutex: block until the copy (incl. release(0)) is GPU-complete so
-            // the browser's AcquireKeyedMutex(0) won't race the producer's pending release. The
-            // fence is reset at the top of the slot's NEXT use, so re-wait it next cycle is a
-            // no-op fast path. (Linux/macOS skip this — their per-frame acquire fence handles it.)
-            if strategy.SyncAfterCopy then waitFence slot.Fence
+            if not copied then
+                // keyed-mutex acquire timed out: the submit never ran (fence NOT signaled), the
+                // slot is untouched. Drop this frame and re-show the last one; the compositor will
+                // release the key shortly (or it's throttled) — either way we never deadlock.
+                // Advance `frame` so the next attempt round-robins to a DIFFERENT slot.
+                frame <- frame + 1
+                (lastId, s)
+            else
+            slot.Pending <- true
+
+            // Windows keyed-mutex: block until the copy (incl. release(0)) is GPU-complete so the
+            // browser's AcquireKeyedMutex(0) won't race the producer's pending release. Clearing
+            // Pending here means the slot's NEXT use skips the redundant waitFence.
+            if strategy.SyncAfterCopy then
+                waitFence slot.Fence
+                slot.Pending <- false
 
             // mark the slot in-flight; the browser FREEs it after compositing.
             slot.Busy <- true
