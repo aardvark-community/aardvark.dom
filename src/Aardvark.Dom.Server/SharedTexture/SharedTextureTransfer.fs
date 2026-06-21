@@ -436,12 +436,21 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         // each swap, so this returns within ~a frame. CPU waiting (not a GPU-queue block) is safe.
         // Bounded so a (briefly) silent browser can't stall forever — then fall back to round-robin.
         if chosen < 0 && strategy.SyncAfterCopy then
-            let deadline = DateTime.UtcNow.AddMilliseconds 250.0
+            let deadline = DateTime.UtcNow.AddMilliseconds 60.0
             while chosen < 0 && DateTime.UtcNow < deadline do
                 pollFree ()
                 chosen <- scanFree ()
                 if chosen < 0 then System.Threading.Thread.Sleep 2
-        // still nothing (bootstrap / browser absent): round-robin overwrite (keeps frames flowing).
+            // Windows: if STILL nothing free, return -1 (SKIP this frame) rather than overwriting an
+            // in-flight slot. Re-blitting a slot the browser is compositing makes the producer
+            // re-acquire its keyed mutex key 0 and STARVE the browser's BeginAccessD3D11
+            // AcquireKeyedMutex(0) (single key), wedging the compositor. Skipping keeps the producer
+            // off the in-flight slots' keys, so the browser composites cleanly -> cc releases ->
+            // FREE flows -> a slot frees. (The finite-timeout blit already prevents a hard GPU-queue
+            // deadlock; this additionally prevents the soft starvation of the compositor.)
+            chosen
+        else
+        // Linux/macOS (no shared keyed mutex): round-robin overwrite keeps frames flowing.
         if chosen < 0 then chosen <- frame % RING_N
         chosen
 
@@ -488,6 +497,13 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
 
             let fbo = getFramebuffer s
             let i = pickSlot ()
+            if i < 0 then
+                // all ring slots are in-flight (handed to the browser, not yet FREE'd). Don't
+                // overwrite one — that would starve the compositor's keyed-mutex acquire. SKIP and
+                // re-show the last frame; FREE will free a slot shortly. (Windows-only path.)
+                frame <- frame + 1
+                (lastId, s)
+            else
             let slot = ring.[i]
 
             // ensure this slot's previous copy is done before reusing its cmd/image (only if a
