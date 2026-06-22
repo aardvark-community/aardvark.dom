@@ -318,6 +318,13 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     //      strategy: Linux AF_UNIX socket / Windows named pipe; opaque int64 token) ----
     let mutable conn = -1L                // -1 until connected
     let mutable nextConnectAttempt = DateTime.MinValue   // backoff clock for retries
+    // true from a gen bump until the browser has FREE'd at least one slot of the CURRENT gen.
+    // During this realloc transient the browser hasn't imported the freshly-REG'd slots yet, so
+    // no FREE can possibly arrive and the `Busy` flags carry no real in-flight info — the Windows
+    // keyed-mutex path must NOT hard-skip on Busy (that starves the loop into a multi-second stall
+    // re-showing the last frame). It round-robins instead; the keyed-mutex 12ms finite acquire is
+    // the real guard (it skips a slot the compositor genuinely holds), so overwrite is safe.
+    let mutable genFreeSeen = false
 
     // The browser binds/listens for `channelName`; the server connects as the client.
     // The browser may not be up at the first frame, so RETRY with a short backoff
@@ -347,6 +354,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             ring |> Array.iter destroySlot
         gen <- gen + 1
         frame <- 0
+        genFreeSeen <- false   // enter the realloc transient: Busy is not yet meaningful for this gen
         ring <-
             Array.init RING_N (fun i ->
                 {
@@ -383,19 +391,35 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                         if ok then s.Registered <- true
                         else disconnect ())
 
-    // Drain any FREE <textureId> messages the browser sent back; clear the slot's Busy.
+    // Drain FREE <textureId> messages off the side channel; clear each named slot's Busy.
+    // Assumes `chanLock` is already held by the caller.
+    let drainFreeLocked () =
+        if conn >= 0L then
+            let txt = try strategy.SideChannelPoll conn with _ -> ""
+            if txt <> "" then
+                for line in txt.Split('\n') do
+                    let parts = line.Trim().Split(' ')
+                    if parts.Length >= 2 && parts.[0] = "FREE" then
+                        let id = parts.[1]
+                        match ring |> Array.tryFind (fun s -> s.TextureId = id) with
+                        | Some s ->
+                            s.Busy <- false
+                            // first FREE of the current gen: the realloc transient is over, the
+                            // browser is importing/compositing this gen, so Busy is meaningful again.
+                            if id.StartsWith(sprintf "%d-" gen) then genFreeSeen <- true
+                        | None -> ()
+
+    // Background-connector entry point: take the lock (it owns the blocking pipe I/O).
     let pollFree () =
-        lock chanLock (fun () ->
-            if conn >= 0L then
-                let txt = try strategy.SideChannelPoll conn with _ -> ""
-                if txt <> "" then
-                    for line in txt.Split('\n') do
-                        let parts = line.Trim().Split(' ')
-                        if parts.Length >= 2 && parts.[0] = "FREE" then
-                            let id = parts.[1]
-                            match ring |> Array.tryFind (fun s -> s.TextureId = id) with
-                            | Some s -> s.Busy <- false
-                            | None -> ())
+        lock chanLock drainFreeLocked
+
+    // Render-thread entry point: NEVER block. If the bg connector holds `chanLock` (e.g. it is
+    // mid blocking REG WriteFile during a gen bump), skip — the bg thread drains FREE every 30ms
+    // anyway. Blocking here is exactly what wedged the RenderFrame loop into a multi-second stall.
+    let tryPollFree () =
+        if System.Threading.Monitor.TryEnter chanLock then
+            try drainFreeLocked ()
+            finally System.Threading.Monitor.Exit chanLock
 
     // Background connector: keeps the side-channel up and REGisters slots INDEPENDENT of the
     // render loop, so the bootstrap deadlock (no REG -> no composite -> no frame request -> no
@@ -435,10 +459,16 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         // Instead CPU-WAIT (drain FREE meanwhile) until a slot frees. The browser eager-FREEs on
         // each swap, so this returns within ~a frame. CPU waiting (not a GPU-queue block) is safe.
         // Bounded so a (briefly) silent browser can't stall forever — then fall back to round-robin.
-        if chosen < 0 && strategy.SyncAfterCopy then
+        // EXCEPTION — the realloc transient (genFreeSeen=false): right after a gen bump the browser
+        // has NOT yet imported the freshly-REG'd slots, so NO FREE for this gen can arrive and the
+        // Busy flags are stale/meaningless. Hard-skipping here drains the loop into a multi-second
+        // stall re-showing the last frame (the resize freeze). So in the transient, fall through to
+        // round-robin like Linux: the keyed-mutex 12ms finite acquire is the real guard (it skips a
+        // slot the compositor genuinely holds), so overwriting an un-imported slot is safe.
+        if chosen < 0 && strategy.SyncAfterCopy && genFreeSeen then
             let deadline = DateTime.UtcNow.AddMilliseconds 60.0
             while chosen < 0 && DateTime.UtcNow < deadline do
-                pollFree ()
+                tryPollFree ()
                 chosen <- scanFree ()
                 if chosen < 0 then System.Threading.Thread.Sleep 2
             // Windows: if STILL nothing free, return -1 (SKIP this frame) rather than overwriting an
@@ -450,7 +480,8 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             // deadlock; this additionally prevents the soft starvation of the compositor.)
             chosen
         else
-        // Linux/macOS (no shared keyed mutex): round-robin overwrite keeps frames flowing.
+        // Linux/macOS (no shared keyed mutex) AND the Windows realloc transient: round-robin
+        // overwrite keeps frames flowing without depending on a timely FREE.
         if chosen < 0 then chosen <- frame % RING_N
         chosen
 
@@ -493,7 +524,9 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                 ringSize <- s
                 allocRing s
             startConnector ()     // bg thread owns connect + REG + FREE-poll (deadlock-free)
-            pollFree ()           // also drain FREE inline (cheap; the bg thread does too)
+            tryPollFree ()        // also drain FREE inline, NON-BLOCKING: never wait on chanLock
+                                  // (the bg thread may hold it mid blocking REG WriteFile during a
+                                  // gen bump — blocking here is what wedged RenderFrame for seconds)
 
             let fbo = getFramebuffer s
             let i = pickSlot ()
