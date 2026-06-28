@@ -63,3 +63,22 @@ dom (TraversalState/SceneHandler/HeapNode/pickFinalHeap) builds against the loca
 code-complete. Remaining: (a) publish heap 0027 → bump dom → drop the dev ProjectReference;
 (b) demo: use dom `heap`, add an Sg.OnTap handler, click-test that pick resolves to the right part;
 (c) wire deregistration (currently ids leak on re-traversal — fine for static scenes).
+- ✅ DEMO BUILDS against local picking chain (dom heap + Sg.OnTap pick handler). Ready for click-test.
+
+## ✅✅ WORKS END-TO-END (click-test passed, 2026-06-28)
+Clicking buildings in the live demo logs distinct world hits:
+  [pick] tap world=[227.45,-56.06,-43.85]   (one building)
+  [pick] tap world=[263.92,-64.60,-43.84]   (another)
+11,654 parts → 1 heap draw, pick still resolves to the exact part via normal Sg.OnTap (O(1)).
+
+Three bugs beyond the core impl:
+1. wrapObject dropped the HeapRenderObject bundle to non-pickable (no TraversalState) → never
+   entered the PickId pass. FIX: HeapRenderObject.IsPickable (set in ofRenderObjectsPicking),
+   wrapObject routes a pickable bundle into the pickable set.
+2. The resolver gates on pickModes (mode A/B sign tag); the heap's ctx.Register→acquireId path
+   set scopes but not pickModes → modeOk=false → every heap pick rejected. FIX: IPickContext.Register
+   sets pickModes.[id] <- true (heap is mode A).
+3. Runtime dll shadowing: package Aardvark.Rendering/SceneGraph (net8.0) shadowed the local
+   netstandard2.0 builds → MissingMethod/no-IsPickable. Dev-fix: copy fresh local dlls into demo bin.
+
+REMAINING (cleanup, not correctness): publish heap 0027 + dom → drop dev ProjectReferences + dll-copy.

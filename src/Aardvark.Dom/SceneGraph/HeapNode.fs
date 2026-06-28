@@ -91,7 +91,8 @@ type HeapNode(child : ISceneNode) =
                         | _ -> o :> IRenderObject   // no TraversalState or NoEvents → rendered, unpickable
                     | _ -> ro
                 let wrapped = renders |> ASet.map wrap
-                Aardvark.SceneGraph.Heap.ofRenderObjectsPicking (pickSignatureOf state.Runtime) wrapped, ASet.empty
+                // deregister a part's pick id when the heap frees its slot (ref-counted in the SceneHandler)
+                Aardvark.SceneGraph.Heap.ofRenderObjectsPicking ctx.Deregister (pickSignatureOf state.Runtime) wrapped, ASet.empty
             | _ ->
                 // non-dom / NoEvents: plain heap collapse, original picks passed through.
                 Aardvark.SceneGraph.Heap.ofRenderObjects (signatureOf state.Runtime) renders, picks

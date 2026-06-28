@@ -1182,7 +1182,13 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     /// space, one `scopes` map, one dispatch).
     let pickContext =
         { new IPickContext with
-            member _.Register t = acquireId t
+            member _.Register t =
+                let id = acquireId t
+                // Heap parts are mode A — the heap pick shader writes +id into PickId slot 0.
+                // The resolver gates on pickModes (wrapObject sets it for normal ROs); without
+                // the same mode tag here, modeOk fails and every heap pick is rejected.
+                pickModes.[id] <- true
+                id
             member _.Deregister id =
                 match scopes.TryGetValue id with
                 | (true, t) -> releaseId t
@@ -1300,9 +1306,15 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             |> ASet.map (fun o ->
                 let acquired = ResizeArray<TraversalState>()
                 let wrapped, p =
-                    match RenderObject.traversalStates.TryGetValue o with
-                    | true, t -> wrapObject acquired t o
-                    | _ -> o, false
+                    match o with
+                    | :? HeapRenderObject as h when h.IsPickable ->
+                        // the heap bundle already carries the per-slot pick write + dom-sourced ids
+                        // (composed by HeapNode); route it into the PickId-attachment pass as-is.
+                        o, true
+                    | _ ->
+                        match RenderObject.traversalStates.TryGetValue o with
+                        | true, t -> wrapObject acquired t o
+                        | _ -> o, false
                 if acquired.Count > 0 then
                     acquiredFor.[o] <- acquired
                 wrapped, p

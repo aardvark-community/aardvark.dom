@@ -29,8 +29,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Aardvark.Dom.Core\Aardvark.Dom.Core.fsproj" />
-    <!-- DEV ONLY: local heap for ofRenderObjectsPicking + the per-slot pick machinery
-         (not yet published; remove once heap 0027 ships). -->
+    <!-- DEV ONLY: local heap for ofRenderObjectsPicking + the per-slot pick machinery +
+         HeapRenderObject.IsPickable (not yet published; remove once heap 0027 ships). -->
+    <ProjectReference Include="/home/schorsch/projects/aardvark.rendering-heap/src/Aardvark.Rendering/Aardvark.Rendering.fsproj" />
     <ProjectReference Include="/home/schorsch/projects/aardvark.rendering-heap/src/Aardvark.SceneGraph/Aardvark.SceneGraph.fsproj" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
