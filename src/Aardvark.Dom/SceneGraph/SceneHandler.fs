@@ -228,6 +228,19 @@ module PickShader =
             return r
         }
 
+    // ---- Heap variant of FinalANoPi: the pick id is PER-SLOT, read BY NAME via
+    // `uniform?HeapPickId` — the GPU heap rewrites that name into its per-slot
+    // HeapPickIds[slot] gather (so one bucket draw resolves to the right part).
+    // Used by the dom HeapNode, which composes the chain itself before heapifying.
+    let pickFinalHeap (v : FinalANoPi_In) =
+        fragment {
+            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let d = (2.0f * v.d - 1.0f)
+            let pid : int = uniform?HeapPickId
+            let r : Fragment = { c = v.c; id = V4f(float32 pid, float32 n24, d, 0.0f) }
+            return r
+        }
+
     // ---- Mode A, no normal, with user PartIndex.
     type FinalANoNormal_In =
         {
@@ -286,6 +299,7 @@ module PickShader =
     let pickDepthBeforeEffect = Effect.ofFunction pickDepthBefore
     let pickFinalAEffect = Effect.ofFunction pickFinalA
     let pickFinalANoPiEffect = Effect.ofFunction pickFinalANoPi
+    let pickFinalHeapEffect = Effect.ofFunction pickFinalHeap
     let pickFinalANoNormalEffect = Effect.ofFunction pickFinalANoNormal
     let pickFinalANoNormalNoPiEffect = Effect.ofFunction pickFinalANoNormalNoPi
     let pickFinalBEffect = Effect.ofFunction pickFinalB
@@ -1162,6 +1176,18 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             pickIdRefs.[scope] <- n - 1
         | _ -> ()
 
+    /// Pick context carried on TraversalState.PickContext so a heap node reaches
+    /// it on expand and registers its per-slot pickable scopes against this
+    /// handler's id space (same well as wrapObject's acquireId → one shared id
+    /// space, one `scopes` map, one dispatch).
+    let pickContext =
+        { new IPickContext with
+            member _.Register t = acquireId t
+            member _.Deregister id =
+                match scopes.TryGetValue id with
+                | (true, t) -> releaseId t
+                | _ -> () }
+
     let mutable lastMousePosition = None
      
     /// Read the (2*PickSnap.radius+1)² pick-buffer region around `pixel`.
@@ -1195,7 +1221,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
         let newSignature =
             runtime.CreateFramebufferSignature(colorAttachments, signature.DepthStencilAttachment, signature.Samples, signature.LayerCount, signature.PerLayerUniforms)
 
-        let render, pick = scene.GetObjects(TraversalState.empty runtime)
+        let render, pick = scene.GetObjects({ TraversalState.empty runtime with PickContext = Some pickContext })
 
 
         let rec wrapObject (acquired : ResizeArray<TraversalState>) (t : TraversalState) (o : IRenderObject) =

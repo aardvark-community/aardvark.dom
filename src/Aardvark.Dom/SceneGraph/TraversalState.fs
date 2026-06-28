@@ -37,7 +37,20 @@ type TraversalState =
         /// many pixels of a hit, the pick can "snap" to it. Default 0
         /// (no snapping). Values are clamped to the global cap at use time.
         PixelSnapRadius     : aval<int>
+        /// Pick context (the owning SceneHandler) for this render, threaded from
+        /// the root; `Some` only inside a dom pick render. Lets a heap reach the
+        /// handler on expand and register its per-slot pickable scopes against the
+        /// handler's id space. `None` ⇒ unpickable (non-dom render).
+        PickContext         : option<IPickContext>
     }
+
+/// Minimal handle the heap uses to register/deregister per-slot pickable scopes
+/// with the owning SceneHandler — carried on `TraversalState.PickContext`, reached
+/// by a heap node on expand. Implemented by SceneHandler. `Register` returns a
+/// dom-sourced (ref-counted) pick id; `Deregister` releases one by id.
+and IPickContext =
+    abstract member Register : TraversalState -> int
+    abstract member Deregister : int -> unit
 
 module TraversalState =
     let private trafoCache = BinaryCache<aval<Trafo3d>, aval<Trafo3d>, aval<Trafo3d>>(AVal.map2 (*))
@@ -93,6 +106,7 @@ module TraversalState =
             // MS resolve averaging two distinct pickIds at object edges into a
             // non-integer that won't map to any registered scope.
             PixelSnapRadius = AVal.constant 1
+            PickContext = None
         }
 
     let commonAncestor (a : TraversalState) (b : TraversalState) =
