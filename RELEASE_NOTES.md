@@ -1,3 +1,7 @@
+### 1.2.0-prerelease0004
+* heap picking: a `HeapNode` registers its pickable bucket with the pick context so one `HeapRenderObject` (N parts → 1 draw) still resolves clicks per part — via the heap's per-slot `HeapPickId` SSBO — and `SceneHandler` routes the pickable bundle through the PickId attachment pass, gating the decoder by pick mode (`pickModes`). Deregistration is wired through the bucket's per-slot free callback.
+* bumped to Aardvark.Rendering/SceneGraph 5.7.0-prerelease0027 (heap O(1) picking: `ofRenderObjectsPicking` + `HeapRenderObject.IsPickable` + per-slot deregister).
+
 ### 1.2.0-prerelease0003
 * memoize `ViewProjTrafo` per `(View, Proj)` like its sibling camera uniforms. It was the one camera uniform built as a fresh `AVal.map2` on every `TryGetUniform`, so every render object got a DISTINCT view-proj aval over the one camera — consumers that dedup global uniforms by aval identity (e.g. the heap arena) then saw N distinct sources and an O(N) fan-out per camera move. Now all render objects in a render control share ONE aval.
 * depend on `Aardvark.Rendering 5.7.0-prerelease0018` (heap: unified ref-counted-per-aval uniforms, real double-precision uniforms, camera composites derived from `View`/`Proj`).
