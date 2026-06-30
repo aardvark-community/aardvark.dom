@@ -31,7 +31,11 @@ module PickArgmin =
 
     /// result buffer layout (float32 slots):
     ///   0 found (1/0)   1 px   2 py   3 dist²   4..7 winning pixel slots   8 centerSlot0   9 pad
-    [<Literal>]
+    /// NOTE: NOT `[<Literal>]` — a literal compiles to a const field with no backing
+    /// property, which the F# reflected-definition reader cannot bind. Because this module
+    /// is `[<ReflectedDefinition>]`, that poisons `Expr.TryGetReflectedDefinition` for EVERY
+    /// method in this assembly (e.g. Normal24.encode → "not reflectable"). Plain `let` = a
+    /// real property the reader can bind.
     let ResultFloats = 10
 
     let private pickSampler =

@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0007
+* PickArgmin: drop `[<Literal>]` from `ResultFloats`. A literal in a `[<ReflectedDefinition>]` module compiles to a const field with no backing property, which poisons `Expr.TryGetReflectedDefinition` for EVERY method in the assembly — so heap-pick `Normal24.encode` (and any reflected function) became "not reflectable". Plain `let` = a bindable property.
+
 ### 1.2.0-prerelease0006
 * SharedTexture: Y-flip the FBO→shared-image blit (`recordBlitInto` + `recordBlitIntoKeyed`, so Linux/dma-buf, macOS/IOSurface, and Windows/D3D11 all) — the zero-copy frame came out upside down because the render target is top-left origin but the shared texture is sampled bottom-left.
 
