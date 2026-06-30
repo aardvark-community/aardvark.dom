@@ -1,3 +1,7 @@
+### 1.2.0-prerelease0005
+* pick: run the pick-buffer readback on the render thread (`RenderMarshal` → `RunRender`) instead of the Kestrel worker — fixes an `AccessViolation` in `vkCmdCopyImageToBuffer` when a click's `Download` raced the render loop's resolve/encode. Staged a GPU argmin snap shader (`PickArgmin`) for a future constant-size readback.
+* merged zero-copy shared-texture streaming (Windows D3D11 keyed-mutex transport) — orthogonal to picking.
+
 ### 1.2.0-prerelease0004
 * heap picking: a `HeapNode` registers its pickable bucket with the pick context so one `HeapRenderObject` (N parts → 1 draw) still resolves clicks per part — via the heap's per-slot `HeapPickId` SSBO — and `SceneHandler` routes the pickable bundle through the PickId attachment pass, gating the decoder by pick mode (`pickModes`). Deregistration is wired through the bucket's per-slot free callback.
 * bumped to Aardvark.Rendering/SceneGraph 5.7.0-prerelease0027 (heap O(1) picking: `ofRenderObjectsPicking` + `HeapRenderObject.IsPickable` + per-slot deregister).
