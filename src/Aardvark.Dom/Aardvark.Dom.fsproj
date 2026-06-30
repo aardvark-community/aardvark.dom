@@ -16,6 +16,7 @@
     <Compile Include="SceneGraph\SceneEvent.fs" />
     <Compile Include="SceneGraph\TraversalState.fs" />
     <Compile Include="SceneGraph\SceneGraph.fs" />
+    <Compile Include="SceneGraph\PickArgmin.fs" />
     <Compile Include="SceneGraph\SceneHandler.fs" />
     <Compile Include="SceneGraph\HeapNode.fs" />
     <Compile Include="SceneGraph\SceneFrontend.fs" />

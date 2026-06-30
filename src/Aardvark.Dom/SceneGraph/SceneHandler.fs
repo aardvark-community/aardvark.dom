@@ -1623,7 +1623,10 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     arr
 
                 // Pick-buffer region — raw float32 array + strides. No closure.
-                let regionOpt = readPickRegion pixel
+                // Run the pick-buffer readback on the render thread, not this (Kestrel
+                // worker) thread — a `Download` here races the render loop's resolve/encode
+                // and faults in `vkCmdCopyImageToBuffer`. `onRender` marshals it across.
+                let regionOpt = RenderMarshal.onRender runtime (fun () -> readPickRegion pixel)
                 let hasRegion = regionOpt.IsSome
                 let region    = if hasRegion then regionOpt.Value else Unchecked.defaultof<_>
                 let rData     = if hasRegion then region.Data else null

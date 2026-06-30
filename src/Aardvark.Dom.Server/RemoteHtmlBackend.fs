@@ -187,8 +187,12 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
     static let mutable imageTransferTable = HashMap.empty
     static let mutable imageTransfers = []
 
-    new(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer) = 
+    new(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer) =
         RemoteHtmlBackend(runtime, server, imageTransfer, runtime.RenderThread)
+        then
+            // Let Aardvark.Dom marshal off-thread GPU work (the pick readback) onto the
+            // render thread — fixes the pick-buffer Download racing the render loop.
+            Aardvark.Dom.RenderMarshal.run <- Some (fun (rt : IRuntime) (f : unit -> obj) -> rt.RunRender f)
 
     static member ImageTransfers = imageTransfers
 
