@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0006
+* SharedTexture: Y-flip the FBO→shared-image blit (`recordBlitInto` + `recordBlitIntoKeyed`, so Linux/dma-buf, macOS/IOSurface, and Windows/D3D11 all) — the zero-copy frame came out upside down because the render target is top-left origin but the shared texture is sampled bottom-left.
+
 ### 1.2.0-prerelease0005
 * pick: run the pick-buffer readback on the render thread (`RenderMarshal` → `RunRender`) instead of the Kestrel worker — fixes an `AccessViolation` in `vkCmdCopyImageToBuffer` when a click's `Download` raced the render loop's resolve/encode. Staged a GPU argmin snap shader (`PickArgmin`) for a future constant-size readback.
 * merged zero-copy shared-texture streaming (Windows D3D11 keyed-mutex transport) — orthogonal to picking.

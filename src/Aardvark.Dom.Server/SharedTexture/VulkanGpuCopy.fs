@@ -274,11 +274,17 @@ module DmaBufGpu =
                 VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
                 VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
         let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
-        // src/dst offset ranges [min,max] for the (full-image, same-size) blit.
-        let mutable offsets = VkOffset3D_2()
-        offsets.[0] <- VkOffset3D(0, 0, 0)
-        offsets.[1] <- VkOffset3D(dstW, dstH, 1)
-        let mutable region = VkImageBlit(layers, offsets, layers, offsets)
+        // Y-FLIP during the blit: the rendered FBO is top-left origin (Vulkan), but the
+        // shared texture is sampled bottom-left in the browser/compositor, so it came out
+        // upside down. Keep the src range full-image and INVERT the dst Y range — free, the
+        // blit just maps src row y -> dst row (H-1-y).
+        let mutable srcOffsets = VkOffset3D_2()
+        srcOffsets.[0] <- VkOffset3D(0, 0, 0)
+        srcOffsets.[1] <- VkOffset3D(dstW, dstH, 1)
+        let mutable dstOffsets = VkOffset3D_2()
+        dstOffsets.[0] <- VkOffset3D(0, dstH, 0)
+        dstOffsets.[1] <- VkOffset3D(dstW, 0, 1)
+        let mutable region = VkImageBlit(layers, srcOffsets, layers, dstOffsets)
         VkRaw.vkCmdBlitImage(cmd, src, VkImageLayout.TransferSrcOptimal,
                              dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region, VkFilter.Nearest)
         barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
@@ -325,10 +331,15 @@ module DmaBufGpu =
                 VkImageLayout.Undefined VkImageLayout.TransferDstOptimal
                 VkPipelineStageFlags.TopOfPipeBit VkPipelineStageFlags.TransferBit
         let layers = VkImageSubresourceLayers(VkImageAspectFlags.ColorBit, 0u, 0u, 1u)
-        let mutable offsets = VkOffset3D_2()
-        offsets.[0] <- VkOffset3D(0, 0, 0)
-        offsets.[1] <- VkOffset3D(dstW, dstH, 1)
-        let mutable region = VkImageBlit(layers, offsets, layers, offsets)
+        // Y-flip (same as recordBlitInto): invert the dst Y range so the shared D3D11
+        // texture isn't upside down in the compositor.
+        let mutable srcOffsets = VkOffset3D_2()
+        srcOffsets.[0] <- VkOffset3D(0, 0, 0)
+        srcOffsets.[1] <- VkOffset3D(dstW, dstH, 1)
+        let mutable dstOffsets = VkOffset3D_2()
+        dstOffsets.[0] <- VkOffset3D(0, dstH, 0)
+        dstOffsets.[1] <- VkOffset3D(dstW, 0, 1)
+        let mutable region = VkImageBlit(layers, srcOffsets, layers, dstOffsets)
         VkRaw.vkCmdBlitImage(cmd, src, VkImageLayout.TransferSrcOptimal,
                              dstImage, VkImageLayout.TransferDstOptimal, 1u, &&region, VkFilter.Nearest)
         barrier cmd src VkAccessFlags.TransferReadBit VkAccessFlags.MemoryReadBit
