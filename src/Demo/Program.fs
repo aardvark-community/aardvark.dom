@@ -33,6 +33,21 @@ module Shader =
             return { vp = vp.XYZ }
         }
     
+/// Gradient fidelity check for the OPAQUE_FD tiling test: expects R=x-ramp, G=y-ramp, B=128
+/// (what OpaqueFd.fillGradient wrote) at 9 spread-out points. A scrambled OPTIMAL tiling fails.
+module OpaqueGrad =
+    let check (tag : string) (buf : byte[]) (w : int) (h : int) : bool =
+        let pts = [ (0,0); (w-1,0); (0,h-1); (w-1,h-1); (w/4,h/4); (3*w/4,h/4); (w/4,3*h/4); (3*w/4,3*h/4); (w/2,h/2) ]
+        let mutable allok = true
+        for (x, y) in pts do
+            let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.pixelAt buf w x y
+            let er, eg, eb, ea = x * 255 / (w - 1), y * 255 / (h - 1), 128, 255
+            let ok = abs (r-er) <= 4 && abs (g-eg) <= 4 && abs (b-eb) <= 4 && abs (a-ea) <= 4
+            if not ok then allok <- false
+            printfn "[%s] (%d,%d) got=(%d,%d,%d,%d) exp=(%d,%d,%d,%d) %s" tag x y r g b a er eg eb ea (if ok then "ok" else "BAD")
+        printfn "[%s] gradient fidelity: %s" tag (if allok then "PASS — tiling preserved" else "FAIL — scrambled")
+        allok
+
 let testApp (_runtime : IRuntime) =
     let content = cval 0
     let text = cval ""
@@ -695,6 +710,7 @@ open FSharp.Data.Adaptive
 open FSharp.Data.Traceable
 open FSharp.Core.CompilerServices
 open System.Runtime.CompilerServices
+open Microsoft.FSharp.NativeInterop
 
 [<AbstractClass; Sealed; Extension>]
 type ReaderExtensions private() = 
@@ -864,18 +880,773 @@ let snapDemo (_runtime : IRuntime) =
     }
 
 
+// R3 — the REAL aardvark.dom zero-copy app: a rotating lit cube in a renderControl
+// DOM node, served through the genuine framework (DomNode.toRoute → RemoteHtmlBackend
+// → transfer negotiation). With the R2-patched browser exposing aardvark.openSharedTexture,
+// the framework AUTO-SELECTS SharedTextureTransfer (priority 200 > shm 100) — no special
+// wiring here, this is just an ordinary renderControl scene. The rotation is driven by
+// RenderControl.Time (the framework's animation clock), so the render task is continuously
+// out-of-date → render-when-dirty produces frames; the size aval (RenderControl.ViewportSize,
+// fed by aardvark.onResize → requestImage) drives the render-target resize.
+let sharedTextureApp (_runtime : IRuntime) =
+    let view (_env : Env<unit>) (_) =
+        body {
+            Style [ Background "#202124"; Color "white"; FontFamily "monospace"; Margin "0"; Padding "0" ]
+
+            div {
+                Style [Padding "8px"; FontSize "14px"]
+                "R3: rotating cube, zero-copy via SharedTextureTransfer (real aardvark.dom channel)."
+            }
+
+            renderControl {
+                Style [Width "100%"; Height "600px"; Background "#202124"; Outline "none"]
+                Samples 4
+                TabIndex 0
+
+                // size feeds the projection aspect AND the render-target realloc (resize path).
+                let! size = RenderControl.ViewportSize
+                // the framework animation clock — makes the render task continuously dirty.
+                let! time = RenderControl.Time
+
+                let proj =
+                    size |> AVal.map (fun s ->
+                        Frustum.perspective 60.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
+                Sg.Proj proj
+                Sg.View (CameraView.lookAt (V3d(5.0, 5.0, 4.0)) V3d.Zero V3d.OOI |> CameraView.viewTrafo)
+
+                Sg.Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
+
+                // rotation angle from the wall clock (continuous animation → render-when-dirty).
+                let angle = time |> AVal.map (fun t -> float t.Ticks / 1.0e7)
+                let rot = angle |> AVal.map (fun a -> Trafo3d.RotationZ a * Trafo3d.RotationX (a * 0.5))
+
+                sg {
+                    Sg.Trafo rot
+                    Primitives.Box(Box3d.FromCenterAndSize(V3d.Zero, V3d(3.0, 3.0, 3.0)), C4b(255uy, 150uy, 30uy, 255uy))
+                }
+            }
+        }
+
+    {
+        initial = ()
+        update = fun _ () () -> ()
+        view = view
+        unpersist =
+            {
+                 init = fun () -> ()
+                 update = fun () () -> ()
+            }
+    }
+
+
 [<EntryPoint>]
-let main _ =
+let main argv =
     Aardvark.Init()
+
+    // Cross-process consumer: reopen a dma-buf published by another process and
+    // EGL-validate it. No Vulkan needed here (mirrors Electron's GPU process).
+    if Array.contains "dmabuf-recv" argv then
+        printfn "[dmabuf-recv] waiting for a dma-buf on /tmp/dmabuf.sock ..."
+        let img = Aardvark.Dom.Remote.SharedTexture.FdHandoff.recvFd "/tmp/dmabuf.sock"
+        let data = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.readbackRGBA img
+        let i = ((128 * 256) + 128) * 4
+        let got = (int data.[i], int data.[i+1], int data.[i+2], int data.[i+3])
+        let exp = (51, 102, 153, 255)
+        let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+        let ok = close got exp
+        printfn "[dmabuf-recv] cross-process dma-buf center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+        exit (if ok then 0 else 1)
+
+    // macOS milestone (analog of dmabuf-test): create an IOSurface-backed image via
+    // VK_EXT_metal_objects (enabled on a Headless runtime) and export the IOSurface.
+    if Array.contains "metal-test" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            printfn "[metal-test] VK_EXT_metal_objects enabled: %b" (dev.IsExtensionEnabled "VK_EXT_metal_objects")
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev 256 256
+            printfn "[metal-test] IOSurface=0x%X  %dx%d  offset=%d stride=%d" (int64 img.IOSurface) img.Width img.Height img.Offset img.Stride
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev img
+            exit (if img.IOSurface <> 0n then 0 else 1)
+        | r -> eprintfn "[metal-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // macOS milestone (analog of dmabuf-gpu-test): GPU-fill the IOSurface-backed image
+    // and verify via map-readback.
+    if Array.contains "metal-gpu-test" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let evt = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyMetal dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readbackCenter dev dst
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[metal-gpu-test] IOSurface=0x%X  MTLSharedEvent=0x%X  center RGBA=%A expected~%A %s"
+                (int64 dst.IOSurface) (int64 evt) got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[metal-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // macOS W0-analog (cross-PROCESS IOSurface sharing, the de-risk for Chromium's native
+    // IOSurfaceImageBacking import). PRODUCER: export an IOSurface via VK_EXT_metal_objects,
+    // CPU-fill a non-uniform 2-axis gradient, print the global IOSurfaceID, then stay alive
+    // holding the surface so a SEPARATE `iosurface-recv` process can look it up and read it.
+    if Array.contains "iosurface-send" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.create dev W H
+            if img.IOSurface = 0n then eprintfn "[iosurface-send] export FAILED (null IOSurface)"; exit 1
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.fillGradient img
+            let gid = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetID img.IOSurface
+            // local self-check + the points the consumer will probe
+            let pts = [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ]
+            printfn "[iosurface-send] IOSurface=0x%X  globalID=%u  %dx%d stride=%d" (int64 img.IOSurface) gid W H img.Stride
+            printfn "[iosurface-send] handoff: global IOSurfaceID=%u (pass to `iosurface-recv %u`)." gid gid
+            printfn "[iosurface-send] (secure handoff for Chromium phase = IOSurfaceCreateMachPort; global id used here for the standalone de-risk)"
+            for (x,y) in pts do
+                let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
+                let exp = Aardvark.Dom.Remote.SharedTexture.MetalExport.expectedAt W H x y
+                printfn "[iosurface-send] local (%3d,%3d) got=%A expected=%A" x y got exp
+            // also publish the id to a file so a launcher can chain send->recv without parsing stdout
+            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)
+            printfn "[iosurface-send] wrote /tmp/iosurface.id ; holding surface alive (Ctrl-C to exit) ..."
+            System.Threading.Thread.Sleep System.Threading.Timeout.Infinite
+            exit 0
+        | r -> eprintfn "[iosurface-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // macOS "teal pixel" PRODUCER (the consumer side is Chromium's native IOSurfaceImageBacking).
+    // Export an IOSurface via VK_EXT_metal_objects, CPU-fill SOLID TEAL (51,102,153,255), write the
+    // global IOSurfaceID to /tmp/iosurface.id, and stay alive holding the surface so the macbook
+    // content_shell can IOSurfaceLookup(id) and composite it. Analog of the Linux/Windows
+    // teal-pixel producers (opaquewin32-send / dmabuf). CPU LINEAR fill is fine for a first pixel:
+    // Chromium GPU-samples the imported IOSurface regardless of how the producer wrote it.
+    if Array.contains "iosurface-send-teal" argv then
+        let metalExt = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_metal_objects")
+        let metalApp = new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = metalExt)
+        match metalApp.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let (tr, tg, tb, ta) = (51, 102, 153, 255)   // teal pixel
+            // create-and-IMPORT (not export): OUR IOSurface carries kIOSurfacePixelFormat='BGRA',
+            // which Chromium's IOSurfaceImageBackingFactory validates (the MoltenVK-exported
+            // surface had pixel format 0x0 -> "IOSurface pixel format does not match" rejection).
+            let img = Aardvark.Dom.Remote.SharedTexture.MetalExport.createImported dev W H
+            if img.IOSurface = 0n then eprintfn "[iosurface-send-teal] export FAILED (null IOSurface)"; exit 1
+            Aardvark.Dom.Remote.SharedTexture.MetalExport.fillSolid img tr tg tb ta
+            let gid = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetID img.IOSurface
+            let pf = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetPixelFormat img.IOSurface
+            printfn "[iosurface-send-teal] IOSurface=0x%X  globalID=%u  %dx%d stride=%d  pixelFormat=0x%X  color=(%d,%d,%d,%d)" (int64 img.IOSurface) gid W H img.Stride pf tr tg tb ta
+            // local self-check at corners + center
+            for (x,y) in [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ] do
+                let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel img.IOSurface x y
+                printfn "[iosurface-send-teal] local (%3d,%3d) got=%A expected=(%d,%d,%d,%d)" x y got tr tg tb ta
+            // PUBLISH via the mach-port bridge under a bootstrap service name — the only
+            // cross-process-discoverable handoff for a created (format-stamped) surface on
+            // macOS 26 (global IDs no longer work). content_shell looks it up by name.
+            let svc = Aardvark.Dom.Remote.SharedTexture.MetalExport.MachServiceName
+            let pubRc = Aardvark.Dom.Remote.SharedTexture.MetalExport.aardvark_publish(svc, img.IOSurface)
+            if pubRc <> 0 then eprintfn "[iosurface-send-teal] aardvark_publish FAILED rc=%d" pubRc; exit 1
+            System.IO.File.WriteAllText("/tmp/iosurface.id", string gid)   // legacy/debug
+            printfn "[iosurface-send-teal] published IOSurface under mach service '%s' (id=%u); holding alive (Ctrl-C to exit) ..." svc gid
+            System.Threading.Thread.Sleep System.Threading.Timeout.Infinite
+            exit 0
+        | r -> eprintfn "[iosurface-send-teal] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // CONSUMER (separate process, no Vulkan needed — mirrors Chromium's GPU process
+    // importing via IOSurfaceImageBacking): IOSurfaceLookup(globalID) -> read the gradient
+    // cross-process at corners + center and compare to the producer's reference.
+    if Array.contains "iosurface-recv" argv then
+        let gid =
+            argv |> Array.tryPick (fun s -> match System.UInt32.TryParse s with | true, v when v <> 0u -> Some v | _ -> None)
+            |> Option.defaultWith (fun () ->
+                if System.IO.File.Exists "/tmp/iosurface.id" then uint32 (System.IO.File.ReadAllText("/tmp/iosurface.id").Trim())
+                else eprintfn "[iosurface-recv] no global id given (arg or /tmp/iosurface.id)"; exit 2)
+        printfn "[iosurface-recv] IOSurfaceLookup(globalID=%u) ..." gid
+        let surf = Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceLookup gid
+        if surf = 0n then eprintfn "[iosurface-recv] IOSurfaceLookup returned null (producer dead or wrong id)"; exit 1
+        let W = int (Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetWidth surf)
+        let H = int (Aardvark.Dom.Remote.SharedTexture.MetalExport.IOSurfaceGetHeight surf)
+        printfn "[iosurface-recv] looked up IOSurface=0x%X  %dx%d" (int64 surf) W H
+        let pts = [ (0,0); (W-1,0); (0,H-1); (W-1,H-1); (W/2,H/2) ]
+        let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=2 && abs(b-f)<=2 && abs(c-g)<=2 && abs(d-h)<=2
+        let mutable allOk = true
+        for (x,y) in pts do
+            let got = Aardvark.Dom.Remote.SharedTexture.MetalExport.readPixel surf x y
+            let exp = Aardvark.Dom.Remote.SharedTexture.MetalExport.expectedAt W H x y
+            let ok = close got exp
+            allOk <- allOk && ok
+            printfn "[iosurface-recv] (%3d,%3d) got=%A expected=%A %s" x y got exp (if ok then "PASS" else "FAIL")
+        printfn "[iosurface-recv] cross-process IOSurface read %s" (if allOk then "PASS" else "FAIL")
+        exit (if allOk then 0 else 1)
+
     let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
     use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
 
-    let app = new OpenGlApplication()
+    // Texture-sharing work targets Vulkan (dma-buf / D3D11 / IOSurface export).
+    // GL can do it too on Linux via an EGL context + EGL_MESA_image_dma_buf_export,
+    // but we standardize on Vulkan for now.
+    let app = new VulkanApplication()
+
+    // dma-buf export needs VK_EXT_image_drm_format_modifier (not in Aardvark's default
+    // device extension set) so the exported buffer's DRM layout matches what a Vulkan
+    // importer (Chromium's ExternalVkImageBacking) reconstructs. Use a Headless runtime
+    // with it enabled for the dma-buf hooks.
+    let dmaBufRuntime =
+        if [ "dmabuf-test"; "dmabuf-gpu-test"; "dmabuf-send"; "opaquefd-send"; "opaquefd-recv-vk"; "opaquefd-selftest"; "opaquefd-transfer-selftest"; "opaque-rewrite-send"; "opaque-rewrite-recv" ] |> List.exists (fun h -> Array.contains h argv) then
+            let ext = System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ -> Seq.singleton "VK_EXT_image_drm_format_modifier")
+            (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(deviceExtensions = ext)).Runtime
+        else app.Runtime
+
+    // REPEATED-IN-PLACE cross-instance write test (standalone, no Chromium): does NVIDIA
+    // surface REPEATED writes to ONE OPAQUE_FD buffer the consumer imported ONCE, when the
+    // consumer re-acquires from EXTERNAL (+ optional fence) every iteration? Isolates the
+    // question from Chromium viz caching. Producer rewrites one buffer with distinct colors.
+    if Array.contains "opaque-rewrite-send" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev W H
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamConnect "/tmp/opqrw.sock"
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamHello conn (sprintf "%d %d %d" W H opaque.Size) [| opaque.MemFd |]
+            printfn "[rw-send] HELLO memfd=%d %dx%d size=%d" opaque.MemFd W H opaque.Size
+            for k in 0 .. 30 do
+                let r = (k * 37) % 256
+                let g = (k * 53) % 256
+                let col = V4f(float32 r / 255.0f, float32 g / 255.0f, 0.5f, 1.0f)
+                let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                    { Fd = -1; Width = W; Height = H; Fourcc = 0u; Modifier = 0UL; Offset = 0UL; Stride = 0UL
+                      Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
+                let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst col
+                printfn "[rw-send] k=%d wrote expect~(%d,%d,128) fence=%d" k r g fenceFd
+                Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrameFd conn (sprintf "F %d\n" k) fenceFd |> ignore
+                System.Threading.Thread.Sleep 120
+            let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterLocal dev opaque
+            printfn "[rw-send] FINAL producer same-instance center=(%d,%d,%d,%d) (= last color)" pr pg pb pa
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamFrame conn "BYE\n" |> ignore
+            exit 0
+        | r -> eprintfn "[rw-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    if Array.contains "opaque-rewrite-recv" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let useSem = not (Array.contains "nosem" argv)
+            let conn = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamServerAccept "/tmp/opqrw.sock"
+            let (hello, memFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamRecv conn
+            let parts = hello.Trim().Split(' ')
+            let W, H = int parts.[0], int parts.[1]
+            printfn "[rw-recv] HELLO memfd=%d %dx%d useSem=%b" memFd W H useSem
+            let imp = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importOnce dev memFd W H
+            let mutable go = true
+            while go do
+                let (msg, fenceFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.streamRecv conn
+                if msg = "" || msg.StartsWith "BYE" then go <- false
+                else
+                    let (r, g, b, a) = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readCenterCross dev imp fenceFd useSem
+                    printfn "[rw-recv] %-7s CONSUMER center=(%d,%d,%d,%d)" (msg.Trim()) r g b a
+            printfn "[rw-recv] done"
+            exit 0
+        | r -> eprintfn "[rw-recv] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Milestone 0 smoke test: prove the device can export a LINEAR color image as
+    // a dma-buf fd (the real unknown on NVIDIA). Run with `Demo.dll dmabuf-test`.
+    if Array.contains "dmabuf-test" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let img = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.fillTestPattern dev img
+            printfn "[dmabuf-test] exported fd=%d  %dx%d  fourcc=0x%08X  modifier=%d  offset=%d  stride=%d  size=%d"
+                img.Fd img.Width img.Height img.Fourcc img.Modifier img.Offset img.Stride img.Size
+            // Milestone 0b: re-import via EGL (the Chromium NativePixmap path) and verify pixels.
+            let ok = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.validate img
+            printfn "[dmabuf-test] EGL re-import validation: %s" (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev img
+            exit (if img.Fd >= 0 && ok then 0 else 1)
+        | r -> eprintfn "[dmabuf-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Milestone 0c: fill the shared dma-buf purely on the GPU (clear a source image
+    // + vkCmdCopyImage into it, no CPU map) and verify the colour survives via EGL.
+    if Array.contains "dmabuf-gpu-test" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            let struct (src, srcMem) =
+                let (a, b) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+                struct (a, b)
+            let color = V4f(0.2f, 0.4f, 0.6f, 1.0f) // (R,G,B,A)
+            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst color
+            printfn "[dmabuf-gpu-test] exported sync_fd fence=%d (%s)" fenceFd
+                (if fenceFd >= 0 then "real fence fd" elif fenceFd = -1 then "already-signaled sentinel (valid)" else "INVALID")
+            let data = Aardvark.Dom.Remote.SharedTexture.EglDmaBufImport.readbackRGBA dst
+            let i = ((128 * 256) + 128) * 4
+            let got = (int data.[i], int data.[i+1], int data.[i+2], int data.[i+3])
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[dmabuf-gpu-test] GPU-copied dma-buf center RGBA=%A expected~%A %s" got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[dmabuf-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Cross-process producer: GPU-fill a dma-buf, publish its descriptor, and hold
+    // it alive so a separate `dmabuf-recv` process can reopen + validate it.
+    if Array.contains "dmabuf-send" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.DmaBufExport.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let fenceFd = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            printfn "[dmabuf-send] sending dma-buf fd=%d fence=%d (pid=%d) over /tmp/dmabuf.sock"
+                dst.Fd fenceFd (System.Diagnostics.Process.GetCurrentProcess().Id)
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst fenceFd
+            System.Threading.Thread.Sleep 500 // let the consumer recvmsg before we free
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.DmaBufExport.destroy dev dst
+            exit 0
+        | r -> eprintfn "[dmabuf-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_FD same-instance CONTROL: fill + read back in ONE instance. Proves the
+    // fill/usage/readback path is correct before trusting a cross-instance zero.
+    if Array.contains "opaquefd-selftest" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.fillGradient dev opaque
+            let buf = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.readAllLocal dev opaque
+            let ok = OpaqueGrad.check "opaquefd-selftest SAME-INSTANCE" buf 256 256
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[opaquefd-selftest] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // R1 SERVER-SIDE SELF-TEST: drive the real SharedTextureRenderTarget over a scene
+    // for a few frames and read the ring slot back via the validated OPAQUE_FD readback.
+    if Array.contains "opaquefd-transfer-selftest" argv then
+        let ok = Aardvark.Dom.Remote.SharedTexture.SharedTextureSelfTest.run dmaBufRuntime
+        printfn "[opaquefd-transfer-selftest] %s" (if ok then "PASS" else "FAIL")
+        exit (if ok then 0 else 1)
+
+    // OPAQUE_FD cross-instance test producer: GPU-fill an OPTIMAL image exported as
+    // VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD and hand its memory fd + sync_fd to a
+    // separate-instance consumer (the Vulkan-native path, vs dma-buf interop).
+    if Array.contains "opaquefd-send" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.create dev 256 256
+            // fill SOLID TEAL (51,102,153) via the proven GPU clear+copy (releases to
+            // VK_QUEUE_FAMILY_EXTERNAL in GENERAL, matching Chromium's import acquire).
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let dst : Aardvark.Dom.Remote.SharedTexture.DmaBufImage =
+                { Fd = opaque.MemFd; Width = 256; Height = 256; Fourcc = 0u
+                  Modifier = 0xFFFFFFFFFFFFFFFEUL   // OPAQUE_FD sentinel — consumer imports as OPAQUE_FD
+                  Offset = 0UL; Stride = 0UL; Image = opaque.Image; Memory = opaque.Memory; Size = opaque.Size }
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopy dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f)) |> ignore
+            printfn "[opaquefd-send] sending SOLID TEAL (OPAQUE_FD) memfd=%d 256x256 size=%d -> /tmp/dmabuf.sock" opaque.MemFd opaque.Size
+            Aardvark.Dom.Remote.SharedTexture.FdHandoff.sendFd "/tmp/dmabuf.sock" dst -1
+            System.Threading.Thread.Sleep 2000
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueFd.destroy dev opaque
+            exit 0
+        | r -> eprintfn "[opaquefd-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_FD cross-instance test consumer (SEPARATE process + VkInstance): import the
+    // memory + sync_fd, acquire from EXTERNAL, copy to host, read the centre pixel.
+    // Variants: `no-sem` skips the semaphore wait; `undef-layout` acquires from UNDEFINED.
+    if Array.contains "opaquefd-recv-vk" argv then
+        match dmaBufRuntime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let (img, syncFd) = Aardvark.Dom.Remote.SharedTexture.FdHandoff.recvFd2 "/tmp/opaque.sock"
+            let useSem = not (Array.contains "no-sem" argv)
+            let useGeneral = not (Array.contains "undef-layout" argv)
+            printfn "[opaquefd-recv-vk] received memfd=%d sync=%d %dx%d useSem=%b generalLayout=%b"
+                img.Fd syncFd img.Width img.Height useSem useGeneral
+            let buf = Aardvark.Dom.Remote.SharedTexture.OpaqueFd.importAndReadAll dev img.Fd syncFd img.Width img.Height useSem useGeneral
+            let ok = OpaqueGrad.check "opaquefd-recv-vk CROSS-INSTANCE" buf img.Width img.Height
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[opaquefd-recv-vk] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Windows milestone (analog of dmabuf-test): export a color image's memory as a
+    // Win32 NT handle and confirm it's valid.
+    if Array.contains "win32-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let img = Aardvark.Dom.Remote.SharedTexture.Win32Export.create dev 256 256
+            printfn "[win32-test] exported NT handle=0x%X  %dx%d  size=%d" (int64 img.Handle) img.Width img.Height img.Size
+            Aardvark.Dom.Remote.SharedTexture.Win32Export.destroy dev img
+            exit (if img.Handle <> 0n then 0 else 1)
+        | r -> eprintfn "[win32-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // Windows milestone (analog of dmabuf-gpu-test): GPU-fill the Win32 shared image
+    // and verify via map-readback; also export a Win32 fence handle.
+    if Array.contains "win32-gpu-test" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let dst = Aardvark.Dom.Remote.SharedTexture.Win32Export.create dev 256 256
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev 256 256
+            let fence = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearAndCopyWin dev src dst (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let got = Aardvark.Dom.Remote.SharedTexture.Win32Export.readbackCenter dev dst
+            let exp = (51, 102, 153, 255)
+            let close (a,b,c,d) (e,f,g,h) = abs(a-e)<=3 && abs(b-f)<=3 && abs(c-g)<=3 && abs(d-h)<=3
+            let ok = close got exp
+            printfn "[win32-gpu-test] NT=0x%X fence=0x%X  center RGBA=%A expected~%A %s"
+                (int64 dst.Handle) (int64 fence) got exp (if ok then "PASS" else "FAIL")
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.Win32Export.destroy dev dst
+            exit (if ok then 0 else 1)
+        | r -> eprintfn "[win32-gpu-test] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // OPAQUE_WIN32 single-frame sender for the CHROMIUM Windows port (analog of opaquefd-send,
+    // the Linux teal-pixel producer). GPU-fill ONE OPTIMAL B8G8R8A8 image with solid teal,
+    // export it as a VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32 NT handle, and publish the
+    // handoff descriptor {handleValue, producerPID, w, h} to a well-known file the browser GPU
+    // process reads. The GPU process then OpenProcess(PROCESS_DUP_HANDLE)+DuplicateHandle's the
+    // handle into itself and imports it (sentinel-gated branch in the Chromium Vulkan import).
+    // We must STAY ALIVE holding the image+handle until the consumer has duplicated it, so we
+    // sleep generously before exiting.
+    if Array.contains "opaquewin32-send" argv then
+        // GPU PINNING (hybrid laptop: NVIDIA 4070 dGPU + AMD 890M iGPU). OPAQUE_WIN32
+        // cross-instance sharing only works when the producer's VkDevice and Chromium's
+        // Vulkan device are the SAME physical device (matching deviceLUID). Aardvark's
+        // default DeviceChooserAuto prefers the dedicated GPU (NVIDIA); pass `--gpu <substr>`
+        // (e.g. `--gpu AMD` or `--gpu Radeon`) to pin selection to the device whose Name
+        // contains <substr>, matching whatever adapter Chromium chose. We build a dedicated
+        // HeadlessVulkanApplication with a scoring chooser so the pin is honoured.
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let pinnedRuntime : Aardvark.Rendering.Vulkan.Runtime =
+            match gpuPin with
+            | Some substr ->
+                let chooser =
+                    Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                        if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                        debug = false, deviceChooser = chooser)).Runtime with
+                | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+                | r -> eprintfn "[opaquewin32-send] pinned runtime is not Vulkan: %A" (r.GetType()); exit 2
+            | None ->
+                match app.Runtime with
+                | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+                | r -> eprintfn "[opaquewin32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let vk = pinnedRuntime
+            let dev = vk.Device
+            // Log the SELECTED physical device + its LUID so we can assert it matches
+            // Chromium's chosen adapter (the same-GPU requirement for OPAQUE_WIN32).
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.deviceLUID dev
+            printfn "[opaquewin32-send] PRODUCER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let W, H = 256, 256
+            // Fixed, well-known handoff path the Chromium import branch reads (analog of the
+            // Linux /tmp/dmabuf.sock). Overridable via 1st non-flag arg if provided.
+            let handoffPath =
+                let explicit =
+                    argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-opaquewin32.txt")
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.create dev W H
+            // fill SOLID TEAL (51,102,153) via the proven GPU clear+copy that releases the dst
+            // to VK_QUEUE_FAMILY_EXTERNAL in GENERAL (matches Chromium's import-side acquire).
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearCopyExternalNoSem dev src opaque.Image W H (V4f(0.2f, 0.4f, 0.6f, 1.0f))
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            // producer-side control readback (proves the fill landed before we hand off)
+            let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterLocal dev opaque
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath opaque.Handle W H
+            printfn "[opaquewin32-send] SOLID TEAL OPAQUE_WIN32 handle=0x%X pid=%d %dx%d size=%d -> %s (producer center=(%d,%d,%d,%d))"
+                (int64 opaque.Handle) pid W H opaque.Size handoffPath pr pg pb pa
+            printfn "[opaquewin32-send] holding alive 60s for the GPU process to DuplicateHandle + import..."
+            System.Threading.Thread.Sleep 60000
+            printfn "[opaquewin32-send] done"
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.destroy dev opaque
+            exit 0
+        )
+
+    // ---- D3D11_TEXTURE export producer — the PRODUCTION Windows path de-risk (W0-analog for
+    // D3D). Export a Vulkan image as a DXGI shared NT handle openable by a D3D11 consumer
+    // (ID3D11Device::OpenSharedResource1) — exactly how Chromium's default D3DImageBacking
+    // imports a texture. GPU-fill a 2-axis gradient, publish {handleValue, producerPID, w, h}
+    // to a file, hold alive. Pin the adapter via `--gpu <substr>` so the producer's VkDevice
+    // and the D3D11 consumer's DXGI adapter (LUID match) are the SAME physical device.
+    //   --keyedmutex : create the image WITH a keyed mutex (acquire 0 / release 1 around the
+    //                  fill). Test the no-keyed-mutex path FIRST; add this if the open/read fails.
+    if Array.contains "d3d11-send" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let useKeyedMutex = Array.contains "--keyedmutex" argv
+        // Enable VK_KHR_win32_keyed_mutex on the device when requested (external_memory_win32 is
+        // already enabled by default — W0 proved it). Build a dedicated app so both the device
+        // pin (scoring chooser) and the keyed-mutex extension are honoured.
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                if useKeyedMutex then Seq.singleton "VK_KHR_win32_keyed_mutex" else Seq.empty)
+        let pinnedRuntime : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let vk = pinnedRuntime
+            let dev = vk.Device
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-send] PRODUCER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)  keyedMutex=%b%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid useKeyedMutex
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let (exportable, feat) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.queryExportSupport dev
+            printfn "[d3d11-send] D3D11_TEXTURE export support: exportable=%b features=%A" exportable feat
+            // VERDICT (2026-06-20, zephyrus): both NVIDIA RTX 4070 and AMD 890M report D3D11_TEXTURE as
+            // IMPORT-ONLY (features=DedicatedOnlyBit,ImportableBit, no ExportableBit). The export call
+            // returns a handle but D3D11 OpenSharedResource1 rejects it (E_INVALIDARG), and the keyed-
+            // mutex submit fails (ErrorInitializationFailed) — there is no real DXGI keyed-mutex backing.
+            // Abort cleanly instead of crashing in vkCmdPipelineBarrier on the bogus image. The supported
+            // direction is the REVERSE: D3D11 allocates the shared keyed-mutex texture, Vulkan IMPORTS it.
+            if not exportable then
+                eprintfn "[d3d11-send] ABORT: this device does NOT support EXPORTING D3D11_TEXTURE (import-only). Vulkan->D3D11 export is unsupported; use the D3D11-allocates / Vulkan-imports direction."
+                exit 4
+            let W, H = 256, 256
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11.txt")
+            let img = Aardvark.Dom.Remote.SharedTexture.D3D11Export.create dev W H useKeyedMutex
+            // fill the 2-axis gradient (R=x, G=y, B=128); for keyed mutex: acquire 0, release 1.
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.fillGradient dev img 0UL 1UL
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath img.Handle W H
+            printfn "[d3d11-send] D3D11_TEXTURE handle=0x%X pid=%d %dx%d size=%d keyedMutex=%b -> %s"
+                (int64 img.Handle) pid W H img.Size useKeyedMutex handoffPath
+            printfn "[d3d11-send] holding alive 90s for the D3D11 consumer to DuplicateHandle + OpenSharedResource1..."
+            System.Threading.Thread.Sleep 90000
+            printfn "[d3d11-send] done"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.destroy dev img
+            exit 0
+        )
+
+    // ---- REVERSE (supported, production) direction: D3D11 ALLOCATES the shared keyed-mutex
+    // texture (tools/d3d11-consumer/d3d11_alloc.exe) + writes the handoff; THIS Vulkan process
+    // imports it (VkImportMemoryWin32HandleInfoKHR(D3D11_TEXTURE) — the ImportableBit direction),
+    // GPU-fills a 2-axis gradient WRAPPED in a keyed-mutex acquire(0)/release(1), then the D3D11
+    // process AcquireSync(1) + reads. This is the Chromium D3DImageBacking path: Chromium owns the
+    // texture, Aardvark renders into it. Requires VK_KHR_win32_keyed_mutex. `--gpu NVIDIA` pin. ----
+    if Array.contains "d3d11-import-fill" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                Seq.singleton "VK_KHR_win32_keyed_mutex")
+        let rt : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-import-fill] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let dev = rt.Device
+            let (luidValid, _luid, luidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-import-fill] IMPORTER device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor luidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11-rev.txt")
+            // D3D11 allocator writes the handoff first; wait for it + DuplicateHandle the handle in.
+            let h = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.readHandoff handoffPath
+            printfn "[d3d11-import-fill] handoff handle=0x%X allocPID=%d %dx%d" (int64 h.Handle) h.ProducerPID h.Width h.Height
+            let dup = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.duplicateIntoSelf h.ProducerPID h.Handle
+            printfn "[d3d11-import-fill] DuplicateHandle -> 0x%X (valid in this process)" (int64 dup)
+            let imp = Aardvark.Dom.Remote.SharedTexture.D3D11Export.importD3D11 dev dup h.Width h.Height
+            printfn "[d3d11-import-fill] imported D3D11 keyed-mutex texture; filling gradient + keyed-mutex acquire(0)/release(1)"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillRelease dev imp 0UL 1UL
+            printfn "[d3d11-import-fill] filled + released keyed mutex (key 1); the D3D11 reader can now AcquireSync(1)"
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.destroyImported dev imp
+            exit 0
+        )
+
+    // ---- STANDALONE PRODUCER de-risk: Silk.NET mints a shared D3D11 keyed-mutex texture IN
+    // THIS process (no separate C++ allocator), Vulkan imports it in-process and GPU-fills it
+    // TEAL with a SINGLE-KEY-0 keyed mutex (acquire 0 / release 0 — NOT 0/1), then writes the
+    // handoff and stays alive so a separate D3D11 reader (AcquireSync(0)) can read teal back.
+    // This proves the entire Windows producer end before the Chromium painter milestone.
+    // Both the Silk D3D11 device and the Vulkan device live on the SAME adapter (LUID match,
+    // pinned via --gpu NVIDIA). Requires VK_KHR_win32_keyed_mutex. ----
+    if Array.contains "d3d11-consume-fill" argv then
+        let gpuPin =
+            let i = System.Array.IndexOf(argv, "--gpu")
+            if i >= 0 && i + 1 < argv.Length then Some argv.[i + 1] else None
+        let chooser =
+            match gpuPin with
+            | Some substr ->
+                Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun (pd : Aardvark.Rendering.Vulkan.PhysicalDevice) ->
+                    if pd.Name.IndexOf(substr, System.StringComparison.OrdinalIgnoreCase) >= 0 then 1000000 else 0)
+                :> Aardvark.Rendering.Vulkan.IDeviceChooser
+            | None -> Aardvark.Rendering.Vulkan.DeviceChooserAuto(fun _ -> 0) :> _
+        let devExt =
+            System.Func<Aardvark.Rendering.Vulkan.PhysicalDevice, seq<string>>(fun _ ->
+                Seq.singleton "VK_KHR_win32_keyed_mutex")
+        let rt : Aardvark.Rendering.Vulkan.Runtime =
+            match (new Aardvark.Rendering.Vulkan.HeadlessVulkanApplication(
+                    debug = false, deviceExtensions = devExt, deviceChooser = chooser)).Runtime with
+            | :? Aardvark.Rendering.Vulkan.Runtime as vk -> vk
+            | r -> eprintfn "[d3d11-consume-fill] runtime is not Vulkan: %A" (r.GetType()); exit 2
+        (
+            let dev = rt.Device
+            let (luidValid, _luid, vkLuidHex) = Aardvark.Dom.Remote.SharedTexture.D3D11Export.deviceLUID dev
+            printfn "[d3d11-consume-fill] VULKAN device = '%s' (vendor=%s)  deviceLUID=%s (valid=%b)%s"
+                dev.PhysicalDevice.Name dev.PhysicalDevice.Vendor vkLuidHex luidValid
+                (match gpuPin with Some s -> sprintf "  [pinned via --gpu %s]" s | None -> "  [default chooser]")
+            let W, H = 256, 256
+            // Silk.NET allocates the shared keyed-mutex D3D11 texture on the SAME adapter as the
+            // Vulkan device (selected by the Vulkan deviceLUID).
+            let silk = Aardvark.Dom.Remote.SharedTexture.SilkD3D11Alloc.alloc vkLuidHex W H
+            printfn "[d3d11-consume-fill] SILK D3D11 adapter LUID=%s  handle=0x%X" silk.LuidHex (int64 silk.Handle)
+            // ASSERT the LUIDs match (both should be the pinned 4070).
+            if silk.LuidHex.ToUpperInvariant() <> vkLuidHex.ToUpperInvariant() then
+                eprintfn "[d3d11-consume-fill] LUID MISMATCH vk=%s silk=%s" vkLuidHex silk.LuidHex
+                exit 4
+            printfn "[d3d11-consume-fill] LUID MATCH OK: %s (Vulkan == Silk D3D11)" vkLuidHex
+            // Vulkan imports the Silk-allocated texture IN-PROCESS (same handle value) ...
+            let imp = Aardvark.Dom.Remote.SharedTexture.D3D11Export.importD3D11 dev silk.Handle W H
+            printfn "[d3d11-consume-fill] imported Silk D3D11 texture into Vulkan; filling TEAL + keyed-mutex acquire(0)/release(0)"
+            // ... and GPU-fills it solid TEAL (51,102,153,255) with a SINGLE-KEY-0 keyed mutex
+            // (acquire 0 / release 0). BGRA byte order: B=153, G=102, R=51, A=255.
+            Aardvark.Dom.Remote.SharedTexture.D3D11Export.importFillReleaseColor dev imp 153uy 102uy 51uy 255uy 0UL 0UL
+            printfn "[d3d11-consume-fill] filled + released keyed mutex (key 0); a D3D11 reader can now AcquireSync(0)"
+            let handoffPath =
+                let explicit = argv |> Array.tryFind (fun a -> a.EndsWith(".txt") && not (a.StartsWith "--"))
+                match explicit with
+                | Some p -> p
+                | None -> System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-d3d11-consume.txt")
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath silk.Handle W H
+            printfn "[d3d11-consume-fill] HANDOFF -> %s  handle=0x%X pid=%d %dx%d"
+                handoffPath (int64 silk.Handle) (System.Diagnostics.Process.GetCurrentProcess().Id) W H
+            // stay alive so the C++ reader can DuplicateHandle + AcquireSync(0) + read.
+            printfn "[d3d11-consume-fill] staying alive 30s for the D3D11 reader ..."
+            System.Threading.Thread.Sleep 30000
+            printfn "[d3d11-consume-fill] done"
+            exit 0
+        )
+
+    // ---- OPAQUE_WIN32 REPEATED-IN-PLACE cross-instance write test (Windows analog of
+    // opaque-rewrite-send/recv). De-risks the Chromium Windows port: does a SEPARATE process
+    // with a SEPARATE VkInstance read a producer's REPEATED in-place writes to ONE image shared
+    // via OPAQUE_WIN32, when the consumer re-acquires from EXTERNAL each frame? Handoff is the
+    // Win32 analog of SCM_RIGHTS: file {handleValue, producerPID, w, h} + DuplicateHandle. ----
+    if Array.contains "opaque-win32-rewrite-send" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let W, H = 256, 256
+            let handoffPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-win32.txt")
+            let opaque = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.create dev W H
+            let (src, srcMem) = Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.createColorSource dev W H
+            let pid = System.Diagnostics.Process.GetCurrentProcess().Id
+            Aardvark.Dom.Remote.SharedTexture.Win32Handoff.writeHandoff handoffPath opaque.Handle W H
+            printfn "[w32-send] HANDOFF -> %s  handle=0x%X pid=%d %dx%d size=%d"
+                handoffPath (int64 opaque.Handle) pid W H opaque.Size
+            // give the consumer time to read the file + OpenProcess + DuplicateHandle + import
+            System.Threading.Thread.Sleep 2000
+            for k in 0 .. 30 do
+                let r = (k * 37) % 256
+                let g = (k * 53) % 256
+                let col = V4f(float32 r / 255.0f, float32 g / 255.0f, 0.5f, 1.0f)
+                Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.clearCopyExternalNoSem dev src opaque.Image W H col
+                let (pr, pg, pb, pa) = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterLocal dev opaque
+                printfn "[w32-send] k=%-2d wrote expect~(%d,%d,128)  PRODUCER center=(%d,%d,%d,%d)" k r g pr pg pb pa
+                System.Threading.Thread.Sleep 120
+            // hold alive a moment so the consumer drains its last frames, then quit.
+            System.Threading.Thread.Sleep 1000
+            printfn "[w32-send] done"
+            Aardvark.Dom.Remote.SharedTexture.DmaBufGpu.destroyImage dev src srcMem
+            Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.destroy dev opaque
+            exit 0
+        | r -> eprintfn "[w32-send] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    if Array.contains "opaque-win32-rewrite-recv" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let dev = vk.Device
+            let noExternal = Array.contains "noexternal" argv
+            let handoffPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "aardvark-win32.txt")
+            let h = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.readHandoff handoffPath
+            printfn "[w32-recv] handoff handle=0x%X producerPID=%d %dx%d noExternal=%b"
+                (int64 h.Handle) h.ProducerPID h.Width h.Height noExternal
+            let dup = Aardvark.Dom.Remote.SharedTexture.Win32Handoff.duplicateIntoSelf h.ProducerPID h.Handle
+            printfn "[w32-recv] DuplicateHandle -> 0x%X (valid in this process)" (int64 dup)
+            let imp = Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.importOnce dev dup h.Width h.Height
+            printfn "[w32-recv] imported OPAQUE_WIN32 memory + bound image; looping reads"
+            for i in 0 .. 40 do
+                let (r, g, b, a) =
+                    if noExternal then Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterCrossNoExternal dev imp
+                    else Aardvark.Dom.Remote.SharedTexture.OpaqueWin32.readCenterCross dev imp
+                printfn "[w32-recv] i=%-2d CONSUMER center=(%d,%d,%d,%d)" i r g b a
+                System.Threading.Thread.Sleep 110
+            printfn "[w32-recv] done"
+            exit 0
+        | r -> eprintfn "[w32-recv] runtime is not Vulkan: %A" (r.GetType()); exit 2
+
+    // List available device extensions (e.g. check MoltenVK VK_EXT_metal_objects on macOS).
+    if Array.contains "vk-exts" argv then
+        match app.Runtime with
+        | :? Aardvark.Rendering.Vulkan.Runtime as vk ->
+            let exts = vk.Device.PhysicalDevice.AvailableExtensions |> Seq.map string |> Seq.toList
+            printfn "[vk-exts] %d device extensions available" (List.length exts)
+            for e in exts do
+                let l = e.ToLowerInvariant()
+                if l.Contains "metal" || l.Contains "external" then printfn "  %s" e
+            printfn "[vk-exts] VK_EXT_metal_objects present: %b" (exts |> List.exists (fun e -> e = "VK_EXT_metal_objects"))
+            exit 0
+        | r -> eprintfn "[vk-exts] runtime is not Vulkan: %A" (r.GetType()); exit 2
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
 
     let run (ctx : DomContext) =
-        App.start ctx (snapDemo ctx.Runtime)
+        if Array.contains "sharedtexture-app" argv then
+            App.start ctx (sharedTextureApp ctx.Runtime)
+        else
+            App.start ctx (snapDemo ctx.Runtime)
         //App.start ctx (testApp ctx.Runtime)
         //App.start ctx Elm.app
 

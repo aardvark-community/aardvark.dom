@@ -6,3 +6,6 @@ Aardvark.Rendering.GL
 Aardvark.Rendering.Vulkan
 Aardvark.Rendering.Text
 Aardvark.Application
+Silk.NET.Core
+Silk.NET.DXGI
+Silk.NET.Direct3D11
