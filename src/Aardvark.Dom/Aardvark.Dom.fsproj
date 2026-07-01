@@ -18,6 +18,7 @@
     <Compile Include="SceneGraph\SceneGraph.fs" />
     <Compile Include="SceneGraph\PickArgmin.fs" />
     <Compile Include="SceneGraph\SceneHandler.fs" />
+    <Compile Include="SceneGraph\RenderTo.fs" />
     <Compile Include="SceneGraph\HeapNode.fs" />
     <Compile Include="SceneGraph\SceneFrontend.fs" />
     <Compile Include="UI\Attribute.fs" />
