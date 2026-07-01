@@ -307,10 +307,15 @@ module PickShader =
         {
             [<Color>] c : V4f
             [<Semantic("PickContextCoord")>] uv : V2f
+            [<FragCoord>] fc : V4f
         }
     let pickFinalPortal (v : FinalPortal_In) =
         fragment {
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, v.uv.X, v.uv.Y, 0.0f) }
+            // slots 1-2 = source-uv; slot 3 = the quad's OWN NDC depth (mode-A
+            // convention 2z-1) so the resolver's pixel<->BVH tie-break has a real
+            // geometric depth for the portal (slot 2 is a uv, not a depth).
+            let d = 2.0f * v.fc.Z - 1.0f
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, v.uv.X, v.uv.Y, d) }
             return r
         }
 
@@ -1848,6 +1853,10 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                     pixVp <- pBwd.TransformPosProj ndc      // NDC → VIEW
                                     pixN  <- if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
                                     pixPi <- int f3
+                                    // PORTAL: slot 3 is the quad's own NDC depth (not pi), and slot 2
+                                    // was a uv (not depth) — use the real geometric depth so the
+                                    // pixel<->BVH tie-break is correct in a mixed outer scene.
+                                    if Option.isSome scope.PickSubContext then pixDepth <- float f3
                                 else
                                     pixVp <- V3d(float f1, float f2, float f3)
                                     pixDepth <- vpFwd.TransformPosProj(pixVp).Z
@@ -1942,11 +1951,14 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                             match sub.PickAt (V2i(innerX, innerY)) with
                             | ValueSome (struct (world, _model, iview, _iproj, istate)) ->
                                 // dispatch to the innermost node; PickAt forced the inner frame.
-                                // (viewPos is inner view-space; the outer dispatcher's location uses
-                                // the outer camera — fine for event routing, which is by node.)
                                 let innerViewPos = iview.Forward.TransformPos world
                                 Some (istate, innerViewPos, V3d.Zero, 0, None)
-                            | ValueNone -> None
+                            | ValueNone ->
+                                // inner MISS (the sub-scene is empty at this uv). You're still
+                                // hovering the portal geometry itself, so fall through to the portal
+                                // node rather than discard — its own Sg.Cursor / handlers then apply
+                                // to the "window background" instead of picking dropping to nothing.
+                                Some (scope, V3d.Zero, V3d.Zero, 0, None)
                     elif scope.PickThrough then
                         if winnerIsPixel then
                             Log.warn "cannot pick-through pixel-picked objects"
@@ -2166,7 +2178,10 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             match x.Read(pixelI, original.PointerId, kind, original) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
+                // build the location from the HIT node's own view/proj (consistent with `model`
+                // above) — for a portal hit `best` is the inner node, so the event carries the
+                // inner camera; for a normal hit best.View/Proj == the render control's camera.
+                let loc = SceneEventLocation(model, AVal.force best.View, AVal.force best.Proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = ScenePointerEvent(x, best, target, kind, loc, original)
 
                 TraversalState.handleMove lastOver evt (Some best)
@@ -2219,7 +2234,10 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             match x.Read(pixelI, original.PointerId, kind) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
+                // build the location from the HIT node's own view/proj (consistent with `model`
+                // above) — for a portal hit `best` is the inner node, so the event carries the
+                // inner camera; for a normal hit best.View/Proj == the render control's camera.
+                let loc = SceneEventLocation(model, AVal.force best.View, AVal.force best.Proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = SceneTapEvent(x, best, target, kind, loc, original)
                 TraversalState.handleEvent true evt best
             | None ->
@@ -2239,7 +2257,10 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             match x.Read(pixelI, -1, kind) with
             | Some (best, target, viewPos, viewNormal, partIndex) ->
                 let model = TraversalState.modelTrafo best
-                let loc = SceneEventLocation(model, view, proj, pixelF, s, viewPos, viewNormal, partIndex)
+                // build the location from the HIT node's own view/proj (consistent with `model`
+                // above) — for a portal hit `best` is the inner node, so the event carries the
+                // inner camera; for a normal hit best.View/Proj == the render control's camera.
+                let loc = SceneEventLocation(model, AVal.force best.View, AVal.force best.Proj, pixelF, s, viewPos, viewNormal, partIndex)
                 let evt = SceneWheelEvent(x, best, target, kind, loc, original)
                 TraversalState.handleEvent true evt best
             | None ->

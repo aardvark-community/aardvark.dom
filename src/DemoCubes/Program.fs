@@ -114,6 +114,12 @@ let cubesApp (runtime : IRuntime) =
                         AnimationFinished = None
                     }
 
+                // The outer scene is a fullscreen NDC composite — give it an identity camera so the
+                // pick machinery doesn't warn about a missing view/proj. The REAL camera is the
+                // inner one (camView, passed to RenderToPickable below).
+                Sg.View (AVal.constant Trafo3d.Identity)
+                Sg.Proj (AVal.constant Trafo3d.Identity)
+
                 let innerProj =
                     size |> AVal.map (fun s ->
                         Frustum.perspective 60.0 0.1 200.0 (float s.X / float s.Y)
@@ -155,8 +161,6 @@ let cubesApp (runtime : IRuntime) =
                         ])
                 let colorTex = result.Textures.[DefaultSemantic.Colors]
                 let ctx = result.Pick
-                // keep the offscreen render live for the app lifetime.
-                ctx.Acquire()
 
                 // wrap to [0, 2π) BEFORE the shader — DateTime.Ticks/1e7 is ~6e10 for
                 // 2026, and a float32 uniform that large drowns the spatial sin term
@@ -167,8 +171,13 @@ let cubesApp (runtime : IRuntime) =
                 // ---- OUTER composite: warp the inner render, keep picking alive ----
                 sg {
                     Sg.PickContext ctx
+                    // crosshair over the portal's own background (inner-miss falls through to here);
+                    // hovering a cube shows the inner cube's "pointer" cursor instead.
+                    Sg.Cursor "crosshair"
                     Sg.DepthTest (AVal.constant DepthTest.None)
-                    Sg.Uniform("ColorTex", colorTex |> AVal.map (fun t -> t :> ITexture))
+                    // pass the offscreen color as the IAdaptiveResource ITSELF (not AVal.map'd) so
+                    // the render pipeline acquires/releases it with this quad — no manual leak.
+                    Sg.Uniform("ColorTex", colorTex)
                     Sg.Uniform("WarpTime", warpTime)
                     Sg.Shader { CompositeShader.vert; CompositeShader.frag }
                     Primitives.ScreenQuad 0.0
