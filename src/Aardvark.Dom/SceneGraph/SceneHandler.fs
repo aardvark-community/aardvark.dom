@@ -389,12 +389,73 @@ module PickShader =
         | FinalANoNormalNoPi  -> pickFinalANoNormalNoPiEffect
         | FinalB              -> pickFinalBEffect
 
+    // -----------------------------------------------------------------------
+    // Generalized per-semantic rewrite.
+    //
+    // The pick rewrite is one instance of a general operation: for a REQUESTED
+    // set of output semantics, extend a user effect so that — in the SAME
+    // single pass — each requested semantic is produced, either by ROUTING it
+    // (the user effect already declares it) or by SYNTHESIZING it (inject
+    // pre-effect(s) before the user effect + a final fragment after it that
+    // writes the semantic's attachment). Picking is currently the only
+    // requested semantic; its synthesizer IS the `chooseChain`/`finalEffect`
+    // table above, so the composed chain — hence the GLSL and the pick output —
+    // is byte-identical to the pre-generalization path.
+    // -----------------------------------------------------------------------
+
+    /// Plan for producing ONE requested semantic in the single pass.
+    type SemanticPlan =
+        {
+            /// Effects prepended before the user effect (vertex/fragment
+            /// synthesizers, e.g. ViewSpaceNormal-from-Normals, depth seeding).
+            Pre     : FShade.Effect list
+            /// Effects appended after the user effect (the final fragment(s)
+            /// writing this semantic's attachment).
+            Post    : FShade.Effect list
+            /// Per-scope pick metadata: `Some isModeA` when this semantic is
+            /// the pick attachment (drives `pickModes`); `None` otherwise.
+            IsModeA : bool option
+        }
+
+    /// Route-vs-synthesize plan for a single requested semantic. `None` means
+    /// the semantic needs no injection (routed verbatim, or unknown/absent).
+    /// `Some plan` means we synthesize it.
+    let planSemantic (sem : string) (eff : FShade.Effect) (geomHas : string -> bool) : SemanticPlan option =
+        match sem with
+        | "PickId" ->
+            // Pick is always synthesized (the user never produces the packed
+            // "PickId" record). This reproduces the exact `chooseChain` chain:
+            //   (vsn?) :: pickDepthBefore :: <eff> :: finalEffect choice.Final
+            let choice = chooseChain eff geomHas
+            let vsn = if choice.InjectVsn then [viewSpaceNormalEffect] else []
+            Some {
+                Pre     = vsn @ [pickDepthBeforeEffect]
+                Post    = [finalEffect choice.Final]
+                IsModeA = Some (choice.Final <> FinalB)
+            }
+        | _ ->
+            // Future semantics (e.g. GTAO Normal/Depth) route-or-synthesize
+            // here. Unknown semantics are ignored (no injection).
+            None
+
+    /// Resolve the rewrite for a set of requested semantics WITHOUT composing
+    /// (the `Effect.compose` GLSL step is deferred by callers). Returns the
+    /// chain as an effect LIST plus the collected pick metadata. Chain =
+    /// (all Pre, first-seen order, de-duplicated by reference) @ [eff] @ (all Post).
+    let planChain (requested : string list) (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect list * bool option =
+        let plans = requested |> List.choose (fun sem -> planSemantic sem eff geomHas)
+        let pre =
+            // Shared synthesizers (e.g. pickDepthBefore) appear once even if
+            // several requested semantics ask for them.
+            let seen = System.Collections.Generic.HashSet<FShade.Effect>(HashIdentity.Reference)
+            [ for p in plans do for e in p.Pre do if seen.Add e then yield e ]
+        let post = plans |> List.collect (fun p -> p.Post)
+        let isModeA = plans |> List.tryPick (fun p -> p.IsModeA)
+        (pre @ [eff] @ post), isModeA
+
     /// Build the composed pick effect for a user effect + geometry callback.
     let composePickChain (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect =
-        let choice = chooseChain eff geomHas
-        let pre = if choice.InjectVsn then [viewSpaceNormalEffect] else []
-        let chain = pre @ [pickDepthBeforeEffect; eff; finalEffect choice.Final]
-        FShade.Effect.compose chain
+        planChain ["PickId"] eff geomHas |> fst |> FShade.Effect.compose
 
     // Legacy record kept for `binary` / `outline` — they only read v.fc, but
     // share this type with their own callers. Stripped of the pick-specific
@@ -1207,15 +1268,15 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                         let geomHas (sem : string) =
                             ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
                             ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
-                        // Resolve the pick chain choice eagerly so we know
-                        // whether this scope is mode A or mode B; the actual
-                        // GLSL composition stays lazy.
-                        let choice = PickShader.chooseChain eff geomHas
-                        pickModes.[pickId] <- (choice.Final <> PickShader.FinalB)
+                        // Resolve the per-semantic rewrite eagerly (cheap — no
+                        // GLSL) so we know this scope's pick mode (A/B) for
+                        // `pickModes`; the actual composition stays lazy.
+                        // Only "PickId" is requested today, so this is identical
+                        // to the old chooseChain/finalEffect chain.
+                        let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
+                        pickModes.[pickId] <- (match isModeA with Some m -> m | None -> false)
                         let newShaders =
                             lazy (
-                                let pre = if choice.InjectVsn then [PickShader.viewSpaceNormalEffect] else []
-                                let chain = pre @ [PickShader.pickDepthBeforeEffect; eff; PickShader.finalEffect choice.Final]
                                 (FShade.Effect.compose chain).Shaders
                             )
 

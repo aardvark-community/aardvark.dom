@@ -173,3 +173,39 @@ let ``composePickChain is consistent with chooseChain``() =
     let composed = PickShader.composePickChain eff (geomWith ["Positions"; "Colors"; "Normals"; "InstanceId"])
     composed.Outputs |> Map.containsKey "Colors" |> should equal true
     composed.Outputs |> Map.containsKey "PickId" |> should equal true
+
+// ----------------------------------------------------------------------------
+// Step 2 invariant: the generalized per-semantic loop, requesting only
+// "PickId", must reproduce EXACTLY the old inline chooseChain/finalEffect
+// chain and pick-mode tag — for every fixture. Locks identical pick output.
+// ----------------------------------------------------------------------------
+
+/// The pre-generalization reference chain + mode tag, kept here verbatim so a
+/// drift in `planChain` is caught against the original definition.
+let private referenceChain (eff : Effect) (geomHas : string -> bool) =
+    let choice = PickShader.chooseChain eff geomHas
+    let pre = if choice.InjectVsn then [PickShader.viewSpaceNormalEffect] else []
+    let chain = pre @ [PickShader.pickDepthBeforeEffect; eff; PickShader.finalEffect choice.Final]
+    chain, (choice.Final <> PickShader.FinalB)
+
+let private planChainCases : (string * Effect * string list) list =
+    [ "plain+Normals",     Effect.ofFunction plainShader, ["Positions"; "Colors"; "Normals"]
+      "plain",             Effect.ofFunction plainShader, ["Positions"; "Colors"]
+      "pi+Normals+iid",    Effect.ofFunction piShader,    ["Positions"; "Colors"; "Normals"; "InstanceId"]
+      "pi+iid",            Effect.ofFunction piShader,    ["Positions"; "Colors"; "InstanceId"]
+      "pvp+Normals",       Effect.ofFunction pvpShader,   ["Positions"; "Colors"; "Normals"]
+      "vsn+Normals",       Effect.ofFunction vsnShader,   ["Positions"; "Colors"; "Normals"]
+      "vsn",               Effect.ofFunction vsnShader,   ["Positions"; "Colors"] ]
+
+[<Test>]
+let ``planChain [PickId] reproduces the reference chain and mode for every fixture``() =
+    for (name, eff, attrs) in planChainCases do
+        let geomHas = geomWith attrs
+        let refChain, refModeA = referenceChain eff geomHas
+        let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
+        // same effect list, same order, same references
+        chain.Length |> should equal refChain.Length
+        List.zip chain refChain
+        |> List.iter (fun (a, b) -> Object.ReferenceEquals(a, b) |> should equal true)
+        // same pick-mode tag
+        isModeA |> should equal (Some refModeA)
