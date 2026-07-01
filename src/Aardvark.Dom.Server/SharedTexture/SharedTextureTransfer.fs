@@ -155,11 +155,14 @@ module private Platform =
               Destroy = fun buf -> MetalExport.destroy device (buf.Tag :?> MetalSharedImage)
               SendReg = fun conn buf id w h ->
                 let m = buf.Tag :?> MetalSharedImage
-                // publish the IOSurface under a per-textureId mach service name; REG names it so
-                // the browser does IOSurfaceLookupFromMachPort(name). (Streaming handoff: follow-on.)
+                // The consumer (patched Electron painter) is the mach SERVER: it check_ins this
+                // service name off the REG line and recv-loops. So send REG first (it registers),
+                // then look it up and PUSH the IOSurface to it. (aardvark_publish was the mismatched
+                // producer-as-server direction — the browser never requests, so it stayed black.)
                 let name = sprintf "%s.%s" MetalExport.MachServiceName id
-                MetalExport.aardvark_publish(name, m.IOSurface) |> ignore
-                FdHandoff.streamFrame (int conn) (sprintf "REG %s %d %d %s\n" id w h name)
+                let ok = FdHandoff.streamFrame (int conn) (sprintf "REG %s %d %d %s\n" id w h name)
+                MetalExport.aardvark_send(name, m.IOSurface) |> ignore
+                ok
               SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
               SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
               SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)

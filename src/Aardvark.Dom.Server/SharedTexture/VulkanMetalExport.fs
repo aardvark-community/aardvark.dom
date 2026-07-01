@@ -122,6 +122,10 @@ module MetalExport =
     extern int aardvark_publish(string name, nativeint surface)
     [<DllImport("libaardvark_machbridge.dylib")>]
     extern nativeint aardvark_lookup(string name)
+    // Producer-as-client push: look up the consumer's service and SEND it the IOSurface,
+    // matching a consumer that check_ins + recv-loops (the patched Electron painter).
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern int aardvark_send(string name, nativeint surface)
 
     // Create an IOSurface from a CFDictionary of properties (we stamp kIOSurfacePixelFormat
     // = 'BGRA', which the MoltenVK-exported surface lacks → the property Chromium's

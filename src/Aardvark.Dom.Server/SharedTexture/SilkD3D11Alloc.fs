@@ -60,8 +60,8 @@ module SilkD3D11Alloc =
     /// Allocate a shared keyed-mutex B8G8R8A8 texture on the adapter whose LUID == `wantLuidHex`
     /// (16 hex digits, as printed by D3D11Export.deviceLUID). Returns the NT handle + live objects.
     let alloc (wantLuidHex : string) (w : int) (h : int) : SilkD3D11Texture =
-        let dxgi = DXGI.GetApi()
-        let d3d11 = D3D11.GetApi()
+        let dxgi = DXGI.GetApi(null)
+        let d3d11 = D3D11.GetApi(null)
 
         // ---- CreateDXGIFactory1 -> IDXGIFactory1
         let mutable factory = Unchecked.defaultof<ComPtr<IDXGIFactory1>>
@@ -121,8 +121,8 @@ module SilkD3D11Alloc =
         check "D3D11CreateDevice" hrDev
         adapterUnk.Dispose()
         printfn "[silk-alloc] CreateDevice OK (featureLevel=%A)" fl
-        let device = ComPtr<ID3D11Device>(devPtr)
-        let context = ComPtr<ID3D11DeviceContext>(ctxPtr)
+        let device = new ComPtr<ID3D11Device>(devPtr)
+        let context = new ComPtr<ID3D11DeviceContext>(ctxPtr)
 
         // ---- CreateTexture2D: B8G8R8A8_UNORM, SHARED_KEYEDMUTEX|SHARED_NTHANDLE.
         // Silk's Texture2DDesc is a mutable struct; build it field-by-field.
@@ -142,7 +142,7 @@ module SilkD3D11Alloc =
         let hrTex =
             device.CreateTexture2D(&&desc, NativePtr.ofNativeInt<SubresourceData> 0n, NativePtr.toByRef &&texPtr)
         check "CreateTexture2D" hrTex
-        let tex = ComPtr<ID3D11Texture2D>(texPtr)
+        let tex = new ComPtr<ID3D11Texture2D>(texPtr)
 
         // ---- QI tex -> IDXGIResource1, CreateSharedHandle (NT handle)
         let res1 : ComPtr<IDXGIResource1> = tex.QueryInterface<IDXGIResource1>()
