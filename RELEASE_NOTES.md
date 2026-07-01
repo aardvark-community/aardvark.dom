@@ -1,3 +1,9 @@
+### 1.2.0-prerelease0008
+* Offscreen `IRuntime.RenderTo` / `RenderToPickable` + `IRenderPickContext`; pick THROUGH a post-process warp via `Sg.PickContext` + the `PickContextCoord` rewrite (portal picking recurses into the offscreen scene).
+* Heap picking composes with mixed pickable / `Sg.NoEvents` children — the `heap { }` builder forces pixel picking for its subtree, and non-pick buckets stay rendered-but-inert (needs Aardvark.Rendering 5.7.0-prerelease0030).
+* macOS: zero-copy IOSurface sharing pushes the surface to the consumer (producer-as-client mach-port direction) instead of publishing as a server the browser never queried — the shared frame no longer stays black.
+* RemoteHtmlBackend renders at device-pixel resolution (respects `devicePixelRatio`).
+
 ### 1.2.0-prerelease0007
 * PickArgmin: drop `[<Literal>]` from `ResultFloats`. A literal in a `[<ReflectedDefinition>]` module compiles to a const field with no backing property, which poisons `Expr.TryGetReflectedDefinition` for EVERY method in the assembly — so heap-pick `Normal24.encode` (and any reflected function) became "not reflectable". Plain `let` = a bindable property.
 
