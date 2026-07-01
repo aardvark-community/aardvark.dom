@@ -365,14 +365,33 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
                             String.concat "\n" (imageTransfer.Boot n)
                             $"var requestImage = function() {{"
                             $"    const r = __THIS__.getBoundingClientRect();"
+                            // Render at device-pixel resolution: getBoundingClientRect is CSS px,
+                            // so on a scaled display (devicePixelRatio != 1) reporting it verbatim
+                            // makes the FBO / shared texture / canvas backing render at 1/dpr res
+                            // (blurry, ~half on a 2x display). ViewportSize is meant to be the
+                            // dpr-scaled framebuffer size; ClientSize stays CSS (set from event
+                            // ClientRects), so overlays/picking are unaffected.
+                            $"    const dpr = window.devicePixelRatio || 1;"
                             $"    const data = aardvark.getDataAttributeDict(__THIS__);"
                             $"    const bg = window.getComputedStyle(__THIS__).backgroundColor.toString();"
-                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: r.width, height: r.height, background: bg, data: data }}));"
+                            $"    {n}.send(JSON.stringify({{ cmd: \"requestimage\", width: Math.round(r.width * dpr), height: Math.round(r.height * dpr), background: bg, data: data }}));"
                             $"}};" 
                             $"let unsub = (() => {{}});"
                             $"var start = function() {{"
                             $"      requestImage();"
-                            $"      unsub = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
+                            $"      let unsubResize = aardvark.onResize(__THIS__, () => {{ requestImage(); }});"
+                            // Also re-render when devicePixelRatio changes WITHOUT a CSS resize
+                            // (e.g. dragging the window to a monitor with different scaling): the
+                            // ResizeObserver won't fire for that, so watch the resolution directly.
+                            $"      let dprMq = null;"
+                            $"      const onDpr = () => {{ requestImage(); armDpr(); }};"
+                            $"      const armDpr = () => {{"
+                            $"          if (dprMq) dprMq.removeEventListener(\"change\", onDpr);"
+                            $"          dprMq = window.matchMedia(\"(resolution: \" + window.devicePixelRatio + \"dppx)\");"
+                            $"          dprMq.addEventListener(\"change\", onDpr);"
+                            $"      }};"
+                            $"      armDpr();"
+                            $"      unsub = () => {{ unsubResize(); if (dprMq) dprMq.removeEventListener(\"change\", onDpr); }};"
                             $"}};"
                             $"if({n}.readyState == 1) {{ start(); }}"
                             $"else {{ {n}.onopen = () => {{ start() }}; }}"
