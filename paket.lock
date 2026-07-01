@@ -2,6 +2,10 @@ STORAGE: NONE
 RESTRICTION: == net8.0
 NUGET
   remote: https://api.nuget.org/v3/index.json
+    Aardium.Shared (1.0)
+      Aardvark.Base (>= 5.3.24 < 5.4)
+      Aardvark.Build (>= 2.0.7 < 2.1)
+      FSharp.Core (>= 8.0)
     Aardvark.Application (5.7.0-prerelease0027)
       Aardvark.Base.Essentials (>= 5.3.23 < 5.4)
       Aardvark.Base.Incremental (>= 5.3.23 < 5.4)
