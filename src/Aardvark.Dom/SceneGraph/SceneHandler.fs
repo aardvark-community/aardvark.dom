@@ -1070,7 +1070,8 @@ type private Stats(maxCnt : int) =
             0.0
 
 
-type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<string> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, clientSize : cval<V2i>, time : cval<System.DateTime>) =
+
+type internal PickProducer(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>) =
     static let pickBuffer = Symbol.Create "PickId"
     
     let runtime = signature.Runtime :?> IRuntime
@@ -1104,40 +1105,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
     //let mutable attachments = []
     let mutable fbos : option<SceneHandlerFramebuffers> = None
     let mutable viewportSize = V2i.Zero
-
-    /// Convert a DOM (CSS-pixel) event position to the framebuffer-pixel
-    /// coordinate the pick FBO is indexed in. Scale is derived from the
-    /// event's own ClientRect vs. viewportSize, so it stays correct under
-    /// any RenderControl.PixelRatio override. Returns sub-pixel V2d;
-    /// rounding to V2i is left to the GL read-edge. Also publishes the
-    /// CSS-pixel client size on `clientSize` so consumers (HTML overlays)
-    /// have a typed source.
-    let toFbPixel (clientPosition : V2i) (clientRect : Box2d) =
-        let cssSize = clientRect.Size
-        let s = viewportSize
-        let scale =
-            if cssSize.X > 0.0 && cssSize.Y > 0.0 then V2d s / cssSize
-            else V2d.II
-        let pixelF = V2d (clientPosition - V2i clientRect.Min) * scale
-        let cssSizeI = V2i(round cssSize.X, round cssSize.Y)
-        if cssSizeI.AllGreater 0 && cssSizeI <> clientSize.Value then
-            transact (fun () -> clientSize.Value <- cssSizeI)
-        pixelF
-
     let hoverId = cval -1
-    let lastOver : cval<option<TraversalState>> = cval None
-    let lastFocus : cval<option<TraversalState>> = cval None
-    
-    let cursor = 
-        lastOver |> AVal.bind (function
-            | Some l -> l.Cursor
-            | None -> AVal.constant None
-        )
-
-    let cursorSub =
-        cursor.AddCallback setCursor
-
-
     let clearColor = cval C4f.Black
 
     let acquireId (scope : TraversalState) =
@@ -1204,8 +1172,6 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             runtime.ReadPickRegion(pickFbo, pixel, PickSnap.radius)
         | _ ->
             ValueNone
-             
-
     let mutable renderTask, pickObjects, dispose =
         let runtime = signature.Runtime :?> IRuntime
 
@@ -1524,48 +1490,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                     ()
             tree
         )
-   
 
-    let capturedScopes = Dict<int, TraversalState>()
-    let mutable lastMouseInfo = None
-    let mutable lastRealMouseInfo = None
-    
-    member private x.Dispose(disposing : bool) =
-        printfn "SceneHandler died: %A" disposing
-        if disposing then System.GC.SuppressFinalize x
-        pickTexture <- None
-        lastMouseInfo <- None
-        lastRealMouseInfo <- None
-        capturedScopes.Clear()
-        dispose()
-        renderTask <- RenderTask.empty
-        pickObjects <- ASet.empty
-        bvh <- AVal.constant BvhTree3d.empty
-        cursorSub.Dispose()
-
-    member x.Dispose() = x.Dispose true
-    override x.Finalize() = x.Dispose false
-    interface System.IDisposable with
-        member x.Dispose() = x.Dispose()
-
-
-    member x.Time = time
-    member x.ClearColor = clearColor
-    member x.Runtime = runtime
-    member x.FramebufferSignature = signature
-
-    member x.Cursor = cursor
-
-    member x.RenderTask = renderTask
-  
-
-    member x.Read(pixel : V2i, pointerId : int, kind : SceneEventKind, ?evt : PointerEvent) =
-
-        let capturedScope =
-            match capturedScopes.TryGetValue pointerId with
-            | true, s -> Some s
-            | _ -> None
-
+    member x.Pick(pixel : V2i, kind : SceneEventKind) =
         let result =
             if pixel.AllGreaterOrEqual 0 && pixel.AllSmaller viewportSize then
                 let v = AVal.force view
@@ -1921,6 +1847,92 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                         Some (scope, viewPos, viewNormal, partIndex, None)
             else
                 None
+        result
+
+    member x.View = view
+    member x.Proj = proj
+    member x.RenderTask = renderTask
+    member x.ViewportSize = viewportSize
+    member x.LastMousePosition = lastMousePosition
+    member x.ClearColor = clearColor
+    member x.Runtime = runtime
+    member x.FramebufferSignature = signature
+
+    member x.Dispose() =
+        pickTexture <- None
+        dispose()
+        renderTask <- RenderTask.empty
+        pickObjects <- ASet.empty
+        bvh <- AVal.constant BvhTree3d.empty
+
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+
+
+type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, setCursor : option<string> -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>, clientSize : cval<V2i>, time : cval<System.DateTime>) =
+    let producer = new PickProducer(signature, trigger, scene, view, proj, fboSize)
+
+    /// Convert a DOM (CSS-pixel) event position to the framebuffer-pixel
+    /// coordinate the pick FBO is indexed in. Scale is derived from the
+    /// event's own ClientRect vs. producer.ViewportSize, so it stays correct under
+    /// any RenderControl.PixelRatio override. Returns sub-pixel V2d;
+    /// rounding to V2i is left to the GL read-edge. Also publishes the
+    /// CSS-pixel client size on `clientSize` so consumers (HTML overlays)
+    /// have a typed source.
+    let toFbPixel (clientPosition : V2i) (clientRect : Box2d) =
+        let cssSize = clientRect.Size
+        let s = producer.ViewportSize
+        let scale =
+            if cssSize.X > 0.0 && cssSize.Y > 0.0 then V2d s / cssSize
+            else V2d.II
+        let pixelF = V2d (clientPosition - V2i clientRect.Min) * scale
+        let cssSizeI = V2i(round cssSize.X, round cssSize.Y)
+        if cssSizeI.AllGreater 0 && cssSizeI <> clientSize.Value then
+            transact (fun () -> clientSize.Value <- cssSizeI)
+        pixelF
+    let lastOver : cval<option<TraversalState>> = cval None
+    let lastFocus : cval<option<TraversalState>> = cval None
+    let cursor = 
+        lastOver |> AVal.bind (function
+            | Some l -> l.Cursor
+            | None -> AVal.constant None
+        )
+
+    let cursorSub =
+        cursor.AddCallback setCursor
+    let capturedScopes = Dict<int, TraversalState>()
+    let mutable lastMouseInfo = None
+    let mutable lastRealMouseInfo = None
+
+    member private x.Dispose(disposing : bool) =
+        printfn "SceneHandler died: %A" disposing
+        if disposing then System.GC.SuppressFinalize x
+        lastMouseInfo <- None
+        lastRealMouseInfo <- None
+        capturedScopes.Clear()
+        (producer :> System.IDisposable).Dispose()
+        cursorSub.Dispose()
+
+    member x.Dispose() = x.Dispose true
+    override x.Finalize() = x.Dispose false
+    interface System.IDisposable with
+        member x.Dispose() = x.Dispose()
+
+    member x.Time = time
+    member x.ClearColor = producer.ClearColor
+    member x.Runtime = producer.Runtime
+    member x.FramebufferSignature = producer.FramebufferSignature
+    member x.Cursor = cursor
+    member x.RenderTask = producer.RenderTask
+
+
+    member x.Read(pixel : V2i, pointerId : int, kind : SceneEventKind, ?evt : PointerEvent) =
+        let capturedScope =
+            match capturedScopes.TryGetValue pointerId with
+            | true, s -> Some s
+            | _ -> None
+
+        let result = producer.Pick(pixel, kind)
 
         let capturedResult =
             match capturedScope with
@@ -1993,7 +2005,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             TraversalState.handleEvent true evt best
     
     member x.HandlePointerEvent(kind : SceneEventKind, original : PointerEvent) : bool =
-        let s = viewportSize
+        let s = producer.ViewportSize
         if s.AllGreater 0 then
             let view = AVal.force view
             let proj = AVal.force proj
@@ -2047,7 +2059,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             true
         
     member x.HandleTapEvent(kind : SceneEventKind, original : TapEvent) : bool =
-        let s = viewportSize
+        let s = producer.ViewportSize
         if s.AllGreater 0 then
             let view = AVal.force view
             let proj = AVal.force proj
@@ -2067,7 +2079,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             true
 
     member x.HandleWheelEvent(kind : SceneEventKind, original : WheelEvent) : bool =
-        let s = viewportSize
+        let s = producer.ViewportSize
         if s.AllGreater 0 then
             let view = AVal.force view
             let proj = AVal.force proj
@@ -2087,7 +2099,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             true
         
     member x.HandleKeyEvent(kind : SceneEventKind, original : KeyboardEvent) : bool =
-        let s = viewportSize
+        let s = producer.ViewportSize
 
         match lastFocus.Value with
         | Some best ->
@@ -2098,7 +2110,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 match lastMouseInfo with
                 | Some (px, Some (_, _, viewPos, viewNormal, partIndex)) ->  SceneEventLocation(model, view, proj, V2d px, s, viewPos, viewNormal, partIndex)
                 | _ ->
-                    match lastMousePosition with
+                    match producer.LastMousePosition with
                     | Some px -> SceneEventLocation(model, view, proj, V2d px, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
                     | None -> SceneEventLocation(model, view, proj, V2d.NN, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
 
@@ -2109,7 +2121,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             true
                 
     member x.HandleInputEvent(kind : SceneEventKind, original : InputEvent) : bool =
-        let s = viewportSize
+        let s = producer.ViewportSize
 
         match lastFocus.Value with
         | Some best ->
@@ -2120,7 +2132,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 match lastMouseInfo with
                 | Some (px, Some (_, _, viewPos, viewNormal, partIndex)) ->  SceneEventLocation(model, view, proj, V2d px, s, viewPos, viewNormal, partIndex)
                 | _ ->
-                    match lastMousePosition with
+                    match producer.LastMousePosition with
                     | Some px -> SceneEventLocation(model, view, proj, V2d px, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
                     | None -> SceneEventLocation(model, view, proj, V2d.NN, s, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
 
@@ -2143,11 +2155,11 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
 
             let evtLocation =
                 match lastMouseInfo with
-                | Some (px, Some (_, _, viewPos, viewNormal, partIndex)) ->  SceneEventLocation(model, view, proj, V2d px, viewportSize, viewPos, viewNormal, partIndex)
+                | Some (px, Some (_, _, viewPos, viewNormal, partIndex)) ->  SceneEventLocation(model, view, proj, V2d px, producer.ViewportSize, viewPos, viewNormal, partIndex)
                 | _ ->
-                    match lastMousePosition with
-                    | Some px -> SceneEventLocation(model, view, proj, V2d px, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
-                    | None -> SceneEventLocation(model, view, proj, V2d.NN, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
+                    match producer.LastMousePosition with
+                    | Some px -> SceneEventLocation(model, view, proj, V2d px, producer.ViewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
+                    | None -> SceneEventLocation(model, view, proj, V2d.NN, producer.ViewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0)
 
             let target =
                 match newTarget with
@@ -2160,7 +2172,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 
     interface IEventHandler with
         member x.Read(pixel : V2i, kind : SceneEventKind) =
-            let s = viewportSize
+            let s = producer.ViewportSize
             let view = AVal.force view 
             let proj = AVal.force proj
             match x.Read(pixel, -1, kind) with
@@ -2171,7 +2183,7 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
             | None ->
                 None
             
-        member x.Size = viewportSize
+        member x.Size = producer.ViewportSize
             
         member x.SetFocus(dst : option<obj>) =
             match dst with
@@ -2213,8 +2225,8 @@ type SceneHandler(signature : IFramebufferSignature, trigger : RenderControlEven
                 let proj = AVal.force proj
                 let loc, target = 
                     match scope with
-                    | Some (scope, viewPos, viewNormal, partIndex, _) -> SceneEventLocation(TraversalState.modelTrafo scope, view, proj, V2d px, viewportSize, viewPos, viewNormal, partIndex), Some scope
-                    | None -> SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d px, viewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0), None
+                    | Some (scope, viewPos, viewNormal, partIndex, _) -> SceneEventLocation(TraversalState.modelTrafo scope, view, proj, V2d px, producer.ViewportSize, viewPos, viewNormal, partIndex), Some scope
+                    | None -> SceneEventLocation(AVal.constant Trafo3d.Identity, view, proj, V2d px, producer.ViewportSize, V3d(0.0, 0.0, -100000000.0), V3d.Zero, 0), None
 
                 let eventTarget =
                     match target with
