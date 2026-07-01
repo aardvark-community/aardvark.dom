@@ -88,6 +88,15 @@ module RuntimeRenderToExtensions =
             // offscreen ⇒ no DOM trigger; its own size cval (the task fills it in).
             let producer = new PickProducer(signature, ignore, scene, view, proj, cval V2i.Zero)
 
+            // honour the requested background: the producer clears its OWN buffer and then blits the
+            // result over the output, so the output-side clear never shows — map the `clear` color
+            // onto the producer's ClearColor instead (this is what the offscreen background becomes).
+            match clear.[DefaultSemantic.Colors] with
+            | Some cc ->
+                let c = cc.Float
+                transact (fun () -> producer.ClearColor.Value <- C4f(c.X, c.Y, c.Z, c.W))
+            | None -> ()
+
             // The producer's task (a `PickRenderTask`) reports its runtime +
             // output signature, so the standard renderTo can allocate a target
             // and drive it. The producer clears its own buffers and blits the
