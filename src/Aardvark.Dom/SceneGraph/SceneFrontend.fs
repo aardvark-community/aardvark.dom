@@ -365,6 +365,15 @@ type Sg private() =
     static member PickThrough =
         SceneAttribute.PickThrough true
 
+    /// Mounts an offscreen render's pick context on this node, making it a
+    /// "portal": the node's surface must write the `PickContextCoord` output
+    /// (the source-uv it sampled). The pick patcher then writes a marker + that
+    /// uv into the outer pickbuffer, and picking recurses into `ctx` at the uv
+    /// to reach the real hit inside the offscreen scene — so picking survives
+    /// any warp the composite applies.
+    static member PickContext (ctx : IPickSubContext) =
+        SceneAttribute.PickContextSub ctx
+
     /// Sets the per-scope pixel-snap radius. Default is 0 (no snap).
     /// Values are clamped to the global pick-snap radius at pick time;
     /// passing >= the global cap effectively asks for the maximum.

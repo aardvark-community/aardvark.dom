@@ -44,6 +44,8 @@ type PickResult =
 /// exposes an imperative pixel pick.
 type IRenderPickContext =
     inherit System.IDisposable
+    /// the minimal handle the pick patcher/dispatcher recurse through (Size + PickAt)
+    inherit IPickSubContext
     /// ref-count only (no aval semantics) — keeps the underlying render live
     abstract member Acquire : unit -> unit
     abstract member Release : unit -> unit
@@ -51,7 +53,6 @@ type IRenderPickContext =
     abstract member View : aval<Trafo3d>
     abstract member Proj : aval<Trafo3d>
     /// world hit + forced M/V/P + TraversalState. None = far plane / no object.
-    /// (Recursion through nested sub-contexts is added with the portal step.)
     abstract member Pick : px : V2i -> voption<PickResult>
 
 type RenderResult =
@@ -87,11 +88,24 @@ module RuntimeRenderToExtensions =
             // offscreen ⇒ no DOM trigger; its own size cval (the task fills it in).
             let producer = new PickProducer(signature, ignore, scene, view, proj, cval V2i.Zero)
 
-            // Driving the producer's RenderTask into an adaptive framebuffer
-            // runs the whole patched pass (pickable + non-pickable + pick
-            // resolve) and blits the color out; pulling any returned texture
-            // keeps it live and refreshes `producer.Pick`.
+            // The producer's task (a `PickRenderTask`) reports its runtime +
+            // output signature, so the standard renderTo can allocate a target
+            // and drive it. The producer clears its own buffers and blits the
+            // color out; pulling the returned texture keeps the whole render
+            // live and refreshes `producer.Pick`.
             let color = producer.RenderTask |> RenderTask.renderToColorWithClear size clear
+
+            // shared resolver — the innermost frame, forced at pick time.
+            let resolve (px : V2i) =
+                match producer.Pick(px, SceneEventKind.Click) with
+                | Some (scope, viewPos, _normal, _partIndex, next) ->
+                    let target = match next with | Some n -> n | None -> scope
+                    let v = AVal.force producer.View
+                    let p = AVal.force producer.Proj
+                    let world = v.Backward.TransformPos viewPos
+                    let model = TraversalState.modelTrafo target |> AVal.force
+                    ValueSome (struct (world, model, v, p, target))
+                | None -> ValueNone
 
             let ctx =
                 { new IRenderPickContext with
@@ -99,14 +113,12 @@ module RuntimeRenderToExtensions =
                     member _.Release() = color.Release()
                     member _.View = producer.View
                     member _.Proj = producer.Proj
+                    // IPickSubContext — used by the outer pick resolver to recurse a portal.
+                    member _.Size = size
+                    member _.PickAt(px : V2i) = resolve px
                     member _.Pick(px : V2i) =
-                        match producer.Pick(px, SceneEventKind.Click) with
-                        | Some (scope, viewPos, _normal, _partIndex, next) ->
-                            let target = match next with | Some n -> n | None -> scope
-                            let v = AVal.force producer.View
-                            let p = AVal.force producer.Proj
-                            let world = v.Backward.TransformPos viewPos
-                            let model = TraversalState.modelTrafo target |> AVal.force
+                        match resolve px with
+                        | ValueSome (struct (world, model, v, p, target)) ->
                             ValueSome {
                                 World = world
                                 ModelTrafo = model
@@ -114,7 +126,7 @@ module RuntimeRenderToExtensions =
                                 ProjTrafo = p
                                 TraversalState = target
                             }
-                        | None -> ValueNone
+                        | ValueNone -> ValueNone
                     member _.Dispose() = (producer :> System.IDisposable).Dispose() }
 
             { Textures = Map.ofList [ DefaultSemantic.Colors, color ]

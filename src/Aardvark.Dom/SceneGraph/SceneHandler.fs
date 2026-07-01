@@ -295,6 +295,25 @@ module PickShader =
             return r
         }
 
+    // ---- Portal mode. The node is a quad/geometry textured with an offscreen
+    // render's result; its surface writes the source-uv it sampled into the
+    // `PickContextCoord` output. We pack {+PickId, uv.x, uv.y, 0} into the pick
+    // attachment. The +id passes the mode-A sign gate, and the resolver
+    // recognises this scope as a portal (it carries a PickSubContext) and reads
+    // slots 1-2 as the uv — never as normal/depth. The rasterizer interpolates
+    // whatever uv the surface emitted, so this is correct for any tilt / shift /
+    // scale / warp of the host geometry.
+    type FinalPortal_In =
+        {
+            [<Color>] c : V4f
+            [<Semantic("PickContextCoord")>] uv : V2f
+        }
+    let pickFinalPortal (v : FinalPortal_In) =
+        fragment {
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, v.uv.X, v.uv.Y, 0.0f) }
+            return r
+        }
+
     let viewSpaceNormalEffect = Effect.ofFunction viewSpaceNormalVertex
     let pickDepthBeforeEffect = Effect.ofFunction pickDepthBefore
     let pickFinalAEffect = Effect.ofFunction pickFinalA
@@ -303,6 +322,7 @@ module PickShader =
     let pickFinalANoNormalEffect = Effect.ofFunction pickFinalANoNormal
     let pickFinalANoNormalNoPiEffect = Effect.ofFunction pickFinalANoNormalNoPi
     let pickFinalBEffect = Effect.ofFunction pickFinalB
+    let pickFinalPortalEffect = Effect.ofFunction pickFinalPortal
 
     /// Tag identifying which of our pick-final effects ended up at the tail
     /// of the composed chain. Exposed primarily so unit tests can assert the
@@ -1132,6 +1152,23 @@ type private Stats(maxCnt : int) =
 
 
 
+/// Concrete render task for the pick pass. The producer's per-frame render
+/// closure IS its `Perform`; unlike a bare `RenderTask.custom` it reports the
+/// runtime + output signature, so it can be driven offscreen by the standard
+/// `RenderTask.renderTo*` (which probe those to allocate a target). `Release`
+/// runs `destroy` — the framebuffer / compiled-render cleanup that the custom
+/// task never had. `PerformUpdate` is a no-op (there's nothing to pre-update).
+type private PickRenderTask(runtime : IRuntime, signature : IFramebufferSignature,
+                            perform : AdaptiveToken * RenderToken * OutputDescription -> unit,
+                            destroy : unit -> unit) =
+    inherit AbstractRenderTask()
+    override x.Runtime = Some runtime
+    override x.FramebufferSignature = Some signature
+    override x.Perform(token, renderToken, output) = perform (token, renderToken, output)
+    override x.PerformUpdate(_token, _renderToken) = ()
+    override x.Release() = destroy ()
+    override x.Use f = lock x f
+
 type internal PickProducer(signature : IFramebufferSignature, trigger : RenderControlEvent -> unit, scene : ISceneNode, view : aval<Trafo3d>, proj : aval<Trafo3d>, fboSize : cval<V2i>) =
     static let pickBuffer = Symbol.Create "PickId"
     
@@ -1155,6 +1192,12 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
     /// and the picker would silently return the wrong scope with the
     /// wrong layout's data.
     let pickModes = Dict<int, bool>()
+    // Portal scopes: pickId -> the sub-context to recurse into. A portal id is a
+    // normal +id (registered in `scopes` + mode-A `pickModes` like any pixel
+    // scope, so the spiral finds it), but ALSO recorded here — the resolver
+    // distinguishes a portal purely by presence here (via the winning scope's
+    // PickSubContext), so the A/B sign gate and argmin stay untouched.
+    let portalScopes = Dict<int, IPickSubContext>()
     // For each top-level IRenderObject in the `render` ASet, the multiset of
     // scopes it acquired during wrapping (one entry per pickable leaf). On
     // remove we release each. Needed because a MultiRenderObject can acquire
@@ -1200,6 +1243,7 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
             scopes.Remove id |> ignore
             pickIdRefs.Remove scope |> ignore
             pickModes.Remove id |> ignore
+            portalScopes.Remove id |> ignore
             freeIds.Add id |> ignore
         | true, n ->
             pickIdRefs.[scope] <- n - 1
@@ -1268,22 +1312,33 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                         let geomHas (sem : string) =
                             ValueOption.isSome (o.VertexAttributes.TryGetAttribute (Symbol.Create sem)) ||
                             ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
-                        // Resolve the per-semantic rewrite eagerly (cheap — no
-                        // GLSL) so we know this scope's pick mode (A/B) for
-                        // `pickModes`; the actual composition stays lazy.
-                        // Only "PickId" is requested today, so this is identical
-                        // to the old chooseChain/finalEffect chain.
-                        let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
-                        pickModes.[pickId] <- (match isModeA with Some m -> m | None -> false)
+                        let chain, effTag =
+                            match t.PickSubContext with
+                            | Some sub ->
+                                // PORTAL: the composite surface writes PickContextCoord (the
+                                // source-uv it sampled); pack {+id, uv.x, uv.y, 0}. The +id passes
+                                // the mode-A sign gate; the resolver recognises this scope as a
+                                // portal via portalScopes (its winning istate carries PickSubContext)
+                                // and reads slots 1-2 as uv — never as normal/depth.
+                                pickModes.[pickId] <- true
+                                portalScopes.[pickId] <- sub
+                                [eff; PickShader.pickFinalPortalEffect], "portalv1_"
+                            | None ->
+                                // Resolve the per-semantic rewrite eagerly (cheap — no GLSL) so we
+                                // know this scope's pick mode (A/B) for `pickModes`; the actual GLSL
+                                // composition stays lazy. Only "PickId" is requested today, so this
+                                // is identical to the old chooseChain/finalEffect chain.
+                                let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
+                                pickModes.[pickId] <- (match isModeA with Some m -> m | None -> false)
+                                chain, "pickv3_"
                         let newShaders =
                             lazy (
                                 (FShade.Effect.compose chain).Shaders
                             )
 
-                        // `pickv3_` — bump when the pick chain encoding changes
-                        // so cached compiled shaders from older builds get
-                        // rejected by name instead of silently rebound.
-                        let newEffect = FShade.Effect("pickv3_" + eff.Id, newShaders, [])
+                        // tag prefix ("pickv3_" / "portalv1_") — bump when the encoding changes so
+                        // cached compiled shaders from older builds get rejected by name.
+                        let newEffect = FShade.Effect(effTag + eff.Id, newShaders, [])
 
                         let r = RenderObject.Clone o
 
@@ -1463,8 +1518,26 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
             }
 
 
+        // Framebuffer / compiled-render cleanup — run from the task's Release so
+        // disposing the task (or releasing the offscreen resource) frees the GPU
+        // objects. (Does NOT dispose the task itself → no recursion.)
+        let destroy() =
+            clear.Dispose()
+            renderPickable.Dispose()
+            renderNonPickable.Dispose()
+            newSignature.Dispose()
+            match fbos with
+            | Some o ->
+                runtime.DeleteFramebuffer o.PickableFramebuffer
+                runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                runtime.DeleteFramebuffer o.PickFramebufferResolved
+                for t in o.Disposables do t.Dispose()
+                fbos <- None
+            | None ->
+                ()
+
         let task =
-            RenderTask.custom (fun (t, _rt, o) ->
+            new PickRenderTask(runtime, signature, (fun (t, _rt, o) ->
                 frameTimeWatch.Restart()
                 let size = o.Framebuffer.Size
                 let evtInfo = getInfo size
@@ -1504,23 +1577,10 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 frameTimeWatch.Stop()
                 frameTimeStats.Add (float frameTimeWatch.Elapsed.Ticks)
 
-            )
+            ), destroy) :> IRenderTask
 
-        let dispose() =
-            clear.Dispose()
-            renderPickable.Dispose()
-            renderNonPickable.Dispose()
-            task.Dispose()
-            newSignature.Dispose()
-            match fbos with
-            | Some o ->
-                runtime.DeleteFramebuffer o.PickableFramebuffer
-                runtime.DeleteFramebuffer o.NonPickableFramebuffer
-                runtime.DeleteFramebuffer o.PickFramebufferResolved
-                for t in o.Disposables do t.Dispose()
-                fbos <- None
-            | None ->
-                ()
+        // disposing the producer disposes the task, whose Release runs `destroy`.
+        let dispose() = (task :> System.IDisposable).Dispose()
 
         task, pick, dispose
     
@@ -1859,7 +1919,35 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                     let viewPos = winnerVp
                     let viewNormal = winnerN
                     let partIndex = winnerPi
-                    if scope.PickThrough then
+                    if winnerIsPixel && Option.isSome scope.PickSubContext then
+                        // PORTAL: the winning pixel's slots 1-2 are the source-uv the composite
+                        // sampled (not normal/depth). Map it to the sub-render's pixel and recurse
+                        // to the innermost real hit — so picking follows the composite's warp.
+                        let sub = scope.PickSubContext.Value
+                        let pxX = pixel.X + winnerOffX
+                        let pxY = pixel.Y + winnerOffY
+                        let lx  = pxX - rOriginX
+                        let ly  = pxY - rOriginY
+                        if not hasRegion || lx < 0 || ly < 0 || lx >= rSizeX || ly >= rSizeY then
+                            None
+                        else
+                            let i0 = rBase + lx * rDx + ly * rDy
+                            let uvX = float rData.[i0 + rDz]
+                            let uvY = float rData.[i0 + 2 * rDz]
+                            let s = AVal.force sub.Size
+                            // PickContextCoord is a texcoord (v up, origin bottom-left); the inner
+                            // pick buffer is indexed in pixels (y down, origin top-left) — flip Y.
+                            let innerX = uvX * float s.X |> int |> max 0 |> min (s.X - 1)
+                            let innerY = (1.0 - uvY) * float s.Y |> int |> max 0 |> min (s.Y - 1)
+                            match sub.PickAt (V2i(innerX, innerY)) with
+                            | ValueSome (struct (world, _model, iview, _iproj, istate)) ->
+                                // dispatch to the innermost node; PickAt forced the inner frame.
+                                // (viewPos is inner view-space; the outer dispatcher's location uses
+                                // the outer camera — fine for event routing, which is by node.)
+                                let innerViewPos = iview.Forward.TransformPos world
+                                Some (istate, innerViewPos, V3d.Zero, 0, None)
+                            | ValueNone -> None
+                    elif scope.PickThrough then
                         if winnerIsPixel then
                             Log.warn "cannot pick-through pixel-picked objects"
                             Some (scope, viewPos, viewNormal, partIndex, None)

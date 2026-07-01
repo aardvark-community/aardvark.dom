@@ -42,6 +42,12 @@ type TraversalState =
         /// handler on expand and register its per-slot pickable scopes against the
         /// handler's id space. `None` ⇒ unpickable (non-dom render).
         PickContext         : option<IPickContext>
+        /// Set on a "portal" node (a quad textured with an offscreen render's
+        /// result). When present, the pick patcher writes a marker + the node's
+        /// `PickContextCoord` (source-uv) into the pickbuffer instead of the
+        /// normal id/normal/depth, and the resolver recurses into this
+        /// sub-context at that uv to reach the innermost real hit.
+        PickSubContext      : option<IPickSubContext>
     }
 
 /// Minimal handle the heap uses to register/deregister per-slot pickable scopes
@@ -51,6 +57,15 @@ type TraversalState =
 and IPickContext =
     abstract member Register : TraversalState -> int
     abstract member Deregister : int -> unit
+
+/// A rendered sub-scene's picking surface, reduced to exactly what the pick
+/// patcher/dispatcher (in SceneHandler.fs, which compiles BEFORE RenderTo.fs)
+/// need to recurse a portal. `RenderTo.fs`'s `IRenderPickContext` inherits this.
+/// `PickAt` resolves an inner pixel to the innermost real hit, forcing the
+/// innermost frame at pick time: (World, ModelTrafo, ViewTrafo, ProjTrafo, State).
+and IPickSubContext =
+    abstract member Size : aval<V2i>
+    abstract member PickAt : V2i -> voption<struct (V3d * Trafo3d * Trafo3d * Trafo3d * TraversalState)>
 
 module TraversalState =
     let private trafoCache = BinaryCache<aval<Trafo3d>, aval<Trafo3d>, aval<Trafo3d>>(AVal.map2 (*))
@@ -107,6 +122,7 @@ module TraversalState =
             // non-integer that won't map to any registered scope.
             PixelSnapRadius = AVal.constant 1
             PickContext = None
+            PickSubContext = None
         }
 
     let commonAncestor (a : TraversalState) (b : TraversalState) =
@@ -312,6 +328,7 @@ type SceneAttribute =
     | On of amap<SceneEventKind, SceneEventHandler>
     | PickThrough of bool
     | PixelSnapRadius of aval<int>
+    | PickContextSub of IPickSubContext
 
 module SceneAttribute =
     let apply (att : SceneAttribute) (state : TraversalState) =
@@ -382,3 +399,4 @@ module SceneAttribute =
         | SceneAttribute.Cursor c -> { state with Cursor = c }
         | SceneAttribute.PickThrough v -> { state with PickThrough = v }
         | SceneAttribute.PixelSnapRadius r -> { state with PixelSnapRadius = r }
+        | SceneAttribute.PickContextSub ctx -> { state with PickSubContext = Some ctx }
