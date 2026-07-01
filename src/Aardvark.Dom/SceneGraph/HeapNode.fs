@@ -56,9 +56,15 @@ type HeapNode(child : ISceneNode) =
             Aardvark.SceneGraph.Heap.ofRenderObjects (signatureOf state.Runtime) (child.GetRenderObjects state)
 
         member _.GetObjects(state : TraversalState) =
-            let renders, picks = child.GetObjects state
             match state.PickContext with
             | Some ctx when state.PixelPick ->
+                // The heap picks per-slot in the pixel buffer; BVH (`Intersectable`) picks are
+                // DROPPED on the heap path, so FORCE pixel picking for the whole heap subtree —
+                // otherwise anything with a bounding box (e.g. `Primitives.Box`) would silently
+                // become unpickable. `Sg.NoEvents` children still set `PixelPick = false` on the
+                // way down (NoEvents wins over ForcePixelPick) and stay rendered-but-unpickable.
+                let pickState = { state with ForcePixelPick = true; PixelPick = true }
+                let renders, _picks = child.GetObjects pickState
                 // O(1) heap picking: for each child render object register its TraversalState
                 // → a per-slot dom pick id, compose the heap pick chain onto its effect and
                 // carry the id as a "HeapPickId" uniform (the heap rewrites that name into its
@@ -94,7 +100,8 @@ type HeapNode(child : ISceneNode) =
                 // deregister a part's pick id when the heap frees its slot (ref-counted in the SceneHandler)
                 Aardvark.SceneGraph.Heap.ofRenderObjectsPicking ctx.Deregister (pickSignatureOf state.Runtime) wrapped, ASet.empty
             | _ ->
-                // non-dom / NoEvents: plain heap collapse, original picks passed through.
+                // non-dom / whole-heap NoEvents: plain heap collapse, original picks passed through.
+                let renders, picks = child.GetObjects state
                 Aardvark.SceneGraph.Heap.ofRenderObjects (signatureOf state.Runtime) renders, picks
 
 /// `heap { ... }` — exactly like `sg { ... }`, but its children render through the heap.

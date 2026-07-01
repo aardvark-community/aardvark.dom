@@ -74,12 +74,20 @@ let cubesApp (runtime : IRuntime) =
                 for y in 0 .. 7 ->
                     let alive = cval true
                     let hovered = cval false
-                    let forcePixel = (x + y) % 2 = 0
-                    (x, y, alive, hovered, forcePixel) ]
+                    // checkerboard: half the cubes are pickable, half are Sg.NoEvents.
+                    // both carry click/hover handlers — NoEvents must SUPPRESS them so only
+                    // the pickable half ever hovers/deletes (tests both combos through dom).
+                    let pickable = (x + y) % 2 = 0
+                    (x, y, alive, hovered, pickable) ]
 
-        let remaining =
-            let alives = cubes |> List.map (fun (_, _, a, _, _) -> a :> aval<_>)
+        // Two counters: blue (pickable) and total. Every click that lands must delete a BLUE
+        // cube, so Δtotal must always equal Δblue — if a NoEvents (orange) cube ever got picked,
+        // total would drop faster than blue. That invariant is the automated NoEvents proof.
+        let countAlive (filter : bool -> bool) =
+            let alives = cubes |> List.choose (fun (_, _, a, _, p) -> if filter p then Some (a :> aval<_>) else None)
             AVal.custom (fun t -> alives |> List.sumBy (fun a -> if a.GetValue t then 1 else 0))
+        let remaining = countAlive id            // blue only
+        let remainingTotal = countAlive (fun _ -> true)   // blue + orange
 
         body {
             Style [
@@ -93,8 +101,8 @@ let cubesApp (runtime : IRuntime) =
                     FontSize "13px"; Padding "6px 10px"
                     Background "rgba(0,0,0,0.45)"; BorderRadius "6px"
                 ]
-                remaining |> AVal.map (fun n ->
-                    sprintf "distorted cubes — hover to highlight, click to delete (picking follows the warp). blue=pixel-pick, orange=BVH.  (%d left)" n)
+                (remaining, remainingTotal) ||> AVal.map2 (fun blue total ->
+                    sprintf "distorted heap cubes — blue = pickable (hover/click to delete), orange = Sg.NoEvents (inert). picking follows the warp.  blue=%d total=%d" blue total)
             }
 
             renderControl {
@@ -132,23 +140,29 @@ let cubesApp (runtime : IRuntime) =
                         Sg.Proj innerProj
                         Sg.Shader { DefaultSurfaces.trafo; DefaultSurfaces.simpleLighting }
                         Sg.Cursor "pointer"
-                        [
-                            for (x, y, alive, hovered, forcePixel) in cubes ->
-                                let baseColor =
-                                    if forcePixel then C4b(90uy, 140uy, 220uy, 255uy)
-                                    else C4b(220uy, 150uy, 90uy, 255uy)
-                                let color =
-                                    hovered |> AVal.map (fun h -> if h then C4b.White else baseColor)
-                                sg {
-                                    Sg.Active alive
-                                    Sg.Translate(float x, float y, 0.0)
-                                    if forcePixel then Sg.ForcePixelPicking
-                                    Sg.OnPointerEnter(fun _ -> transact (fun () -> hovered.Value <- true))
-                                    Sg.OnPointerLeave(fun _ -> transact (fun () -> hovered.Value <- false))
-                                    Sg.OnClick(fun _ -> transact (fun () -> alive.Value <- false))
-                                    Primitives.Box(V3d(0.8, 0.8, 0.8), color)
-                                }
-                        ]
+                        heap {
+                            [
+                                for (x, y, alive, hovered, pickable) in cubes ->
+                                    let baseColor =
+                                        if pickable then C4b(90uy, 140uy, 220uy, 255uy)   // blue = pickable
+                                        else C4b(220uy, 150uy, 90uy, 255uy)               // orange = NoEvents
+                                    let color =
+                                        hovered |> AVal.map (fun h -> if h then C4b.White else baseColor)
+                                    sg {
+                                        Sg.Active alive
+                                        Sg.Translate(float x, float y, 0.0)
+                                        // NoEvents on the non-pickable half — even with handlers attached,
+                                        // the heap must leave these rendered-but-unpickable (PixelPick=false).
+                                        // The pickable half needs NO ForcePixelPicking anymore: the heap
+                                        // builder forces pixel picking for its whole subtree.
+                                        if not pickable then Sg.NoEvents
+                                        Sg.OnPointerEnter(fun _ -> transact (fun () -> hovered.Value <- true))
+                                        Sg.OnPointerLeave(fun _ -> transact (fun () -> hovered.Value <- false))
+                                        Sg.OnClick(fun _ -> transact (fun () -> alive.Value <- false))
+                                        Primitives.Box(V3d(0.8, 0.8, 0.8), color)
+                                    }
+                            ]
+                        }
                     }
 
                 let clearVals = clear { color C4f.Black; depth 1.0 }
