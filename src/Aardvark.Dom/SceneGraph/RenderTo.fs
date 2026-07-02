@@ -102,7 +102,15 @@ module RuntimeRenderToExtensions =
             // and drive it. The producer clears its own buffers and blits the
             // color out; pulling the returned texture keeps the whole render
             // live and refreshes `producer.Pick`.
-            let color = producer.RenderTask |> RenderTask.renderToColorWithClear size clear
+            // Drive the SAME pickable pass but pull EVERY requested semantic, not just color.
+            // The producer blits its internal color+depth into this output fbo, and BlitFramebuffer
+            // copies depth+stencil whenever the destination fbo has a depth attachment — so
+            // requesting DepthStencil here surfaces the pass's depth for free. Callers that need
+            // depth (e.g. GTAO) no longer have to re-render the whole scene a second time.
+            let outputs =
+                let outSet = semantics |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                producer.RenderTask |> RenderTask.renderSemanticsWithClear outSet size clear
+            let color = outputs.[DefaultSemantic.Colors]
 
             // shared resolver — the innermost frame, forced at pick time.
             let resolve (px : V2i) =
@@ -138,5 +146,5 @@ module RuntimeRenderToExtensions =
                         | ValueNone -> ValueNone
                     member _.Dispose() = (producer :> System.IDisposable).Dispose() }
 
-            { Textures = Map.ofList [ DefaultSemantic.Colors, color ]
+            { Textures = outputs
               Pick     = ctx }

@@ -1,3 +1,7 @@
+### 1.2.0-prerelease0009
+* `RenderToPickable` now returns ALL requested semantics (not just Colors) in `.Textures` — the pickable offscreen pass already renders depth, and `BlitFramebuffer` carries it to the output fbo, so callers reconstructing from depth (GTAO / SSAO) no longer need a second full-scene `RenderTo`.
+* SharedTexture (macOS): 16-align IOSurface `bytesPerRow` to satisfy Metal texture validation.
+
 ### 1.2.0-prerelease0008
 * Offscreen `IRuntime.RenderTo` / `RenderToPickable` + `IRenderPickContext`; pick THROUGH a post-process warp via `Sg.PickContext` + the `PickContextCoord` rewrite (portal picking recurses into the offscreen scene).
 * Heap picking composes with mixed pickable / `Sg.NoEvents` children — the `heap { }` builder forces pixel picking for its subtree, and non-pick buckets stay rendered-but-inert (needs Aardvark.Rendering 5.7.0-prerelease0030).
