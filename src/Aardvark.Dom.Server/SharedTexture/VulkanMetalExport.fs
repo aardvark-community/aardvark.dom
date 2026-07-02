@@ -181,7 +181,12 @@ module MetalExport =
     // kIOSurfacePixelFormat stamped, then IOSurfaceCreate it. Returns the IOSurfaceRef (+1).
     let private createBGRAIOSurface (width : int) (height : int) : nativeint =
         let bpe = 4
-        let bpr = width * bpe   // tightly packed; IOSurface may round up internally
+        // Metal requires IOSurface-backed textures to have bytesPerRow aligned to 16 bytes
+        // (_mtlValidateStrideTextureParameters). DPR-scaled widths make width*4 non-16-aligned
+        // (e.g. 1030*4 = 4120) → texture-create assert on both the MoltenVK import and Chromium's
+        // Metal import → black, then a hard crash on resize. Round up to the next multiple of 16;
+        // the surface carries this bytesPerRow, so the consumer reads the padded stride correctly.
+        let bpr = ((width * bpe + 15) / 16) * 16
         let dict = CFDictionaryCreateMutable(0n, 0n, kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks)
         let set (k : string) (v : nativeint) =
             let key = cfStr k
