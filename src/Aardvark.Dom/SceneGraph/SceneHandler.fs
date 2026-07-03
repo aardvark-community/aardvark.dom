@@ -1382,12 +1382,11 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                     else
                         o :> IRenderObject, false
                 | :? SignatureDependentRenderObject as o ->
-                    // Deferred heap RO: it self-expands at compile time against whatever signature
-                    // it is compiled into, so there is nothing to pick-wrap here. When the heap is
-                    // pickable HeapNode takes its EAGER pick path (producing HeapRenderObjects, matched
-                    // above), so an SDR only reaches here via a rendered-but-unpickable (NoEvents) heap
-                    // subtree → route it to the non-pick compile (base signature, no PickId).
-                    o :> IRenderObject, false
+                    // Deferred heap RO: it self-expands at compile time against whatever signature it
+                    // is compiled into, and the per-slot pick write (if any) is already composed by
+                    // HeapNode — nothing to pick-wrap here. Route by its IsPickable flag: a pickable
+                    // heap → PickId pass (user sems + PickId); a NoEvents unpickable heap → base sig.
+                    o :> IRenderObject, o.IsPickable
                 | o ->
                     Log.warn "cannot wrap object: %A" o
                     o, false
@@ -1405,6 +1404,12 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                         // the heap bundle already carries the per-slot pick write + dom-sourced ids
                         // (composed by HeapNode); route it into the PickId-attachment pass as-is.
                         o, true
+                    | :? SignatureDependentRenderObject as s ->
+                        // DEFERRED heap bundle: the pick write is already composed (HeapNode) and the
+                        // heap self-expands against whatever signature it is compiled into. Route by
+                        // its IsPickable flag — pickable → PickId pass (signature = user sems + PickId),
+                        // a rendered-but-unpickable (NoEvents) heap → base signature (no PickId).
+                        o, s.IsPickable
                     | _ ->
                         match RenderObject.traversalStates.TryGetValue o with
                         | true, t -> wrapObject acquired t o

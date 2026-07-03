@@ -23,22 +23,12 @@ type HeapNode(child : ISceneNode) =
     // returns SignatureDependentRenderObjects that build the heap at compile time against the
     // ACTUAL signature (opaque + transparent variants, memoized per attachment-semantics).
 
-    // PICKING: the heap DCE-links the effect against the signature, so the pick render
-    // signature MUST include the PickId attachment or the pick write gets stripped (same
-    // gotcha as composing onto a heap effect for OIT). Colors + PickId(Rgba32f) + Depth.
-    let mutable cachedPickSig : option<IFramebufferSignature> = None
-    let pickSignatureOf (rt : IRuntime) =
-        match cachedPickSig with
-        | Some s -> s
-        | None ->
-            let s =
-                rt.CreateFramebufferSignature [
-                    DefaultSemantic.Colors, TextureFormat.Rgba8
-                    Symbol.Create "PickId", TextureFormat.Rgba32f
-                    DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8
-                ]
-            cachedPickSig <- Some s
-            s
+    // PICKING: like the render path, the pick heap DEFERS its DCE-link to compile time. The pick
+    // render signature is whatever the pickable target requested (`user semantics + PickId`, built
+    // by PickProducer) — the heap must NOT bake a hardcoded {Colors, PickId, Depth} signature, or
+    // it strips any extra attachment (e.g. a Normals G-buffer) the real target carries and the
+    // backend then phantoms it into a vertex input. `ofRenderObjectsPickingDeferred` links against
+    // the real signature at compile time; PickProducer routes the pickable SDR into the PickId pass.
 
     interface ISceneNode with
         member _.GetRenderObjects(state : TraversalState) =
@@ -86,8 +76,9 @@ type HeapNode(child : ISceneNode) =
                         | _ -> o :> IRenderObject   // no TraversalState or NoEvents → rendered, unpickable
                     | _ -> ro
                 let wrapped = renders |> ASet.map wrap
-                // deregister a part's pick id when the heap frees its slot (ref-counted in the SceneHandler)
-                Aardvark.SceneGraph.Heap.ofRenderObjectsPicking ctx.Deregister (pickSignatureOf state.Runtime) wrapped, ASet.empty
+                // deregister a part's pick id when the heap frees its slot (ref-counted in the SceneHandler).
+                // DEFERRED: links against the real pick signature (user sems + PickId) at compile time.
+                Aardvark.SceneGraph.Heap.ofRenderObjectsPickingDeferred ctx.Deregister wrapped, ASet.empty
             | _ ->
                 // non-dom / whole-heap NoEvents: plain heap collapse, original picks passed through.
                 let renders, picks = child.GetObjects state

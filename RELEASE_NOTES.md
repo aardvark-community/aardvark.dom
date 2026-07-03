@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0011
+* `HeapNode` pick path defers to the real compile-time signature (heap 0032); `PickProducer` routes the pickable deferred heap into the `PickId` pass. Removes the hardcoded pick signature — picking coexists with extra target attachments (e.g. a Normals G-buffer).
+
 ### 1.2.0-prerelease0010
 * `HeapNode` defers its render objects to the compile-time framebuffer signature (heap 0031 `ofRenderObjectsDeferred`) — a heap can now render into a target with extra attachments (e.g. a Normals G-buffer for GTAO) without a signature-mismatch crash; picking stays eager.
 
