@@ -1381,6 +1381,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                         n :> IRenderObject, true
                     else
                         o :> IRenderObject, false
+                | :? SignatureDependentRenderObject as o ->
+                    // Deferred heap RO: it self-expands at compile time against whatever signature
+                    // it is compiled into, so there is nothing to pick-wrap here. When the heap is
+                    // pickable HeapNode takes its EAGER pick path (producing HeapRenderObjects, matched
+                    // above), so an SDR only reaches here via a rendered-but-unpickable (NoEvents) heap
+                    // subtree → route it to the non-pick compile (base signature, no PickId).
+                    o :> IRenderObject, false
                 | o ->
                     Log.warn "cannot wrap object: %A" o
                     o, false

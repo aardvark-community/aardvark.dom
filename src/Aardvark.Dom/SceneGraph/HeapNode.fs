@@ -16,23 +16,12 @@ open FSharp.Data.Adaptive
 /// drops the per-object pick objects (the heap's per-slot write replaces them);
 /// otherwise it falls back to passing the original picks through.
 type HeapNode(child : ISceneNode) =
-    // Heap effects are DCE-linked against the framebuffer signature, but the Dom's
-    // TraversalState doesn't carry one (the Dom makes them ad-hoc from the runtime —
-    // cf. Gizmo / Updater). Build the canonical render signature (Colors + Depth,
-    // exactly as the Dom render control does) once per runtime; only the color
-    // outputs drive the DCE.
-    let mutable cachedSig : option<IFramebufferSignature> = None
-    let signatureOf (rt : IRuntime) =
-        match cachedSig with
-        | Some s -> s
-        | None ->
-            let s =
-                rt.CreateFramebufferSignature [
-                    DefaultSemantic.Colors, TextureFormat.Rgba8
-                    DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8
-                ]
-            cachedSig <- Some s
-            s
+    // RENDER path: the heap DCE-links its effects against the framebuffer signature, but
+    // the Dom's TraversalState doesn't carry one, and — more importantly — the real render
+    // target may add attachments the node can't know here (e.g. a Normals G-buffer added by
+    // a post-processing pass). So the render path DEFERS: `Heap.ofRenderObjectsDeferred`
+    // returns SignatureDependentRenderObjects that build the heap at compile time against the
+    // ACTUAL signature (opaque + transparent variants, memoized per attachment-semantics).
 
     // PICKING: the heap DCE-links the effect against the signature, so the pick render
     // signature MUST include the PickId attachment or the pick write gets stripped (same
@@ -53,7 +42,7 @@ type HeapNode(child : ISceneNode) =
 
     interface ISceneNode with
         member _.GetRenderObjects(state : TraversalState) =
-            Aardvark.SceneGraph.Heap.ofRenderObjects (signatureOf state.Runtime) (child.GetRenderObjects state)
+            Aardvark.SceneGraph.Heap.ofRenderObjectsDeferred (child.GetRenderObjects state)
 
         member _.GetObjects(state : TraversalState) =
             match state.PickContext with
@@ -102,7 +91,7 @@ type HeapNode(child : ISceneNode) =
             | _ ->
                 // non-dom / whole-heap NoEvents: plain heap collapse, original picks passed through.
                 let renders, picks = child.GetObjects state
-                Aardvark.SceneGraph.Heap.ofRenderObjects (signatureOf state.Runtime) renders, picks
+                Aardvark.SceneGraph.Heap.ofRenderObjectsDeferred renders, picks
 
 /// `heap { ... }` — exactly like `sg { ... }`, but its children render through the heap.
 /// Reuses every `SceneNodeBuilder` Yield/Combine/Delay/Zero overload and only overrides

@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0010
+* `HeapNode` defers its render objects to the compile-time framebuffer signature (heap 0031 `ofRenderObjectsDeferred`) — a heap can now render into a target with extra attachments (e.g. a Normals G-buffer for GTAO) without a signature-mismatch crash; picking stays eager.
+
 ### 1.2.0-prerelease0009
 * `RenderToPickable` now returns ALL requested semantics (not just Colors) in `.Textures` — the pickable offscreen pass already renders depth, and `BlitFramebuffer` carries it to the output fbo, so callers reconstructing from depth (GTAO / SSAO) no longer need a second full-scene `RenderTo`.
 * SharedTexture (macOS): 16-align IOSurface `bytesPerRow` to satisfy Metal texture validation.
