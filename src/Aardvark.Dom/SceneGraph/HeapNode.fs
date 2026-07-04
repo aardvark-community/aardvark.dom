@@ -19,20 +19,34 @@ type HeapNode(child : ISceneNode) =
     // RENDER path: the heap DCE-links its effects against the framebuffer signature, but
     // the Dom's TraversalState doesn't carry one, and — more importantly — the real render
     // target may add attachments the node can't know here (e.g. a Normals G-buffer added by
-    // a post-processing pass). So the render path DEFERS: `Heap.ofRenderObjectsDeferred`
-    // returns SignatureDependentRenderObjects that build the heap at compile time against the
-    // ACTUAL signature (opaque + transparent variants, memoized per attachment-semantics).
+    // a post-processing pass). So the heap is signature-deferred: it returns
+    // SignatureDependentRenderObjects that build at compile time against the ACTUAL
+    // signature (opaque + transparent variants, memoized per attachment-semantics).
 
-    // PICKING: like the render path, the pick heap DEFERS its DCE-link to compile time. The pick
-    // render signature is whatever the pickable target requested (`user semantics + PickId`, built
-    // by PickProducer) — the heap must NOT bake a hardcoded {Colors, PickId, Depth} signature, or
-    // it strips any extra attachment (e.g. a Normals G-buffer) the real target carries and the
-    // backend then phantoms it into a vertex input. `ofRenderObjectsPickingDeferred` links against
-    // the real signature at compile time; PickProducer routes the pickable SDR into the PickId pass.
+    // PICKING: like the render path, the pick heap defers its DCE-link to compile time. The
+    // pick render signature is whatever the pickable target requested (`user semantics +
+    // PickId`, built by PickProducer) — never a hardcoded {Colors, PickId, Depth} signature,
+    // so extra attachments the real target carries survive; PickProducer routes the pickable
+    // SDR into the PickId pass.
+
+    // ONE HeapStorage per node, shared by the RENDER heap and the PICK heap: their
+    // allocations (geometry, uniforms, constituents) dedup in the same pages, so the
+    // pickable scene lives in GPU memory once. Created lazily with the traversal runtime;
+    // lives and dies with the node.
+    let storageLock = obj()
+    let mutable storage : Aardvark.SceneGraph.Heap.HeapStorage voption = ValueNone
+    let getStorage (runtime : IRuntime) =
+        lock storageLock (fun () ->
+            match storage with
+            | ValueSome s -> s
+            | ValueNone ->
+                let s = Aardvark.SceneGraph.Heap.HeapStorage(runtime)
+                storage <- ValueSome s
+                s)
 
     interface ISceneNode with
         member _.GetRenderObjects(state : TraversalState) =
-            Aardvark.SceneGraph.Heap.ofRenderObjectsDeferred (child.GetRenderObjects state)
+            Aardvark.SceneGraph.Heap.ofRenderObjects (getStorage state.Runtime) (child.GetRenderObjects state)
 
         member _.GetObjects(state : TraversalState) =
             match state.PickContext with
@@ -78,11 +92,11 @@ type HeapNode(child : ISceneNode) =
                 let wrapped = renders |> ASet.map wrap
                 // deregister a part's pick id when the heap frees its slot (ref-counted in the SceneHandler).
                 // DEFERRED: links against the real pick signature (user sems + PickId) at compile time.
-                Aardvark.SceneGraph.Heap.ofRenderObjectsPickingDeferred ctx.Deregister wrapped, ASet.empty
+                Aardvark.SceneGraph.Heap.ofRenderObjectsPicking (getStorage state.Runtime) ctx.Deregister wrapped, ASet.empty
             | _ ->
                 // non-dom / whole-heap NoEvents: plain heap collapse, original picks passed through.
                 let renders, picks = child.GetObjects state
-                Aardvark.SceneGraph.Heap.ofRenderObjectsDeferred renders, picks
+                Aardvark.SceneGraph.Heap.ofRenderObjects (getStorage state.Runtime) renders, picks
 
 /// `heap { ... }` — exactly like `sg { ... }`, but its children render through the heap.
 /// Reuses every `SceneNodeBuilder` Yield/Combine/Delay/Zero overload and only overrides

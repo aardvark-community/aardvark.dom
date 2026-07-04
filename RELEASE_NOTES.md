@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0012
+* `HeapNode` ports to the storage-first heap API (rendering 0033): one `HeapStorage` per node shared by the render AND pick heaps, so the pickable scene's geometry/uniforms live in GPU memory once.
+
 ### 1.2.0-prerelease0011
 * `HeapNode` pick path defers to the real compile-time signature (heap 0032); `PickProducer` routes the pickable deferred heap into the `PickId` pass. Removes the hardcoded pick signature — picking coexists with extra target attachments (e.g. a Normals G-buffer).
 
