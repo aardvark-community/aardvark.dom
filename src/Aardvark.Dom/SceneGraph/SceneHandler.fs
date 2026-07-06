@@ -1116,11 +1116,53 @@ module internal PickSnap =
         |> Array.map (fun struct(_, p) -> p)
 
 
+/// MS pick-buffer resolve WITHOUT vkCmdResolveImage/blit: a compute pass picks,
+/// per pixel, the sample whose PickId (slot 0) holds the MAJORITY among samples
+/// and writes that sample's FULL texel (ties -> the earlier sample). Two wins
+/// over the hardware resolve it replaces:
+///   * MoltenVK's Rgba32f resolve goes through vkCmdBlitImage, whose MSL support
+///     shader fails to compile ("textureunsupported<float>") — hard crash;
+///   * an AVERAGING resolve produces interpolated garbage at silhouettes (ids /
+///     normals mixed across samples) — majority keeps every written pixel an
+///     EXACT rendered sample, which also clears the way for bit-pattern
+///     (intBitsToFloat) pick encodings.
+/// Runs EAGERLY right after the pick pass, in place of the old resolve.
+module private PickResolveShader =
+    open FShade
+
+    let private pickMs =
+        sampler2dMS {
+            texture uniform?PickMs
+        }
+
+    [<LocalSize(X = 8, Y = 8)>]
+    let resolve (samples : int) (dst : Image2d<Formats.rgba32f>) =
+        compute {
+            let id = getGlobalId().XY
+            let size = dst.Size
+            if id.X < size.X && id.Y < size.Y then
+                let mutable best = pickMs.Read(id, 0)
+                let mutable bestCount = 0
+                for i in 0 .. samples - 1 do
+                    let vi = pickMs.Read(id, i)
+                    let mutable c = 0
+                    for j in 0 .. samples - 1 do
+                        let vj = pickMs.Read(id, j)
+                        if vj.X = vi.X then c <- c + 1
+                    if c > bestCount then
+                        bestCount <- c
+                        best <- vi
+                dst.[id] <- best
+        }
+
 type private SceneHandlerFramebuffers =
     {
         PickableFramebuffer         : IFramebuffer
         NonPickableFramebuffer      : IFramebuffer
-        PickBuffer                  : IRenderbuffer
+        /// resolve the MS pick attachment into PickTextureResolved (compute
+        /// majority vote when samples > 1, plain copy otherwise); called under
+        /// the pick lock right after the pick pass
+        ResolvePick                 : unit -> unit
         PickTextureResolved         : IBackendTexture
         PickFramebufferResolved     : IFramebuffer
         Disposables                 : list<System.IDisposable>
@@ -1480,19 +1522,53 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 // Both framebuffers (with and without pick attachment) share
                 // the same backing color/depth renderbuffers, so non-pickable
                 // RenderObjects can render to the same color/depth as pickable
-                // ones without paying for a second color buffer.
+                // ones without paying for a second color buffer. The PICK
+                // attachment is special-cased below (MS -> a TEXTURE, so the
+                // majority-vote compute resolve can sample it).
                 let buffers =
-                    semantics |> Map.map (fun _ fmt ->
+                    semantics |> Map.remove pickBuffer |> Map.map (fun _ fmt ->
                         runtime.CreateRenderbuffer(size, fmt, newSignature.Samples)
                     )
-                let outputs = buffers |> Map.map (fun _ b -> b :> IFramebufferOutput)
-
-                let nf = runtime.CreateFramebuffer(signature, outputs)
-                let pf = runtime.CreateFramebuffer(newSignature, outputs)
 
                 // Single-sample resolve target for the pick attachment so
                 // `ReadPixels` has a non-MS source to read from.
                 let pickResolvedTex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, 1)
+
+                let pickOutput, resolvePick, pickDisposables =
+                    if newSignature.Samples > 1 then
+                        // MS: render into a texture and majority-resolve with a compute
+                        // pass (see PickResolveShader) — never vkCmdResolveImage/blit.
+                        let msTex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, newSignature.Samples)
+                        let shader = runtime.CreateComputeShader PickResolveShader.resolve
+                        let input = runtime.CreateInputBinding shader
+                        input.["PickMs"] <- msTex
+                        input.["dst"] <- pickResolvedTex.GetOutputView()
+                        input.["samples"] <- newSignature.Samples
+                        input.Flush()
+                        let groups = V3i((size.X + 7) / 8, (size.Y + 7) / 8, 1)
+                        let prog =
+                            runtime.CompileCompute (AList.ofList [
+                                ComputeCommand.Bind shader
+                                ComputeCommand.SetInput input
+                                ComputeCommand.Dispatch groups
+                            ])
+                        msTex.[TextureAspect.Color, 0, 0] :> IFramebufferOutput,
+                        (fun () -> prog.Run()),
+                        [ msTex :> System.IDisposable; prog :> System.IDisposable; shader :> System.IDisposable ]
+                    else
+                        let rb = runtime.CreateRenderbuffer(size, TextureFormat.Rgba32f, 1)
+                        rb :> IFramebufferOutput,
+                        (fun () -> runtime.Copy(rb, pickResolvedTex.[TextureAspect.Color, 0, *])),
+                        [ rb :> System.IDisposable ]
+
+                let outputs =
+                    buffers
+                    |> Map.map (fun _ b -> b :> IFramebufferOutput)
+                    |> Map.add pickBuffer pickOutput
+
+                let nf = runtime.CreateFramebuffer(signature, outputs)
+                let pf = runtime.CreateFramebuffer(newSignature, outputs)
+
                 let pickResolvedSig = runtime.CreateFramebufferSignature([pickBuffer, TextureFormat.Rgba32f])
                 let pickResolvedFbo =
                     runtime.CreateFramebuffer(
@@ -1504,12 +1580,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                     {
                         PickableFramebuffer     = pf
                         NonPickableFramebuffer  = nf
-                        PickBuffer              = buffers.[pickBuffer]
+                        ResolvePick             = resolvePick
                         PickTextureResolved     = pickResolvedTex
                         PickFramebufferResolved = pickResolvedFbo
                         Disposables =
                             (pickResolvedTex :> System.IDisposable)
-                            :: (buffers |> Map.toList |> List.map (fun (_, b) -> b :> System.IDisposable))
+                            :: pickDisposables
+                            @ (buffers |> Map.toList |> List.map (fun (_, b) -> b :> System.IDisposable))
                     }
 
                 fbos <- Some result
@@ -1587,16 +1664,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 renderPickable.Run(t, rt, outputInfo.PickableFramebuffer)
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
 
-                let pickRb = outputInfo.PickBuffer
                 // Guard the resolve against a concurrent event-thread readback
-                // (see `pickLock`). The resolve is a single blit — µs — so a
-                // pick in flight stalls this by a negligible amount, and vice
-                // versa, without either waiting on the other's full GPU work.
+                // (see `pickLock`). The resolve is one compute dispatch (MS,
+                // majority vote) or one copy (single-sampled) — µs — so a pick
+                // in flight stalls this by a negligible amount, and vice versa,
+                // without either waiting on the other's full GPU work.
                 lock pickLock (fun () ->
-                    if pickRb.Samples > 1 then
-                        runtime.ResolveMultisamples(pickRb, outputInfo.PickTextureResolved)
-                    else
-                        runtime.Copy(pickRb, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
+                    outputInfo.ResolvePick ()
 
                     pickTexture <- Some outputInfo.PickFramebufferResolved
                     viewportSize <- outputInfo.PickTextureResolved.Size.XY
