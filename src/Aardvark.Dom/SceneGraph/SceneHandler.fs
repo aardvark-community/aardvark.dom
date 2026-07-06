@@ -187,6 +187,16 @@ module PickShader =
             return r
         }
 
+    // ---- BIT-EXACT pick encoding ----
+    // ids / oct-normals / part indices are stored as INT BIT PATTERNS in the
+    // Rgba32f pick buffer (intBitsToFloat). Safe because the MS resolve is a
+    // majority VOTE (every resolved pixel is an exact rendered sample — never
+    // an average): ids are exact at ANY count (no 2^24 float ceiling), normals
+    // use the full 32-bit octahedral codec, and the decoder needs no 3x3
+    // same-id neighbourhood validation.
+    [<GLSLIntrinsic("intBitsToFloat({0})")>]
+    let private asF (i : int) : float32 = onlyInShaderCode "intBitsToFloat"
+
     // ---- Mode A, with normal, with user PartIndex.
     type FinalA_In =
         {
@@ -197,19 +207,16 @@ module PickShader =
         }
     let pickFinalA (v : FinalA_In) =
         fragment {
-            // All 4 channels are plain-float storage — never bit-cast. Each is
-            // an integer or in-range float that survives MS resolve-average:
-            //   * id  : float32 of an int < 2^24 (recycled, so live id space
-            //           stays dense well under that ceiling).
-            //   * n24 : float32 of a 12+12 octahedron normal packed into 24
-            //           bits. Lower angular precision than the old Normal32
-            //           bit-cast (12 bits/axis ≈ 0.05° vs 16 bits/axis ≈ 0.003°),
-            //           but bullet-proof under MS resolve.
-            //   * d   : NDC depth in [-1, 1].
-            //   * pi  : float32 of an int < 2^24.
-            let n24 = Normal24.encode (Vec.normalize v.vn)
+            // BIT-EXACT channels (see the asF intrinsic note): the majority-vote
+            // resolve never averages, so ints ride as raw bit patterns.
+            //   * id  : intBitsToFloat(pickId) — exact at any count.
+            //   * n32 : intBitsToFloat(16+16 octahedral normal) — full Normal32
+            //           precision (~0.003°).
+            //   * d   : NDC depth in [-1, 1] (plain float).
+            //   * pi  : intBitsToFloat(partIndex).
+            let n32 = Normal32.encode (Vec.normalize v.vn)
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, float32 v.pi) }
+            let r : Fragment = { c = v.c; id = V4f(asF uniform.PickId, asF n32, d, asF v.pi) }
             return r
         }
 
@@ -222,9 +229,9 @@ module PickShader =
         }
     let pickFinalANoPi (v : FinalANoPi_In) =
         fragment {
-            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let n32 = Normal32.encode (Vec.normalize v.vn)
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, 0.0f) }
+            let r : Fragment = { c = v.c; id = V4f(asF uniform.PickId, asF n32, d, 0.0f) }
             return r
         }
 
@@ -234,10 +241,10 @@ module PickShader =
     // Used by the dom HeapNode, which composes the chain itself before heapifying.
     let pickFinalHeap (v : FinalANoPi_In) =
         fragment {
-            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let n32 = Normal32.encode (Vec.normalize v.vn)
             let d = (2.0f * v.d - 1.0f)
             let pid : int = uniform?HeapPickId
-            let r : Fragment = { c = v.c; id = V4f(float32 pid, float32 n24, d, 0.0f) }
+            let r : Fragment = { c = v.c; id = V4f(asF pid, asF n32, d, 0.0f) }
             return r
         }
 
@@ -251,7 +258,7 @@ module PickShader =
     let pickFinalANoNormal (v : FinalANoNormal_In) =
         fragment {
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, float32 v.pi) }
+            let r : Fragment = { c = v.c; id = V4f(asF uniform.PickId, 0.0f, d, asF v.pi) }
             return r
         }
     // (no n24/n32 here — slot 1 already 0.0f, decoded as a zero-length normal.)
@@ -265,7 +272,7 @@ module PickShader =
     let pickFinalANoNormalNoPi (v : FinalANoNormalNoPi_In) =
         fragment {
             let d = (2.0f * v.d - 1.0f)
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, 0.0f) }
+            let r : Fragment = { c = v.c; id = V4f(asF uniform.PickId, 0.0f, d, 0.0f) }
             return r
         }
 
@@ -291,7 +298,7 @@ module PickShader =
         }
     let pickFinalB (v : FinalB_In) =
         fragment {
-            let r : Fragment = { c = v.c; id = V4f(-(float32 uniform.PickId), v.pvp.X, v.pvp.Y, v.pvp.Z) }
+            let r : Fragment = { c = v.c; id = V4f(asF (-uniform.PickId), v.pvp.X, v.pvp.Y, v.pvp.Z) }
             return r
         }
 
@@ -315,7 +322,7 @@ module PickShader =
             // convention 2z-1) so the resolver's pixel<->BVH tie-break has a real
             // geometric depth for the portal (slot 2 is a uv, not a depth).
             let d = 2.0f * v.fc.Z - 1.0f
-            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, v.uv.X, v.uv.Y, d) }
+            let r : Fragment = { c = v.c; id = V4f(asF uniform.PickId, v.uv.X, v.uv.Y, d) }
             return r
         }
 
@@ -507,7 +514,8 @@ module PickShader =
             let px = V2i v.fc.XY
             let s = pickSampler.Size
             if uniform.Selected >= 0 && px.X < s.X && px.Y < s.Y then
-                let id = pickSampler.[px].X
+                let idBits = Fun.FloatToBits pickSampler.[px].X
+                let id = if idBits < 0 then -idBits else idBits
                 if id = uniform.Selected then
                     r <- 1.0f
             return V4f(r, r, r, r)
@@ -1002,9 +1010,7 @@ module internal BlitExtensions =
                 // region bounds.
                 let inline readIdAt (lx : int) (ly : int) =
                     if lx < 0 || ly < 0 || lx >= regionSize.X || ly >= regionSize.Y then 0
-                    else
-                        let f0 = data.[baseIdx + lx * dx + ly * dy]
-                        if f0 = 0.0f then 0 else int f0
+                    else System.BitConverter.SingleToInt32Bits data.[baseIdx + lx * dx + ly * dy]
 
                 // Compute the view-space position at a region-local pixel,
                 // using the same decoding rule as the main path. Used for
@@ -1033,23 +1039,16 @@ module internal BlitExtensions =
                         let idF = readIdAt lx ly
                         if idF = 0 then None
                         else
-                            // Walk the 3×3 neighbourhood once, simultaneously
-                            // counting same-id neighbours (validation) and
-                            // gathering their view-space positions (for CPU
-                            // normal estimation when the encoded normal is
-                            // missing — mode B always, mode A NoNormal variants).
-                            //
-                            // Silhouette pixels under MS resolve produce
-                            // essentially-random averaged ids; two adjacent
-                            // garbage averages matching the same int is
-                            // vanishingly unlikely, so ≥2 same-id neighbours
-                            // is a reliable interior-pixel test.
+                            // Gather same-id 3×3 neighbours ONLY for CPU normal
+                            // estimation (mode B / NoNormal variants) — ids are
+                            // bit-exact now, so the count is no longer a
+                            // validity gate.
                             let nbrs = ResizeArray<V3d>(8)
                             for ddy in -1 .. 1 do
                                 for ddx in -1 .. 1 do
                                     if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = idF then
                                         nbrs.Add (viewPosAt (lx + ddx) (ly + ddy) idF)
-                            if nbrs.Count < 2 then None
+                            if false then None
                             else
                                 let i0 = baseIdx + lx * dx + ly * dy
                                 let f1 = data.[i0 + dz]
@@ -1063,8 +1062,9 @@ module internal BlitExtensions =
                                         let tc = (V2d p + V2d.Half) / V2d s
                                         let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, depth)
                                         let vp = projTrafo.Backward.TransformPosProj ndc
-                                        let n = if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
-                                        vp, n, int f3
+                                        let n32 = System.BitConverter.SingleToInt32Bits f1
+                                        let n = if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)
+                                        vp, n, System.BitConverter.SingleToInt32Bits f3
                                     else
                                         // Mode B: -id, pvp.x, pvp.y, pvp.z.
                                         V3d(float f1, float f2, float f3), V3d.Zero, 0
@@ -1379,7 +1379,7 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                 // and reads slots 1-2 as uv — never as normal/depth.
                                 pickModes.[pickId] <- true
                                 portalScopes.[pickId] <- sub
-                                [eff; PickShader.pickFinalPortalEffect], "portalv1_"
+                                [eff; PickShader.pickFinalPortalEffect], "portalv2_"
                             | None ->
                                 // Resolve the per-semantic rewrite eagerly (cheap — no GLSL) so we
                                 // know this scope's pick mode (A/B) for `pickModes`; the actual GLSL
@@ -1387,13 +1387,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                 // is identical to the old chooseChain/finalEffect chain.
                                 let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
                                 pickModes.[pickId] <- (match isModeA with Some m -> m | None -> false)
-                                chain, "pickv3_"
+                                chain, "pickv4_"
                         let newShaders =
                             lazy (
                                 (FShade.Effect.compose chain).Shaders
                             )
 
-                        // tag prefix ("pickv3_" / "portalv1_") — bump when the encoding changes so
+                        // tag prefix ("pickv4_" / "portalv2_") — bump when the encoding changes so
                         // cached compiled shaders from older builds get rejected by name.
                         let newEffect = FShade.Effect(effTag + eff.Id, newShaders, [])
 
@@ -1797,21 +1797,12 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 let rSizeY    = if hasRegion then region.SizeY else 0
 
                 // Read the (signed) PickId at a region-local pixel, or 0.
-                // Rejects non-integral reads: an MSAA-resolved pickId is only
-                // trustworthy if all 4 samples agreed (→ exact integer); any
-                // float that isn't within 0.01 of an integer is an averaged
-                // silhouette mix and decodes to junk. Returning 0 here makes
-                // the equality-based neighbour validation skip those pixels
-                // automatically.
+                // BIT-EXACT ids: slot 0 is the id's int bit pattern
+                // (intBitsToFloat in the shader, majority-vote resolve — every
+                // pixel is an exact sample). 0 bits = cleared background.
                 let inline readIdAt (lx : int) (ly : int) =
                     if not hasRegion || lx < 0 || ly < 0 || lx >= rSizeX || ly >= rSizeY then 0
-                    else
-                        let f0 = rData.[rBase + lx * rDx + ly * rDy]
-                        if f0 = 0.0f then 0
-                        else
-                            let r = System.MathF.Round f0
-                            if abs (f0 - r) > 0.01f then 0
-                            else int r
+                    else System.BitConverter.SingleToInt32Bits rData.[rBase + lx * rDx + ly * rDy]
 
                 // Resolve view-space position at a same-id neighbour. Only
                 // called once per accepted candidate (lazy normal estimation).
@@ -1927,25 +1918,11 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                             pickModes.TryGetValue(absId, &scopeIsModeA)
                             && scopeIsModeA = (pixIdRaw > 0)
                         if modeOk && scopes.TryGetValue(absId, &scope) && d2 <= snapR2 scope then
-                            // Validate by ≥ 3 same-id neighbours in the 3×3
-                            // block. (≥ 2 is enough to reject true random
-                            // garbage; ≥ 3 gives an extra margin against
-                            // adjacent pixels that happen to land on the
-                            // same near-integer averaged value.)
-                            let mutable matches = 0
-                            let mutable ddy = -1
-                            while matches < 3 && ddy <= 1 do
-                                let mutable ddx = -1
-                                while matches < 3 && ddx <= 1 do
-                                    if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = pixIdRaw then
-                                        matches <- matches + 1
-                                    ddx <- ddx + 1
-                                ddy <- ddy + 1
-                            // After confirming validity we don't keep walking;
-                            // the rest of the 3×3 neighbourhood is only
-                            // re-visited inside `reuseNormalIfMissing` (runs
-                            // once on the winner) for normal estimation.
-                            if matches >= 3 then
+                            // ids are bit-exact (majority-vote resolve): a
+                            // non-zero id that passes the mode/scope gates IS
+                            // a real rendered pixel — no neighbourhood
+                            // validation needed anymore.
+                            if true then
                                 let i0 = rBase + lx * rDx + ly * rDy
                                 let f1 = rData.[i0 + rDz]
                                 let f2 = rData.[i0 + 2 * rDz]
@@ -1956,8 +1933,9 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                     let tcY = (float pxY + 0.5) / sY
                                     let ndc = V3d(2.0 * tcX - 1.0, 1.0 - 2.0 * tcY, pixDepth)
                                     pixVp <- pBwd.TransformPosProj ndc      // NDC → VIEW
-                                    pixN  <- if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
-                                    pixPi <- int f3
+                                    let n32 = System.BitConverter.SingleToInt32Bits f1
+                                    pixN  <- if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)
+                                    pixPi <- System.BitConverter.SingleToInt32Bits f3
                                     // PORTAL: slot 3 is the quad's own NDC depth (not pi), and slot 2
                                     // was a uv (not depth) — use the real geometric depth so the
                                     // pixel<->BVH tie-break is correct in a mixed outer scene.
