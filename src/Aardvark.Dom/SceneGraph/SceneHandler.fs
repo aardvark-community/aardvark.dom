@@ -1214,6 +1214,15 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
     //let mutable attachments = []
     let mutable fbos : option<SceneHandlerFramebuffers> = None
     let mutable viewportSize = V2i.Zero
+    // Serializes access to the resolved pick texture: the render thread's
+    // resolve-write vs. an event-thread pick readback. The readback used to be
+    // marshaled onto the render thread (blocking the event thread behind the
+    // whole GPU-fence-bound frame → multi-second mouse lag on heavy scenes).
+    // Now it runs on the caller's own thread-local device token (a distinct
+    // VkQueue) and only this µs-scale critical section is shared, so a pick
+    // never waits behind a render. `Pick` may also be entered concurrently
+    // (pointer events can overlap), so this lock guards that too.
+    let pickLock = obj()
     let hoverId = cval -1
     let clearColor = cval C4f.Black
 
@@ -1282,6 +1291,7 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
             runtime.ReadPickRegion(pickFbo, pixel, PickSnap.radius)
         | _ ->
             ValueNone
+
     let mutable renderTask, pickObjects, dispose =
         let runtime = signature.Runtime :?> IRuntime
 
@@ -1578,13 +1588,19 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 renderNonPickable.Run(t, rt, outputInfo.NonPickableFramebuffer)
 
                 let pickRb = outputInfo.PickBuffer
-                if pickRb.Samples > 1 then
-                    runtime.ResolveMultisamples(pickRb, outputInfo.PickTextureResolved)
-                else
-                    runtime.Copy(pickRb, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
+                // Guard the resolve against a concurrent event-thread readback
+                // (see `pickLock`). The resolve is a single blit — µs — so a
+                // pick in flight stalls this by a negligible amount, and vice
+                // versa, without either waiting on the other's full GPU work.
+                lock pickLock (fun () ->
+                    if pickRb.Samples > 1 then
+                        runtime.ResolveMultisamples(pickRb, outputInfo.PickTextureResolved)
+                    else
+                        runtime.Copy(pickRb, outputInfo.PickTextureResolved.[TextureAspect.Color, 0, *])
 
-                pickTexture <- Some outputInfo.PickFramebufferResolved
-                viewportSize <- outputInfo.PickTextureResolved.Size.XY
+                    pickTexture <- Some outputInfo.PickFramebufferResolved
+                    viewportSize <- outputInfo.PickTextureResolved.Size.XY
+                )
 
                 trigger (RenderControlEvent.PostRender evtInfo)
 
@@ -1687,10 +1703,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                     arr
 
                 // Pick-buffer region — raw float32 array + strides. No closure.
-                // Run the pick-buffer readback on the render thread, not this (Kestrel
-                // worker) thread — a `Download` here races the render loop's resolve/encode
-                // and faults in `vkCmdCopyImageToBuffer`. `onRender` marshals it across.
-                let regionOpt = RenderMarshal.onRender runtime (fun () -> readPickRegion pixel)
+                // The readback runs on THIS (event) thread's own thread-local
+                // device token — a distinct VkQueue from the render thread — so
+                // it never blocks behind the render loop's frame. `pickLock`
+                // serializes it against the render's resolve-write of the same
+                // texture (the only shared state), which is the race that used
+                // to fault in `vkCmdCopyImageToBuffer`.
+                let regionOpt = lock pickLock (fun () -> readPickRegion pixel)
                 let hasRegion = regionOpt.IsSome
                 let region    = if hasRegion then regionOpt.Value else Unchecked.defaultof<_>
                 let rData     = if hasRegion then region.Data else null

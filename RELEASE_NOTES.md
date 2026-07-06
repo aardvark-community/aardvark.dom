@@ -1,3 +1,7 @@
+### 1.2.0-prerelease0013
+* Pick readback runs off the render thread — on the event thread's own device token (a distinct queue), serialized against the render's resolve by a lightweight lock, instead of marshaling onto the render loop. Fixes the multi-second mouse-move latency on heavy scenes (keyboard/gamepad were already instant).
+* Aardvark.Rendering 0033 → 0040.
+
 ### 1.2.0-prerelease0012
 * `HeapNode` ports to the storage-first heap API (rendering 0033): one `HeapStorage` per node shared by the render AND pick heaps, so the pickable scene's geometry/uniforms live in GPU memory once.
 

@@ -189,10 +189,11 @@ type RemoteHtmlBackend private(runtime : IRuntime, server : IServer, imageTransf
 
     new(runtime : IRuntime, server : IServer, imageTransfer : IImageTransfer) =
         RemoteHtmlBackend(runtime, server, imageTransfer, runtime.RenderThread)
-        then
-            // Let Aardvark.Dom marshal off-thread GPU work (the pick readback) onto the
-            // render thread — fixes the pick-buffer Download racing the render loop.
-            Aardvark.Dom.RenderMarshal.run <- Some (fun (rt : IRuntime) (f : unit -> obj) -> rt.RunRender f)
+        // The pick readback no longer marshals onto the render thread: it runs on
+        // the event thread's own thread-local device token (distinct VkQueue),
+        // serialized against the render's resolve by `pickLock` in the SceneHandler.
+        // That kept the readback off the fence-bound render loop (mouse-lag fix),
+        // so `RenderMarshal` is left unwired (a no-op inline call).
 
     static member ImageTransfers = imageTransfers
 
