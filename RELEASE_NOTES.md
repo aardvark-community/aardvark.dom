@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0016
+* fix: macOS zero-copy IOSurface sharing now composites (was a black canvas) — the darwin producer speaks the browser's mach REG-channel instead of a unix socket the mach-only painter never binds.
+
 ### 1.2.0-prerelease0015
 * fix: resize/teardown no longer races the event-thread pick readback — deleting the resolved pick framebuffer now happens under `pickLock` with the published pick texture invalidated first (was an AccessViolation / VK device fault in vkCmdCopyImageToBuffer when picking during a resize).
 
