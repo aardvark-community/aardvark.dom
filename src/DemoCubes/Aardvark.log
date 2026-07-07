@@ -1,0 +1,1385 @@
+ 0: Cache directory: /home/schorsch/.local/share/Aardvark/Cache
+ 0: Initializing Aardvark ........................................................................
+ 0:   System Information:
+ 0:     System:      Debian GNU/Linux 13 (trixie)
+ 0:     Processor:   8 core AMD64
+ 0:     Process:     AMD64
+ 0:     Runtime:     .NET 8.0.25
+ 0:     Framework:   .NET 8.0
+ 0:   Loading native dependencies ................................................................
+ 0:     Skipped loading native dependencies for System.Private.CoreLib, Version=8.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e
+ 0:     Skipped loading native dependencies for System.Security.Cryptography, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Memory, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0:     Skipped loading native dependencies for System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for netstandard, Version=2.1.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0:     Skipped loading native dependencies for System.Collections.Concurrent, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Loading native dependencies for Aardvark.Rendering.Vulkan, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null 
+ 0:       Skipped loading native dependencies for System.IO.Compression, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+ 0:       Skipped loading native dependencies for System.IO.Compression.ZipFile, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+ 0:       Skipped loading native dependencies for System.Xml.XDocument, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Private.Xml.Linq, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0:       Skipped loading native dependencies for System.Private.Xml, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0:       Unpacking native dependencies for Aardvark.Rendering.Vulkan, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:         Output directory: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Rendering.Vulkan/f842bb1a-8f0e-764e-32db-b14522b5da4b/linux/AMD64
+ 0:         Unpacking: libvkvm.so
+ 0:         Skipped loading native dependencies for System.Text.RegularExpressions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Loading native dependencies for Aardvark.Rendering.Vulkan, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null 0.038 s
+ 0:     Skipped loading native dependencies for FSharp.Data.Adaptive, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Skipped loading native dependencies for FShade.Core, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Skipped loading native dependencies for System.Collections, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Threading, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Console, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Runtime.Loader, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Threading.Thread, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for System.Runtime.InteropServices, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Skipped loading native dependencies for Microsoft.Win32.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:   Loading native dependencies ................................................ [0.65x] 0.059 s
+ 0:   Loading plugins ............................................................................
+ 0:     Finding and loading assemblies ...........................................................
+ 0:       Skipped loading native dependencies for System.Runtime.Serialization.Xml, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Private.DataContractSerialization, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Xml.ReaderWriter, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Xml.XmlSerializer, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Private.Uri, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Runtime.Serialization.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Linq, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Reflection.Emit.ILGeneration, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Text.Encoding.Extensions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Reflection.Emit.Lightweight, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Reflection.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Loaded plugins cache file: /home/schorsch/.local/share/Aardvark/Cache/Plugins/DemoCubes_1.2.0.0_plugins.xml
+ 0:       [IsPlugin] Ignoring assembly Microsoft.DotNet.PlatformAbstractions due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardium.Shared.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/FSharp.SystemTextJson.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.Vulkan.Wrapper.dll
+ 0:       Skipped loading native dependencies for System.Reflection.Metadata, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.Collections.Immutable, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       Skipped loading native dependencies for System.IO.MemoryMappedFiles, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       [IsPlugin] Ignoring assembly FShade.SpirV due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Giraffe.dll
+ 0:       [IsPlugin] Ignoring assembly Microsoft.Extensions.DependencyModel due to filter
+ 0:       [IsPlugin] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Application.Slim.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.Text.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/DemoCubes.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.GL.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Silk.NET.GLFW.dll
+ 0:       [IsPlugin] Ignoring assembly System.Text.Encodings.Web due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Incremental.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Tensors.CSharp.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Giraffe.ViewEngine.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Core.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Essentials.dll
+ 0:       [IsPlugin] Ignoring assembly FShade.GLSL due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/GLSLangSharp.dll
+ 0:       [IsPlugin] Ignoring assembly OpenTK due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Utilities.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Giraffe.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Silk.NET.Direct3D11.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Elm.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.Common.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Geometry.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Telemetry.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Silk.NET.Maths.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Silk.NET.Core.dll
+ 0:       [IsPlugin] Ignoring assembly System.Collections.Immutable due to filter
+ 0:       [IsPlugin] Ignoring assembly System.Reflection.Metadata due to filter
+ 0:       [IsPlugin] Ignoring assembly System.IO.Pipelines due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Server.dll
+ 0:       [IsPlugin] Plugin found: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Server.dll
+ 0:       Loading native dependencies for Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null 
+ 0:         Unpacking native dependencies for Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:           Output directory: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Dom.Server/5036bf8f-626e-65e3-1593-29ecf235b8dc/linux/AMD64
+ 0:           Found: libturbojpeg.so
+ 0:       Loading native dependencies for Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null 0.000 s
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.FSharp.dll
+ 0:       [IsPlugin] Plugin found: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.FSharp.dll
+ 0:       [IsPlugin] Ignoring assembly CommonMark due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.TypeProviders.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Tensors.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/SingleFileExtractor.Core.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Rendering.Vulkan.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Silk.NET.DXGI.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/FuzzySharp.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.Remote.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.FontProvider.Runtime.dll
+ 0:       [IsPlugin] Ignoring assembly Unofficial.Typography due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.SceneGraph.dll
+ 0:       [IsPlugin] Ignoring assembly FShade.Imperative due to filter
+ 0:       [IsPlugin] Ignoring assembly Microsoft.IO.RecyclableMemoryStream due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/FSharp.Core.dll
+ 0:       [IsPlugin] Ignoring assembly System.Text.Json due to filter
+ 0:       [IsPlugin] Ignoring assembly LibTessDotNet due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Dom.dll
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Application.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Assembler.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Adaptify.Core.dll
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.Fonts.dll
+ 0:       [IsPlugin] Ignoring assembly FsPickler due to filter
+ 0:       [IsPlugin] Cache found for: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Base.dll
+ 0:       [IsPlugin] Ignoring assembly FShade.Core due to filter
+ 0:       [IsPlugin] Retrying to load because cache is outdated: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/Aardvark.Application.Slim.Vulkan.dll
+ 0:     Finding and loading assemblies ........................................... [0.00x] 0.104 s
+ 0:     Enumerating assemblies for introspection .................................................
+ 0:       [Introspection] Entry assembly: DemoCubes, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null (path: /home/schorsch/projects/aardvark.dom/bin/Debug/net8.0/DemoCubes.dll)
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Numerics due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Serialization.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly System.Xml.ReaderWriter due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Immutable due to filter
+ 0:       [Introspection] Ignoring assembly System.Xml.XDocument due to filter
+ 0:       [Introspection] Ignoring assembly System.IO.Compression due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.Process due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Metadata due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Serialization.Xml due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Loader due to filter
+ 0:       [Introspection] Ignoring assembly System.ObjectModel due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq.Expressions due to filter
+ 0:       [Introspection] Ignoring assembly System.ComponentModel.TypeConverter due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Console due to filter
+ 0:       [Introspection] Ignoring assembly System.ComponentModel.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly System.Drawing.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Security.Cryptography due to filter
+ 0:       [Introspection] Ignoring assembly System.Net.WebClient due to filter
+ 0:       [Introspection] Ignoring assembly System.IO.Compression.ZipFile due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Intrinsics due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading.Thread due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.StackTrace due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.IO.Compression due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.ILGeneration due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq.Expressions due to filter
+ 0:       [Introspection] Ignoring assembly FsPickler due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading.Thread due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.Lightweight due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.IO.MemoryMappedFiles due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.Process due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection due to filter
+ 0:       [Introspection] Ignoring assembly System.Console due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.Lightweight due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.ILGeneration due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FShade.GLSL due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.Lightweight due to filter
+ 0:       [Introspection] Ignoring assembly System.Reflection.Emit.ILGeneration due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly LibTessDotNet due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly Unofficial.Typography due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.Debug due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Extensions due to filter
+ 0:       [Introspection] Ignoring assembly LibTessDotNet due to filter
+ 0:       [Introspection] Ignoring assembly CommonMark due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading.Thread due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.DotNet.PlatformAbstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.DependencyModel due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.CompilerServices.Unsafe due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading.Thread due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices.RuntimeInformation due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.Process due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices.RuntimeInformation due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.GLSL due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly FsPickler due to filter
+ 0:       Loading native dependencies for GLSLangSharp, Version=0.5.0.0, Culture=neutral, PublicKeyToken=null 
+ 0:         Unpacking native dependencies for GLSLangSharp, Version=0.5.0.0, Culture=neutral, PublicKeyToken=null
+ 0:           Output directory: /home/schorsch/.local/share/Aardvark/Cache/Native/GLSLangSharp/d0cfaa20-2e38-782c-5519-ae332d8626da/linux/AMD64
+ 0:           Found: libGLSLangNative.so
+ 0:       Loading native dependencies for GLSLangSharp, Version=0.5.0.0, Culture=neutral, PublicKeyToken=null 0.000 s
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Net.WebSockets due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Web.HttpUtility due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Http.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly System.Net.WebSockets due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Serialization.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Numerics.Vectors due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Numerics due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.CompilerServices.Unsafe due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.Intrinsics due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices.RuntimeInformation due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.CompilerServices.Unsafe due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices.RuntimeInformation due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.CompilerServices.Unsafe due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading.Thread due to filter
+ 0:       [Introspection] Ignoring assembly System.Diagnostics.Process due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.InteropServices due to filter
+ 0:       Loading native dependencies for Aardvark.Rendering.GL, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null 
+ 0:         Unpacking native dependencies for Aardvark.Rendering.GL, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:           Output directory: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Rendering.GL/293ff86a-4937-6c1f-20bb-c944df3d581f/linux/AMD64
+ 0:           Unpacking: libglvm.so
+ 0:       Loading native dependencies for Aardvark.Rendering.GL, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null 0.001 s
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.GLSL due to filter
+ 0:       [Introspection] Ignoring assembly OpenTK due to filter
+ 0:       Loading native dependencies for Aardvark.Assembler, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null 
+ 0:         Unpacking native dependencies for Aardvark.Assembler, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null
+ 0:           Output directory: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Assembler/260169c2-3859-9f96-9f36-27288745d23c/linux/AMD64
+ 0:           Found: libjitmem.so
+ 0:       Loading native dependencies for Aardvark.Assembler, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null 0.000 s
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime.CompilerServices.Unsafe due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Imperative due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly FsPickler due to filter
+ 0:       [Introspection] Ignoring assembly OpenTK due to filter
+ 0:       [Introspection] Ignoring assembly System.IO.MemoryMappedFiles due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Hosting.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Hosting due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Hosting.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.WebSockets due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Http.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Net.Http.Headers due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Http.Extensions due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.RegularExpressions due to filter
+ 0:       [Introspection] Ignoring assembly System.Security.Claims due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Primitives due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.ComponentModel due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Logging.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Hosting.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Http.Features due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Routing due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Routing.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.IO.RecyclableMemoryStream due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.DependencyInjection.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Hosting.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly System.Linq due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Authorization due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Authentication.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.ResponseCaching.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.Features due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Http due to filter
+ 0:       [Introspection] Ignoring assembly System.ComponentModel.TypeConverter due to filter
+ 0:       [Introspection] Ignoring assembly System.Xml.ReaderWriter due to filter
+ 0:       [Introspection] Ignoring assembly System.Xml.XmlSerializer due to filter
+ 0:       [Introspection] Ignoring assembly System.Memory due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.Extensions.DependencyInjection.Abstractions due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets due to filter
+ 0:       [Introspection] Ignoring assembly Microsoft.AspNetCore.Hosting due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Web.HttpUtility due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections.Concurrent due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:       [Introspection] Ignoring assembly System.Runtime due to filter
+ 0:       [Introspection] Ignoring assembly FSharp.Data.Adaptive due to filter
+ 0:       [Introspection] Ignoring assembly FShade.Core due to filter
+ 0:       [Introspection] Ignoring assembly System.Collections due to filter
+ 0:       [Introspection] Ignoring assembly System.Threading due to filter
+ 0:       [Introspection] Ignoring assembly System.Text.Json due to filter
+ 0:       [Introspection] Ignoring assembly netstandard due to filter
+ 0:     Enumerating assemblies for introspection ................................. [0.04x] 0.019 s
+ 0:     [cache miss] Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Skipped loading native dependencies for System.Net.WebSockets, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Initializing JpegTransfer ........................................................ 0.009 s
+ 0:     Initializing SharedMemoryTransfer ................................................ 0.004 s
+ 0:     Initializing SharedTextureTransfer ............................................... 0.000 s
+ 0:     [cache hit ] Aardvark.Base.FSharp, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Initializing CustomPicklerProvider .......................................................
+ 0:       Skipped loading native dependencies for FsPickler, Version=5.3.2.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] DemoCubes, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] FSharp.Core, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:       [cache miss] Aardvark.Dom, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for FShade.Imperative, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for System.Text.Json, Version=10.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0:       [cache miss] Aardvark.Rendering, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for FShade.GLSL, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.FSharp, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] SingleFileExtractor.Core, Version=2.2.1.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.Telemetry, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.TypeProviders, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Rendering.Common, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.Tensors.CSharp, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.Tensors, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.Incremental, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Base.Essentials, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.SceneGraph, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.Geometry, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Rendering.Text, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for CommonMark, Version=0.1.0.0, Culture=neutral, PublicKeyToken=001ef8810438905d
+ 0:       [cache hit ] Aardvark.Base.Fonts, Version=5.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] FuzzySharp, Version=1.0.4.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Dom.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Dom.Elm, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Adaptify.Core, Version=1.3.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Application.Slim.Vulkan, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Application.Slim, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Application, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Silk.NET.GLFW, Version=2.22.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Silk.NET.Core, Version=2.22.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Rendering.Vulkan, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Rendering.Vulkan.Wrapper, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] GLSLangSharp, Version=0.5.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardium.Shared, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Dom.Giraffe, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for Microsoft.AspNetCore.Http.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0:       [cache miss] Aardvark.Dom.Remote, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Silk.NET.DXGI, Version=2.22.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Silk.NET.Maths, Version=2.23.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Silk.NET.Direct3D11, Version=2.22.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Rendering.GL, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       Skipped loading native dependencies for OpenTK, Version=3.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4
+ 0:       [cache hit ] Aardvark.Assembler, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Giraffe, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Giraffe.ViewEngine, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] FSharp.SystemTextJson, Version=1.4.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache miss] Aardvark.Dom.Utilities, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       [cache hit ] Aardvark.FontProvider.Runtime, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+ 0:       installing pickler: Aardvark.Base.Picklers.AdaptivePicklers
+ 0:     Initializing CustomPicklerProvider ............................................... 0.243 s
+ 0:   Loading plugins ............................................................ [0.30x] 0.408 s
+ 0: Initializing Aardvark ........................................................ [0.99x] 0.472 s
+ 0: Initializing Aardium.Shared ..................................................................
+ 0:   Binary: /home/schorsch/.local/share/Aardium.Shared/x64/1.0.0/tools/Aardium.Shared
+ 0: Initializing Aardium.Shared .......................................................... 0.001 s
+ 0: [Vulkan] Loading global functions ............................................................
+ 0:   Loading native library 'vulkan.1'
+ 0:     Assembly: Aardvark.Rendering.Vulkan.Wrapper, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Looking up in cache
+ 0:     Searching library directories
+ 0:     Using dynamic linker
+ 0:       Failed to load: vulkan.1
+ 0:       Failed to load: libvulkan.1
+ 0:       Failed to load: vulkan.1.so
+ 0:       Failed to load: libvulkan.1.so
+ 0:     Using ldconfig ignoring version numbers
+ 0:       Building shared library location cache .................................................
+ 0:         Skipped loading native dependencies for System.Diagnostics.Process, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:         Skipped loading native dependencies for System.ComponentModel.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:         /usr/sbin/ldconfig -p
+ 0:           Skipped loading native dependencies for System.IO.Pipes, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 1: Skipped loading native dependencies for System.Net.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 2: Skipped loading native dependencies for System.Net.Sockets, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 1: Skipped loading native dependencies for System.Threading.ThreadPool, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 1: Skipped loading native dependencies for System.Diagnostics.Tracing, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:         /usr/sbin/ldconfig -p - success
+ 0:         Found 2933 libraries
+ 0:       Building shared library location cache ......................................... 0.028 s
+ 0:   Loading native library 'vulkan.1' - failed
+ 0:   Loading native library 'vulkan'
+ 0:     Assembly: Aardvark.Rendering.Vulkan.Wrapper, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Looking up in cache
+ 0:     Searching library directories
+ 0:     Using dynamic linker
+ 0:       Failed to load: vulkan
+ 0:       Failed to load: libvulkan
+ 0:       Failed to load: vulkan.so
+ 0:       Loaded: libvulkan.so
+ 0:   Loading native library 'vulkan' - success
+ 0: [Vulkan] Loading global functions .................................................... 0.040 s
+ 0: [Vulkan] enabled instance extension "VK_EXT_swapchain_colorspace"
+ 0: [Vulkan] enabled instance extension "VK_KHR_portability_enumeration"
+ 0: [Vulkan] enabled instance extension "VK_KHR_xcb_surface"
+ 0: [Vulkan] enabled instance extension "VK_KHR_xlib_surface"
+ 0: [Vulkan] enabled instance extension "VK_KHR_wayland_surface"
+ 0: [Vulkan] enabled instance extension "VK_KHR_surface"
+ 0: [Vulkan] enabled instance extension "VK_KHR_external_semaphore_capabilities"
+ 0: [Vulkan] enabled instance extension "VK_KHR_get_physical_device_properties2"
+ 0: [Vulkan] enabled instance extension "VK_KHR_external_memory_capabilities"
+ 0: [Vulkan] enabled instance extension "VK_KHR_external_fence_capabilities"
+ 0: [Vulkan] enabled instance extension "VK_EXT_headless_surface"
+ 0: [Vulkan] Loading instance functions .................................................. 0.005 s
+ 0: instance:
+ 0:   layers:
+ 0:     VK_LAYER_INTEL_nullhw (v1.1.73) ( )
+ 0:     VK_LAYER_KHRONOS_validation (v1.4.309) ( )
+ 0:     VK_LAYER_MESA_device_select (v1.4.303) ( )
+ 0:     VK_LAYER_MESA_overlay (v1.4.303) ( )
+ 0:     VK_LAYER_NV_optimus (v1.4.329) ( )
+ 0:     VK_LAYER_NV_present (v1.4.329) ( )
+ 0:     VK_LAYER_SUNSHINE_vsync (v1.3.0) ( )
+ 0:     VK_LAYER_VALVE_steam_fossilize_32 (v1.3.207) ( )
+ 0:     VK_LAYER_VALVE_steam_fossilize_64 (v1.3.207) ( )
+ 0:     VK_LAYER_VALVE_steam_overlay_32 (v1.3.207) ( )
+ 0:     VK_LAYER_VALVE_steam_overlay_64 (v1.3.207) ( )
+ 0:   extensions:
+ 0:     VK_EXT_acquire_drm_display (v0.0.1) ( )
+ 0:     VK_EXT_acquire_xlib_display (v0.0.1) ( )
+ 0:     VK_EXT_debug_report (v0.0.10) ( )
+ 0:     VK_EXT_debug_utils (v0.0.2) ( )
+ 0:     VK_EXT_direct_mode_display (v0.0.1) ( )
+ 0:     VK_EXT_display_surface_counter (v0.0.1) ( )
+ 0:     VK_EXT_headless_surface (v0.0.1) (X)
+ 0:     VK_EXT_surface_maintenance1 (v0.0.1) ( )
+ 0:     VK_EXT_swapchain_colorspace (v0.0.5) (X)
+ 0:     VK_KHR_device_group_creation (v0.0.1) ( )
+ 0:     VK_KHR_display (v0.0.23) ( )
+ 0:     VK_KHR_external_fence_capabilities (v0.0.1) (X)
+ 0:     VK_KHR_external_memory_capabilities (v0.0.1) (X)
+ 0:     VK_KHR_external_semaphore_capabilities (v0.0.1) (X)
+ 0:     VK_KHR_get_display_properties2 (v0.0.1) ( )
+ 0:     VK_KHR_get_physical_device_properties2 (v0.0.2) (X)
+ 0:     VK_KHR_get_surface_capabilities2 (v0.0.1) ( )
+ 0:     VK_KHR_portability_enumeration (v0.0.1) (X)
+ 0:     VK_KHR_surface (v0.0.25) (X)
+ 0:     VK_KHR_surface_protected_capabilities (v0.0.1) ( )
+ 0:     VK_KHR_wayland_surface (v0.0.6) (X)
+ 0:     VK_KHR_xcb_surface (v0.0.6) (X)
+ 0:     VK_KHR_xlib_surface (v0.0.6) (X)
+ 0:     VK_LUNARG_direct_driver_loading (v0.0.1) ( )
+ 0:     VK_NV_display_stereo (v0.0.1) ( )
+ 0:   devices:
+ 0:     0:
+ 0:       CHOSEN DEVICE
+ 0:       type:     DiscreteGpu
+ 0:       vendor:   NVIDIA
+ 0:       name:     NVIDIA GeForce RTX 5060
+ 0:       version:  1.4.329
+ 0:       driver:   595.284.320
+ 0:       extensions:
+ 0:         VK_AMD_buffer_marker (v0.0.1)
+ 0:         VK_EXT_4444_formats (v0.0.1)
+ 0:         VK_EXT_attachment_feedback_loop_dynamic_state (v0.0.1)
+ 0:         VK_EXT_attachment_feedback_loop_layout (v0.0.2)
+ 0:         VK_EXT_blend_operation_advanced (v0.0.2)
+ 0:         VK_EXT_border_color_swizzle (v0.0.1)
+ 0:         VK_EXT_buffer_device_address (v0.0.2)
+ 0:         VK_EXT_calibrated_timestamps (v0.0.2)
+ 0:         VK_EXT_color_write_enable (v0.0.1)
+ 0:         VK_EXT_conditional_rendering (v0.0.2)
+ 0:         VK_EXT_conservative_rasterization (v0.0.1)
+ 0:         VK_EXT_custom_border_color (v0.0.12)
+ 0:         VK_EXT_custom_resolve (v0.0.1)
+ 0:         VK_EXT_depth_bias_control (v0.0.1)
+ 0:         VK_EXT_depth_clamp_control (v0.0.1)
+ 0:         VK_EXT_depth_clamp_zero_one (v0.0.1)
+ 0:         VK_EXT_depth_clip_control (v0.0.1)
+ 0:         VK_EXT_depth_clip_enable (v0.0.1)
+ 0:         VK_EXT_depth_range_unrestricted (v0.0.1)
+ 0:         VK_EXT_descriptor_buffer (v0.0.1)
+ 0:         VK_EXT_descriptor_heap (v0.0.1)
+ 0:         VK_EXT_descriptor_indexing (v0.0.2)
+ 0:         VK_EXT_device_address_binding_report (v0.0.1)
+ 0:         VK_EXT_device_fault (v0.0.2)
+ 0:         VK_EXT_device_generated_commands (v0.0.1)
+ 0:         VK_EXT_discard_rectangles (v0.0.2)
+ 0:         VK_EXT_display_control (v0.0.1)
+ 0:         VK_EXT_dynamic_rendering_unused_attachments (v0.0.1)
+ 0:         VK_EXT_extended_dynamic_state (v0.0.1)
+ 0:         VK_EXT_extended_dynamic_state2 (v0.0.1)
+ 0:         VK_EXT_extended_dynamic_state3 (v0.0.2)
+ 0:         VK_EXT_external_memory_dma_buf (v0.0.1)
+ 0:         VK_EXT_external_memory_host (v0.0.1)
+ 0:         VK_EXT_fragment_shader_interlock (v0.0.1)
+ 0:         VK_EXT_global_priority (v0.0.2)
+ 0:         VK_EXT_global_priority_query (v0.0.1)
+ 0:         VK_EXT_graphics_pipeline_library (v0.0.1)
+ 0:         VK_EXT_hdr_metadata (v0.0.3)
+ 0:         VK_EXT_host_image_copy (v0.0.1)
+ 0:         VK_EXT_host_query_reset (v0.0.1)
+ 0:         VK_EXT_image_2d_view_of_3d (v0.0.1)
+ 0:         VK_EXT_image_drm_format_modifier (v0.0.2)
+ 0:         VK_EXT_image_robustness (v0.0.1)
+ 0:         VK_EXT_image_sliced_view_of_3d (v0.0.1)
+ 0:         VK_EXT_image_view_min_lod (v0.0.1)
+ 0:         VK_EXT_index_type_uint8 (v0.0.1)
+ 0:         VK_EXT_inline_uniform_block (v0.0.1)
+ 0:         VK_EXT_legacy_vertex_attributes (v0.0.1)
+ 0:         VK_EXT_line_rasterization (v0.0.1)
+ 0:         VK_EXT_load_store_op_none (v0.0.1)
+ 0:         VK_EXT_map_memory_placed (v0.0.1)
+ 0:         VK_EXT_memory_budget (v0.0.1)
+ 0:         VK_EXT_memory_decompression (v0.0.1)
+ 0:         VK_EXT_memory_priority (v0.0.1)
+ 0:         VK_EXT_mesh_shader (v0.0.1)
+ 0:         VK_EXT_multi_draw (v0.0.1)
+ 0:         VK_EXT_mutable_descriptor_type (v0.0.1)
+ 0:         VK_EXT_nested_command_buffer (v0.0.1)
+ 0:         VK_EXT_non_seamless_cube_map (v0.0.1)
+ 0:         VK_EXT_opacity_micromap (v0.0.2)
+ 0:         VK_EXT_pageable_device_local_memory (v0.0.1)
+ 0:         VK_EXT_pci_bus_info (v0.0.2)
+ 0:         VK_EXT_physical_device_drm (v0.0.1)
+ 0:         VK_EXT_pipeline_creation_cache_control (v0.0.3)
+ 0:         VK_EXT_pipeline_creation_feedback (v0.0.1)
+ 0:         VK_EXT_pipeline_library_group_handles (v0.0.1)
+ 0:         VK_EXT_pipeline_robustness (v0.0.1)
+ 0:         VK_EXT_post_depth_coverage (v0.0.1)
+ 0:         VK_EXT_present_mode_fifo_latest_ready (v0.0.1)
+ 0:         VK_EXT_present_timing (v0.0.3)
+ 0:         VK_EXT_primitive_topology_list_restart (v0.0.1)
+ 0:         VK_EXT_primitives_generated_query (v0.0.1)
+ 0:         VK_EXT_private_data (v0.0.1)
+ 0:         VK_EXT_provoking_vertex (v0.0.1)
+ 0:         VK_EXT_queue_family_foreign (v0.0.1)
+ 0:         VK_EXT_ray_tracing_invocation_reorder (v0.0.1)
+ 0:         VK_EXT_robustness2 (v0.0.1)
+ 0:         VK_EXT_sample_locations (v0.0.1)
+ 0:         VK_EXT_sampler_filter_minmax (v0.0.2)
+ 0:         VK_EXT_scalar_block_layout (v0.0.1)
+ 0:         VK_EXT_separate_stencil_usage (v0.0.1)
+ 0:         VK_EXT_shader_64bit_indexing (v0.0.1)
+ 0:         VK_EXT_shader_atomic_float (v0.0.1)
+ 0:         VK_EXT_shader_demote_to_helper_invocation (v0.0.1)
+ 0:         VK_EXT_shader_float8 (v0.0.1)
+ 0:         VK_EXT_shader_image_atomic_int64 (v0.0.1)
+ 0:         VK_EXT_shader_module_identifier (v0.0.1)
+ 0:         VK_EXT_shader_object (v0.0.1)
+ 0:         VK_EXT_shader_replicated_composites (v0.0.1)
+ 0:         VK_EXT_shader_subgroup_ballot (v0.0.1)
+ 0:         VK_EXT_shader_subgroup_vote (v0.0.1)
+ 0:         VK_EXT_shader_uniform_buffer_unsized_array (v0.0.1)
+ 0:         VK_EXT_shader_viewport_index_layer (v0.0.1)
+ 0:         VK_EXT_subgroup_size_control (v0.0.2)
+ 0:         VK_EXT_swapchain_maintenance1 (v0.0.1)
+ 0:         VK_EXT_texel_buffer_alignment (v0.0.1)
+ 0:         VK_EXT_tooling_info (v0.0.1)
+ 0:         VK_EXT_transform_feedback (v0.0.1)
+ 0:         VK_EXT_vertex_attribute_divisor (v0.0.3)
+ 0:         VK_EXT_vertex_attribute_robustness (v0.0.1)
+ 0:         VK_EXT_vertex_input_dynamic_state (v0.0.2)
+ 0:         VK_EXT_ycbcr_2plane_444_formats (v0.0.1)
+ 0:         VK_EXT_ycbcr_image_arrays (v0.0.1)
+ 0:         VK_EXT_zero_initialize_device_memory (v0.0.1)
+ 0:         VK_GOOGLE_hlsl_functionality1 (v0.0.1)
+ 0:         VK_GOOGLE_user_type (v0.0.1)
+ 0:         VK_KHR_16bit_storage (v0.0.1)
+ 0:         VK_KHR_8bit_storage (v0.0.1)
+ 0:         VK_KHR_acceleration_structure (v0.0.13)
+ 0:         VK_KHR_bind_memory2 (v0.0.1)
+ 0:         VK_KHR_buffer_device_address (v0.0.1)
+ 0:         VK_KHR_calibrated_timestamps (v0.0.1)
+ 0:         VK_KHR_compute_shader_derivatives (v0.0.1)
+ 0:         VK_KHR_cooperative_matrix (v0.0.2)
+ 0:         VK_KHR_copy_commands2 (v0.0.1)
+ 0:         VK_KHR_copy_memory_indirect (v0.0.1)
+ 0:         VK_KHR_create_renderpass2 (v0.0.1)
+ 0:         VK_KHR_dedicated_allocation (v0.0.3)
+ 0:         VK_KHR_deferred_host_operations (v0.0.4)
+ 0:         VK_KHR_depth_clamp_zero_one (v0.0.1)
+ 0:         VK_KHR_depth_stencil_resolve (v0.0.1)
+ 0:         VK_KHR_descriptor_update_template (v0.0.1)
+ 0:         VK_KHR_device_group (v0.0.4)
+ 0:         VK_KHR_draw_indirect_count (v0.0.1)
+ 0:         VK_KHR_driver_properties (v0.0.1)
+ 0:         VK_KHR_dynamic_rendering (v0.0.1)
+ 0:         VK_KHR_dynamic_rendering_local_read (v0.0.1)
+ 0:         VK_KHR_external_fence (v0.0.1)
+ 0:         VK_KHR_external_fence_fd (v0.0.1)
+ 0:         VK_KHR_external_memory (v0.0.1)
+ 0:         VK_KHR_external_memory_fd (v0.0.1)
+ 0:         VK_KHR_external_semaphore (v0.0.1)
+ 0:         VK_KHR_external_semaphore_fd (v0.0.1)
+ 0:         VK_KHR_format_feature_flags2 (v0.0.2)
+ 0:         VK_KHR_fragment_shader_barycentric (v0.0.1)
+ 0:         VK_KHR_fragment_shading_rate (v0.0.2)
+ 0:         VK_KHR_get_memory_requirements2 (v0.0.1)
+ 0:         VK_KHR_global_priority (v0.0.1)
+ 0:         VK_KHR_image_format_list (v0.0.1)
+ 0:         VK_KHR_imageless_framebuffer (v0.0.1)
+ 0:         VK_KHR_incremental_present (v0.0.2)
+ 0:         VK_KHR_index_type_uint8 (v0.0.1)
+ 0:         VK_KHR_line_rasterization (v0.0.1)
+ 0:         VK_KHR_load_store_op_none (v0.0.1)
+ 0:         VK_KHR_maintenance1 (v0.0.2)
+ 0:         VK_KHR_maintenance10 (v0.0.1)
+ 0:         VK_KHR_maintenance2 (v0.0.1)
+ 0:         VK_KHR_maintenance3 (v0.0.1)
+ 0:         VK_KHR_maintenance4 (v0.0.2)
+ 0:         VK_KHR_maintenance5 (v0.0.1)
+ 0:         VK_KHR_maintenance6 (v0.0.1)
+ 0:         VK_KHR_maintenance7 (v0.0.1)
+ 0:         VK_KHR_maintenance8 (v0.0.1)
+ 0:         VK_KHR_maintenance9 (v0.0.1)
+ 0:         VK_KHR_map_memory2 (v0.0.1)
+ 0:         VK_KHR_multiview (v0.0.1)
+ 0:         VK_KHR_pipeline_binary (v0.0.1)
+ 0:         VK_KHR_pipeline_executable_properties (v0.0.1)
+ 0:         VK_KHR_pipeline_library (v0.0.1)
+ 0:         VK_KHR_present_id (v0.0.1)
+ 0:         VK_KHR_present_id2 (v0.0.1)
+ 0:         VK_KHR_present_mode_fifo_latest_ready (v0.0.1)
+ 0:         VK_KHR_present_wait (v0.0.1)
+ 0:         VK_KHR_present_wait2 (v0.0.1)
+ 0:         VK_KHR_push_descriptor (v0.0.2)
+ 0:         VK_KHR_ray_query (v0.0.1)
+ 0:         VK_KHR_ray_tracing_maintenance1 (v0.0.1)
+ 0:         VK_KHR_ray_tracing_pipeline (v0.0.1)
+ 0:         VK_KHR_ray_tracing_position_fetch (v0.0.1)
+ 0:         VK_KHR_relaxed_block_layout (v0.0.1)
+ 0:         VK_KHR_robustness2 (v0.0.1)
+ 0:         VK_KHR_sampler_mirror_clamp_to_edge (v0.0.3)
+ 0:         VK_KHR_sampler_ycbcr_conversion (v0.0.14)
+ 0:         VK_KHR_separate_depth_stencil_layouts (v0.0.1)
+ 0:         VK_KHR_shader_atomic_int64 (v0.0.1)
+ 0:         VK_KHR_shader_bfloat16 (v0.0.1)
+ 0:         VK_KHR_shader_clock (v0.0.1)
+ 0:         VK_KHR_shader_draw_parameters (v0.0.1)
+ 0:         VK_KHR_shader_expect_assume (v0.0.1)
+ 0:         VK_KHR_shader_float16_int8 (v0.0.1)
+ 0:         VK_KHR_shader_float_controls (v0.0.4)
+ 0:         VK_KHR_shader_float_controls2 (v0.0.1)
+ 0:         VK_KHR_shader_fma (v0.0.1)
+ 0:         VK_KHR_shader_integer_dot_product (v0.0.1)
+ 0:         VK_KHR_shader_maximal_reconvergence (v0.0.1)
+ 0:         VK_KHR_shader_non_semantic_info (v0.0.1)
+ 0:         VK_KHR_shader_quad_control (v0.0.1)
+ 0:         VK_KHR_shader_relaxed_extended_instruction (v0.0.1)
+ 0:         VK_KHR_shader_subgroup_extended_types (v0.0.1)
+ 0:         VK_KHR_shader_subgroup_rotate (v0.0.2)
+ 0:         VK_KHR_shader_subgroup_uniform_control_flow (v0.0.1)
+ 0:         VK_KHR_shader_terminate_invocation (v0.0.1)
+ 0:         VK_KHR_shader_untyped_pointers (v0.0.1)
+ 0:         VK_KHR_shared_presentable_image (v0.0.1)
+ 0:         VK_KHR_spirv_1_4 (v0.0.1)
+ 0:         VK_KHR_storage_buffer_storage_class (v0.0.1)
+ 0:         VK_KHR_swapchain (v0.0.70)
+ 0:         VK_KHR_swapchain_maintenance1 (v0.0.1)
+ 0:         VK_KHR_swapchain_mutable_format (v0.0.1)
+ 0:         VK_KHR_synchronization2 (v0.0.1)
+ 0:         VK_KHR_timeline_semaphore (v0.0.2)
+ 0:         VK_KHR_unified_image_layouts (v0.0.1)
+ 0:         VK_KHR_uniform_buffer_standard_layout (v0.0.1)
+ 0:         VK_KHR_variable_pointers (v0.0.1)
+ 0:         VK_KHR_vertex_attribute_divisor (v0.0.1)
+ 0:         VK_KHR_video_decode_av1 (v0.0.1)
+ 0:         VK_KHR_video_decode_h264 (v0.0.9)
+ 0:         VK_KHR_video_decode_h265 (v0.0.8)
+ 0:         VK_KHR_video_decode_queue (v0.0.8)
+ 0:         VK_KHR_video_decode_vp9 (v0.0.1)
+ 0:         VK_KHR_video_encode_av1 (v0.0.1)
+ 0:         VK_KHR_video_encode_h264 (v0.0.14)
+ 0:         VK_KHR_video_encode_h265 (v0.0.14)
+ 0:         VK_KHR_video_encode_intra_refresh (v0.0.1)
+ 0:         VK_KHR_video_encode_quantization_map (v0.0.2)
+ 0:         VK_KHR_video_encode_queue (v0.0.12)
+ 0:         VK_KHR_video_maintenance1 (v0.0.1)
+ 0:         VK_KHR_video_maintenance2 (v0.0.1)
+ 0:         VK_KHR_video_queue (v0.0.8)
+ 0:         VK_KHR_vulkan_memory_model (v0.0.3)
+ 0:         VK_KHR_workgroup_memory_explicit_layout (v0.0.1)
+ 0:         VK_KHR_zero_initialize_workgroup_memory (v0.0.1)
+ 0:         VK_NVX_binary_import (v0.0.2)
+ 0:         VK_NVX_image_view_handle (v0.0.4)
+ 0:         VK_NVX_multiview_per_view_attributes (v0.0.1)
+ 0:         VK_NV_clip_space_w_scaling (v0.0.1)
+ 0:         VK_NV_cluster_acceleration_structure (v0.0.4)
+ 0:         VK_NV_compute_occupancy_priority (v0.0.1)
+ 0:         VK_NV_compute_shader_derivatives (v0.0.1)
+ 0:         VK_NV_cooperative_matrix (v0.0.1)
+ 0:         VK_NV_cooperative_matrix2 (v0.0.1)
+ 0:         VK_NV_cooperative_vector (v0.0.4)
+ 0:         VK_NV_copy_memory_indirect (v0.0.1)
+ 0:         VK_NV_corner_sampled_image (v0.0.2)
+ 0:         VK_NV_coverage_reduction_mode (v0.0.1)
+ 0:         VK_NV_cuda_kernel_launch (v0.0.2)
+ 0:         VK_NV_dedicated_allocation (v0.0.1)
+ 0:         VK_NV_dedicated_allocation_image_aliasing (v0.0.1)
+ 0:         VK_NV_descriptor_pool_overallocation (v0.0.1)
+ 0:         VK_NV_device_diagnostic_checkpoints (v0.0.2)
+ 0:         VK_NV_device_diagnostics_config (v0.0.2)
+ 0:         VK_NV_device_generated_commands (v0.0.3)
+ 0:         VK_NV_device_generated_commands_compute (v0.0.2)
+ 0:         VK_NV_disk_cache_utils (v0.0.1)
+ 0:         VK_NV_extended_sparse_address_space (v0.0.1)
+ 0:         VK_NV_fill_rectangle (v0.0.1)
+ 0:         VK_NV_fragment_coverage_to_color (v0.0.1)
+ 0:         VK_NV_fragment_shader_barycentric (v0.0.1)
+ 0:         VK_NV_fragment_shading_rate_enums (v0.0.1)
+ 0:         VK_NV_framebuffer_mixed_samples (v0.0.1)
+ 0:         VK_NV_geometry_shader_passthrough (v0.0.1)
+ 0:         VK_NV_inherited_viewport_scissor (v0.0.1)
+ 0:         VK_NV_internal_nvpresent (v0.0.1)
+ 0:         VK_NV_linear_color_attachment (v0.0.1)
+ 0:         VK_NV_low_latency (v0.0.1)
+ 0:         VK_NV_low_latency2 (v0.0.2)
+ 0:         VK_NV_memory_decompression (v0.0.1)
+ 0:         VK_NV_mesh_shader (v0.0.1)
+ 0:         VK_NV_optical_flow (v0.0.1)
+ 0:         VK_NV_partitioned_acceleration_structure (v0.0.1)
+ 0:         VK_NV_present_metering (v0.0.1)
+ 0:         VK_NV_raw_access_chains (v0.0.1)
+ 0:         VK_NV_ray_tracing (v0.0.3)
+ 0:         VK_NV_ray_tracing_invocation_reorder (v0.0.1)
+ 0:         VK_NV_ray_tracing_linear_swept_spheres (v0.0.1)
+ 0:         VK_NV_ray_tracing_motion_blur (v0.0.1)
+ 0:         VK_NV_representative_fragment_test (v0.0.2)
+ 0:         VK_NV_sample_mask_override_coverage (v0.0.1)
+ 0:         VK_NV_scissor_exclusive (v0.0.2)
+ 0:         VK_NV_shader_atomic_float16_vector (v0.0.1)
+ 0:         VK_NV_shader_image_footprint (v0.0.2)
+ 0:         VK_NV_shader_sm_builtins (v0.0.1)
+ 0:         VK_NV_shader_subgroup_partitioned (v0.0.1)
+ 0:         VK_NV_shading_rate_image (v0.0.3)
+ 0:         VK_NV_viewport_array2 (v0.0.1)
+ 0:         VK_NV_viewport_swizzle (v0.0.1)
+ 0:       features: 
+ 0:         memory:
+ 0:           robust buffer access:   true
+ 0:           sparse binding:         true
+ 0:           sparse buffers:         true
+ 0:           sparse 2D images:       true
+ 0:           sparse 2D images (2x):  true
+ 0:           sparse 2D images (4x):  true
+ 0:           sparse 2D images (8x):  true
+ 0:           sparse 2D images (16x): true
+ 0:           sparse 3D images:       true
+ 0:           sparse aliased data:    true
+ 0:           protected memory:       false
+ 0:           memory priority:        true
+ 0:           buffer device address: 
+ 0:             supported:          true
+ 0:             capture & replay:   true
+ 0:             multidevice:        true
+ 0:         descriptors:
+ 0:           update after bind: 
+ 0:             uniform buffers:         true
+ 0:             sampled images:          true
+ 0:             storage images:          true
+ 0:             storage buffers:         true
+ 0:             uniform texel buffers:   true
+ 0:             storage texel buffers:   true
+ 0:             acceleration structures: true
+ 0:           update unused while pending: true
+ 0:           partially bound:             true
+ 0:           variable count:              true
+ 0:           runtime array:               true
+ 0:           mutable comparison samplers: true
+ 0:         images:
+ 0:           cube arrays:                        true
+ 0:           multisampled 2D arrays:             true
+ 0:           image view format reinterpretation: true
+ 0:           image view format swizzle:          true
+ 0:           image view 2D on 3D:                true
+ 0:           ETC2 compression:                   false
+ 0:           ASTC LDR compression:               false
+ 0:           BC compression:                     true
+ 0:         samplers: 
+ 0:           anisotropy:               true
+ 0:           ycbcr:                    true
+ 0:           mipmap LOD bias:          true
+ 0:           custom border colors:
+ 0:             supported:              true
+ 0:             without format:         true
+ 0:         shaders:
+ 0:           geometry:                           true
+ 0:           tessellation: 
+ 0:             supported:                        true
+ 0:             isolines:                         true
+ 0:             points:                           true
+ 0:           geometry / tessellation point size: true
+ 0:           vertex stores / atomics:            true
+ 0:           fragment stores / atomics:          true
+ 0:           image gather:                 true
+ 0:           storage images: 
+ 0:             extended formats:           true
+ 0:             multisampled:               true
+ 0:             read without format:        true
+ 0:             write without format:       true
+ 0:           dynamic indexing: 
+ 0:             uniform bufferss:           true
+ 0:             sampled images:             true
+ 0:             storage buffers:            true
+ 0:             storage images:             true
+ 0:             input attachments:          true
+ 0:             uniform texel buffers:      true
+ 0:             storage texel buffers:      true
+ 0:           non-uniform indexing: 
+ 0:             uniform buffers:            true
+ 0:             sampled images:             true
+ 0:             storage buffers:            true
+ 0:             storage images:             true
+ 0:             input attachments:          true
+ 0:             uniform texel buffers:      true
+ 0:             storage texel buffers:      true
+ 0:           8-bit members: 
+ 0:             storage buffers:            true
+ 0:             uniform / storage buffers:  true
+ 0:             push constants:             true
+ 0:           16-bit members: 
+ 0:             storage buffers:            true
+ 0:             uniform / storage buffers:  true
+ 0:             push constants:             true
+ 0:             input / output:             false
+ 0:           clip distance:                true
+ 0:           cull distance:                true
+ 0:           special types: 
+ 0:             float16:                    true
+ 0:             float64:                    true
+ 0:             int8:                       true
+ 0:             int16:                      true
+ 0:             int64:                      true
+ 0:           resources: 
+ 0:             residency:                  true
+ 0:             min lod:                    true
+ 0:           variable pointers:                   true
+ 0:           variable pointers (storage buffer):  true
+ 0:           draw parameters:                     true
+ 0:           sample rate interpolation functions: true
+ 0:           fragment shader pixel interlock:     true
+ 0:         queries:
+ 0:           precise occlusion:   true
+ 0:           pipeline statistics: true
+ 0:           inherited queries:   true
+ 0:         synchronization:
+ 0:           events:              true
+ 0:         graphics pipeline:
+ 0:           depth:
+ 0:             clamping:      true
+ 0:             bias clamping: true
+ 0:             bounds test:   true
+ 0:           stencil:
+ 0:             separate mask reference values: true
+ 0:           blending:
+ 0:             per-attachment:   true
+ 0:             dual-source:      true
+ 0:             logic operations: true
+ 0:             constant alpha:   true
+ 0:           drawing:
+ 0:             full 32-bit indices:                   true
+ 0:             multi draw indirect:                   true
+ 0:             draw indirect first instance:          true
+ 0:             triangle fans:                         true
+ 0:             vertex attribute access beyond stride: true
+ 0:           multiview: 
+ 0:             multiple viewports:             true
+ 0:           rasterizer:
+ 0:             wide lines:                true
+ 0:             large points:              true
+ 0:             non-solid fill mode:       true
+ 0:             point fill mode:           true
+ 0:             sample rate shading:       true
+ 0:             alpha to one:              true
+ 0:             variable multisample rate: true
+ 0:         raytracing:
+ 0:           pipeline:                           true
+ 0:           position fetch:                     true
+ 0:           invocation reorder:                 true
+ 0:           validation:                         false
+ 0:           ray queries:                        true
+ 0:           shader group handles: 
+ 0:             capture & replay:                 true
+ 0:             capture & replay (mixed):         false
+ 0:           trace rays indirect:                true
+ 0:           ray traversal primitive culling:    true
+ 0:           acceleration structures: 
+ 0:             supported:                    true
+ 0:             capture & replay:             true
+ 0:             indirect build:               false
+ 0:             host commands:                false
+ 0:           micromaps:
+ 0:             supported:                    true
+ 0:             capture & replay:             false
+ 0:             host commands:                false
+ 0:         debugging:
+ 0:           device fault:                       true
+ 0:           vendor binary dump:                 false
+ 0:       limits:
+ 0:         image:
+ 0:           max 1D size:   32768
+ 0:           max 2D size:   [32768, 32768]
+ 0:           max 3D size:   [16384, 16384, 16384]
+ 0:           max Cube size: [32768, 32768]
+ 0:           max layers:    2048
+ 0:         sampled image:
+ 0:           color samples:      [1; 2; 4; 8]
+ 0:           integer samples:    [1; 2; 4; 8]
+ 0:           depth samples:      [1; 2; 4; 8]
+ 0:           stencil samples:    [1; 2; 4; 8; 16]
+ 0:           storage samples:    [1; 2; 4; 8]
+ 0:         sampler:
+ 0:           max allocations:            4000
+ 0:           max lod bias:               15.0
+ 0:           max anisotropy:             16.0
+ 0:           max custom border samplers: 4000
+ 0:         uniform:
+ 0:           max buffer range:   64.0KiB
+ 0:           max storage range:  4.000GiB
+ 0:           max texel elements: 134217728
+ 0:           max push constants: 256B
+ 0:         memory:
+ 0:           max allocations:            4294967295
+ 0:           max allocation size:        -1B
+ 0:           sparse size:                1.000TiB
+ 0:           buffer/image distance:      1024
+ 0:           map alignment:              64
+ 0:           texel offset align:         16
+ 0:           storage offset align:       16
+ 0:           buffer/image offset align:  1
+ 0:           buffer/image row align:     1
+ 0:           non coherent atom size:     64
+ 0:         descriptors:
+ 0:           max per set descriptors: 4294967295
+ 0:           max bound sets:          32
+ 0:           max samplers:            1048576
+ 0:           max uniform buffers:     1048576
+ 0:           max dyn-uniform buffers: 15
+ 0:           max storage buffers:     1048576
+ 0:           max dyn-storage buffers: 16
+ 0:           max sampled images:      1048576
+ 0:           max storage images:      1048576
+ 0:           max input attachments:   1048576
+ 0:           per stage:
+ 0:             max samplers:          1048576
+ 0:             max uniform buffers:   1048576
+ 0:             max storage buffers:   1048576
+ 0:             max sampled images:    1048576
+ 0:             max storage images:    1048576
+ 0:             max input attachments: 1048576
+ 0:             max resources:         4294967295
+ 0:         vertex shader:
+ 0:           max in attributes:       32
+ 0:           max in bindings:         32
+ 0:           max in offset:           2047
+ 0:           max in stride:           2048
+ 0:           min in stride alignment: 0
+ 0:           max out components:      128
+ 0:         tessellation shader:
+ 0:           max gen level:  64
+ 0:           max patch size: 32
+ 0:           control:
+ 0:             max vertex in components:  128
+ 0:             max vertex out components: 128
+ 0:             max patch out components:  120
+ 0:             max total out components:  4216
+ 0:           evaluation:
+ 0:             max in components:  128
+ 0:             max out components: 128
+ 0:         geometry shader:
+ 0:           max invocations:    32
+ 0:           max out vertices:   1024
+ 0:           max in components:  128
+ 0:           max out components:
+ 0:             per vertex: 128
+ 0:             total:      1024
+ 0:         fragment shader:
+ 0:           max in components:     128
+ 0:           max out attachments:   8
+ 0:           max src1 attachments:  1
+ 0:           max out resources:     4294967295
+ 0:           max sample masks:      1
+ 0:         shader sampling:
+ 0:           max clip distances:      8
+ 0:           max cull distances:      8
+ 0:           max clip/cull distances: 8
+ 0:           subpixel offset bits:    4
+ 0:           texel offset:            [-8 .. 7]
+ 0:           texel gather offset:     [-32 .. 31]
+ 0:           interpolation offset:    [-0.500000 .. 0.437500]
+ 0:         compute shader:
+ 0:           shared memory:         48.0KiB
+ 0:           max group counts:      [2147483647, 65535, 65535]
+ 0:           max group invocations: 1024
+ 0:           max group size:        [1024, 1024, 64]
+ 0:         precision:
+ 0:           subpixel bits:    8
+ 0:           subtexel bits:    8
+ 0:           mipmap bits:      8
+ 0:           timestamps:       true
+ 0:           timestamp period: 1.000ns
+ 0:           queue priorities: 2
+ 0:         draw:
+ 0:           max index value:    4294967295
+ 0:           max indirect count: 4294967295
+ 0:         framebuffer:
+ 0:           max size:   [32768, 32768]
+ 0:           max layers: 2048
+ 0:           max colors: 8
+ 0:           samples: 
+ 0:             color:   set [1; 2; 4; 8]
+ 0:             depth:   set [1; 2; 4; 8]
+ 0:             stencil: set [1; 2; 4; 8; 16]
+ 0:             empty:   set [1; 2; 4; 8; 16]
+ 0:           viewports:
+ 0:             max count:      16
+ 0:             max size:       [32768, 32768]
+ 0:             bounds:         [[-65536, -65536], [65536, 65536]]
+ 0:             subpixel bits:  8
+ 0:         rasterizer:
+ 0:           point size:       [1.000000 .. 0.062500 .. 2047.937500]
+ 0:           line width:       [1.000000 .. 0.062500 .. 64.000000]
+ 0:           strict lines:     true
+ 0:           standard samples: true
+ 0:         raytracing:
+ 0:           max ray recursion depth:      31
+ 0:           max ray dispatch invocations: 1073741824
+ 0:           max ray hit attribute size:   32
+ 0:           invocation reorder mode:      1
+ 0:           acceleration structures: 
+ 0:             max geometry count:                            16777215
+ 0:             max instance count:                            16777215
+ 0:             max primitive count:                           536870911
+ 0:             max descriptors per stage:                     1048576
+ 0:             max descriptors per stage (update after bind): 1048576
+ 0:             max descriptors:                               1048576
+ 0:             max descriptors (updater atfer bind):          1048576
+ 0:             min scratch offset alignment:                  128
+ 0:           micromaps:
+ 0:             max subdivision level (opacity 2-state):       12
+ 0:             max subdivision level (opacity 4-state):       12
+ 0:           shader binding table: 
+ 0:             header size:     32
+ 0:             max stride:      4096
+ 0:             base alignment:  64
+ 0:             entry alignment: 32
+ 0:             replay size:     64
+ 0:       heaps:
+ 0:         0: 7.960GiB (device local)
+ 0:         1: 47.014GiB
+ 0:         2: 246.00MiB (device local)
+ 0:       memories:
+ 0:         1: DeviceLocal (heap: 0)
+ 0:         2: HostVisible, HostCoherent (heap: 1)
+ 0:         3: HostVisible, HostCoherent, HostCached (heap: 1)
+ 0:         4: DeviceLocal, HostVisible, HostCoherent (heap: 2)
+ 0:       queues:
+ 0:         0:
+ 0:           capabilities:   compute, graphics, transfer, sparsebinding
+ 0:           count:          16
+ 0:           timestamp bits: 64
+ 0:           Skipped loading native dependencies for System.ObjectModel, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:           img transfer:   [1, 1, 1]
+ 0:         1:
+ 0:           capabilities:   transfer, sparsebinding
+ 0:           count:          2
+ 0:           timestamp bits: 64
+ 0:           img transfer:   [1, 1, 1]
+ 0:         2:
+ 0:           capabilities:   compute, transfer, sparsebinding
+ 0:           count:          8
+ 0:           timestamp bits: 64
+ 0:           img transfer:   [1, 1, 1]
+ 0:         3:
+ 0:           capabilities:   transfer, sparsebinding
+ 0:           count:          1
+ 0:           timestamp bits: 32
+ 0:           img transfer:   [1, 1, 1]
+ 0:         4:
+ 0:           capabilities:   transfer, sparsebinding
+ 0:           count:          1
+ 0:           timestamp bits: 32
+ 0:           img transfer:   [1, 1, 1]
+ 0:         5:
+ 0:           capabilities:   transfer, sparsebinding
+ 0:           count:          1
+ 0:           timestamp bits: 64
+ 0:           img transfer:   [1, 1, 1]
+ 0:   device: NVIDIA GeForce RTX 5060
+ 0: [Vulkan] enabled device extension "VK_KHR_swapchain"
+ 0: [Vulkan] enabled device extension "VK_NV_ray_tracing_invocation_reorder"
+ 0: [Vulkan] enabled device extension "VK_KHR_synchronization2"
+ 0: [Vulkan] enabled device extension "VK_KHR_shader_float16_int8"
+ 0: [Vulkan] enabled device extension "VK_KHR_spirv_1_4"
+ 0: [Vulkan] enabled device extension "VK_KHR_shader_float_controls"
+ 0: [Vulkan] enabled device extension "VK_KHR_ray_tracing_position_fetch"
+ 0: [Vulkan] enabled device extension "VK_KHR_ray_tracing_pipeline"
+ 0: [Vulkan] enabled device extension "VK_KHR_dynamic_rendering"
+ 0: [Vulkan] enabled device extension "VK_KHR_maintenance4"
+ 0: [Vulkan] enabled device extension "VK_KHR_maintenance5"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_semaphore_fd"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_memory_fd"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_semaphore"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_fence_fd"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_memory"
+ 0: [Vulkan] enabled device extension "VK_KHR_external_fence"
+ 0: [Vulkan] enabled device extension "VK_KHR_create_renderpass2"
+ 0: [Vulkan] enabled device extension "VK_KHR_deferred_host_operations"
+ 0: [Vulkan] enabled device extension "VK_KHR_depth_stencil_resolve"
+ 0: [Vulkan] enabled device extension "VK_KHR_acceleration_structure"
+ 0: [Vulkan] enabled device extension "VK_KHR_buffer_device_address"
+ 0: [Vulkan] enabled device extension "VK_KHR_8bit_storage"
+ 0: [Vulkan] enabled device extension "VK_EXT_fragment_shader_interlock"
+ 0: [Vulkan] enabled device extension "VK_EXT_shader_subgroup_ballot"
+ 0: [Vulkan] enabled device extension "VK_EXT_shader_subgroup_vote"
+ 0: [Vulkan] enabled device extension "VK_EXT_memory_budget"
+ 0: [Vulkan] enabled device extension "VK_EXT_opacity_micromap"
+ 0: [Vulkan] enabled device extension "VK_EXT_memory_priority"
+ 0: [Vulkan] enabled device extension "VK_EXT_custom_border_color"
+ 0: [Vulkan] enabled device extension "VK_EXT_external_memory_dma_buf"
+ 0: [Vulkan] enabled device extension "VK_EXT_external_memory_host"
+ 0: [Vulkan] enabled device extension "VK_EXT_descriptor_indexing"
+ 0: [Vulkan] enabled device extension "VK_EXT_device_fault"
+ 0: [Vulkan] enabled device extension "VK_EXT_conservative_rasterization"
+ 0: [Vulkan] Loading device functions .................................................... 0.034 s
+ 0: Resolving native library 'vkvm'
+ 0:   Loading native library 'vkvm'
+ 0:     Assembly: Aardvark.Rendering.Vulkan.Wrapper, Version=5.7.0.0, Culture=neutral, PublicKeyToken=null
+ 0:     Looking up in cache
+ 0:     Searching library directories
+ 0:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Rendering.Vulkan/f842bb1a-8f0e-764e-32db-b14522b5da4b/linux/AMD64/libvkvm.so
+ 0:   Loading native library 'vkvm' - success
+ 0: [Vulkan] Deserializing pipeline cache '/home/schorsch/.local/share/Aardvark/Cache/Pipelines/DemoCubes_a19e7b66-9a0c-6a68-4dea-a2222f9bea87.pipeline_cache' 
+ 0:   Skipped loading native dependencies for System.Reflection, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:   Skipped loading native dependencies for System.Runtime.Numerics, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:   Skipped loading native dependencies for System.Globalization, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:   Skipped loading native dependencies for System.Runtime.Serialization.Formatters, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0: [Vulkan] Deserializing pipeline cache '/home/schorsch/.local/share/Aardvark/Cache/Pipelines/DemoCubes_a19e7b66-9a0c-6a68-4dea-a2222f9bea87.pipeline_cache' - success 0.114 s
+ 0: Skipped loading native dependencies for System.Collections.NonGeneric, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0: Skipped loading native dependencies for Microsoft.DotNet.PlatformAbstractions, Version=3.1.6.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.DependencyModel, Version=10.0.0.9, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Hosting.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Hosting, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Hosting.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.DependencyInjection.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.DependencyInjection, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for System.ComponentModel, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Hosting, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration.EnvironmentVariables, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Primitives, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.Kestrel.Core, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.Kestrel, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.Kestrel.Transport.Quic, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for System.Net.Quic, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0: Resolving native library 'libmsquic.so.2'
+ 0:   Loading native library 'libmsquic.so.2'
+ 0:     Assembly: System.Net.Quic, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Looking up in cache
+ 0:     Searching library directories
+ 0:     Using dynamic linker
+ 0:       Failed to load: liblibmsquic.so.2
+ 0:       Failed to load: libmsquic.so.2.so
+ 0:       Failed to load: liblibmsquic.so.2.so
+ 0:     Using ldconfig ignoring version numbers
+ 0:   Loading native library 'libmsquic.so.2' - failed
+ 0: Resolving native library 'libmsquic.so'
+ 0:   Loading native library 'libmsquic.so'
+ 0:     Assembly: System.Net.Quic, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0:     Looking up in cache
+ 0:     Searching library directories
+ 0:     Using dynamic linker
+ 0:       Failed to load: liblibmsquic.so
+ 0:     Using ldconfig ignoring version numbers
+ 0:   Loading native library 'libmsquic.so' - failed
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.IIS, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.IISIntegration, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.FileProviders.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.FileProviders.Physical, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for System.Diagnostics.DiagnosticSource, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration.FileExtensions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration.Binder, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Configuration.Json, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for System.IO.FileSystem.Watcher, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Options, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Diagnostics, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Diagnostics.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging.Configuration, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Options.ConfigurationExtensions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging.Console, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging.Debug, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Logging.EventSource, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.Features, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Http, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Connections.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Hosting.Server.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.HostFiltering, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.HttpOverrides, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Routing, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.Routing.Abstractions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Extensions.ObjectPool, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.IO.RecyclableMemoryStream, Version=3.0.1.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35
+ 0: Skipped loading native dependencies for System.IO.Pipelines, Version=10.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0: Skipped loading native dependencies for Microsoft.AspNetCore.WebSockets, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for Microsoft.Net.Http.Headers, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 0: Skipped loading native dependencies for System.Runtime.Intrinsics, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 0: Skipped loading native dependencies for System.Collections.Specialized, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 3: Skipped loading native dependencies for Microsoft.AspNetCore.Http.Features, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 3: Skipped loading native dependencies for System.Numerics.Vectors, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 3: Skipped loading native dependencies for System.Security.Claims, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 3: Skipped loading native dependencies for Microsoft.AspNetCore.WebUtilities, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 3: Resolving native library 'turbojpeg'
+ 3:   Loading native library 'turbojpeg'
+ 3:     Assembly: Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 3:     Looking up in cache
+ 3:     Searching library directories
+ 3:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Dom.Server/5036bf8f-626e-65e3-1593-29ecf235b8dc/linux/AMD64/libturbojpeg.so
+ 3:   Loading native library 'turbojpeg' - success
+ 3: Resolving native library 'turbojpeg'
+ 3:   Loading native library 'turbojpeg'
+ 3:     Assembly: Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 3:     Looking up in cache
+ 3:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Dom.Server/5036bf8f-626e-65e3-1593-29ecf235b8dc/linux/AMD64/libturbojpeg.so
+ 3:   Loading native library 'turbojpeg' - success
+ 3: Skipped loading native dependencies for System.Web.HttpUtility, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51
+ 3: using SharedTextureTransfer
+ 4: [OIT] technique = ABuffer (interlock=true)
+ 4: [Heap] deferred build: picking=true sig=[Colors:Rgba8,PickId:Rgba32f]
+ 4: [OIT] technique = ABuffer (interlock=true)
+ 4: [Heap] deferred build: picking=false sig=[Colors:Rgba8]
+ 4: [OIT] technique = ABuffer (interlock=true)
+ 4: [OIT] technique = ABuffer (interlock=true)
+ 5: Skipped loading native dependencies for System.Diagnostics.StackTrace, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 5: [Vulkan] Reading shader program file cache '/home/schorsch/.local/share/Aardvark/Cache/Shaders/Vulkan/f72b9e4d-fd56-fc2f-5505-a324f9b5fc8d.effect' - success 0.010 s
+ 5: [Vulkan] using 1 descriptor pools
+ 2: using JpegTransfer
+ 2: [OIT] technique = ABuffer (interlock=true)
+ 2: [Heap] deferred build: picking=true sig=[Colors:Rgba8,PickId:Rgba32f]
+ 2: [OIT] technique = ABuffer (interlock=true)
+ 2: [Heap] deferred build: picking=false sig=[Colors:Rgba8]
+ 2: [OIT] technique = ABuffer (interlock=true)
+ 2: [OIT] technique = ABuffer (interlock=true)
+ 5: Skipped loading native dependencies for System.Linq.Expressions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+ 5: [result] #1: 1 ROs, firstHash=13350302 changed=true
+ 5: Resolving native library 'GLSLangNative'
+ 5:   Loading native library 'GLSLangNative'
+ 5:     Assembly: GLSLangSharp, Version=0.5.0.0, Culture=neutral, PublicKeyToken=null
+ 5:     Looking up in cache
+ 5:     Searching library directories
+ 5:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/GLSLangSharp/d0cfaa20-2e38-782c-5519-ae332d8626da/linux/AMD64/libGLSLangNative.so
+ 5:   Loading native library 'GLSLangNative' - success
+ 5: [result] #1: 1 ROs, firstHash=23329906 changed=true
+ 5: [Vulkan] Reading shader program file cache '/home/schorsch/.local/share/Aardvark/Cache/Shaders/Vulkan/f72b9e4d-fd56-fc2f-5505-a324f9b5fc8d.effect' - success 0.000 s
+ 5: [result] #1: 1 ROs, firstHash=52010758 changed=true
+ 5: [result] #1: 1 ROs, firstHash=21802157 changed=true
+ 5: Resolving native library 'turbojpeg'
+ 5:   Loading native library 'turbojpeg'
+ 5:     Assembly: Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 5:     Looking up in cache
+ 5:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Dom.Server/5036bf8f-626e-65e3-1593-29ecf235b8dc/linux/AMD64/libturbojpeg.so
+ 5:   Loading native library 'turbojpeg' - success
+ 5: Resolving native library 'turbojpeg'
+ 5:   Loading native library 'turbojpeg'
+ 5:     Assembly: Aardvark.Dom.Server, Version=1.2.0.0, Culture=neutral, PublicKeyToken=null
+ 5:     Looking up in cache
+ 5:       Loaded: /home/schorsch/.local/share/Aardvark/Cache/Native/Aardvark.Dom.Server/5036bf8f-626e-65e3-1593-29ecf235b8dc/linux/AMD64/libturbojpeg.so
+ 5:   Loading native library 'turbojpeg' - success
+ 1: using JpegTransfer
+ 3: [OIT] technique = ABuffer (interlock=true)
+ 3: [Heap] deferred build: picking=true sig=[Colors:Rgba8,PickId:Rgba32f]
+ 3: [OIT] technique = ABuffer (interlock=true)
+ 3: [Heap] deferred build: picking=false sig=[Colors:Rgba8]
+ 3: [OIT] technique = ABuffer (interlock=true)
+ 3: [OIT] technique = ABuffer (interlock=true)
+ 5: [Vulkan] Reading shader program file cache '/home/schorsch/.local/share/Aardvark/Cache/Shaders/Vulkan/f72b9e4d-fd56-fc2f-5505-a324f9b5fc8d.effect' - success 0.000 s
+ 6: Skipped loading native dependencies for Microsoft.Extensions.FileSystemGlobbing, Version=8.0.0.0, Culture=neutral, PublicKeyToken=adb9793829ddae60
+ 5: [result] #1: 1 ROs, firstHash=60120866 changed=true
+ 5: [result] #1: 1 ROs, firstHash=55064062 changed=true

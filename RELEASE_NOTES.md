@@ -1,3 +1,10 @@
+### 1.2.0-prerelease0014
+* MS pick resolve is a compute MAJORITY VOTE per pixel (no vkCmdResolveImage/blit): fixes the MoltenVK blit-resolve crash and makes every resolved pixel an exact rendered sample.
+* Bit-exact pick encoding on capable runtimes: intBitsToFloat ids/part-indices (no 2^24 id ceiling) + full 32-bit oct normals; the spiral's 3x3 same-id validation is gone there.
+* Capability-switched: WebGL-class runtimes (no compute / no MS-texture sampling) keep the interpolation-tolerant legacy encoding + averaging resolve + validation, under their original shader-cache tags. `AARDVARK_DOM_PICK_LEGACY=1` forces legacy for testing.
+* NoEvents children of a heap render but stay unpickable WITH pick-through (rendering 0041/0042 pick-heap partition + shared-storage fix).
+* Aardvark.Rendering 0040 → 0042.
+
 ### 1.2.0-prerelease0013
 * Pick readback runs off the render thread — on the event thread's own device token (a distinct queue), serialized against the render's resolve by a lightweight lock, instead of marshaling onto the render loop. Fixes the multi-second mouse-move latency on heavy scenes (keyboard/gamepad were already instant).
 * Aardvark.Rendering 0033 → 0040.
