@@ -110,3 +110,50 @@ int aardvark_send(const char* name, IOSurfaceRef surf) {
     fprintf(stderr, "[bridge] sent IOSurface -> %s\n", name);
     return 0;
 }
+
+// ===== Bidirectional REG-push channel matching the Electron painter =====
+// browser check_ins "de.aardvark.iosurface.<channel>", recvs AardvarkRegMsg (id 0x200),
+// sends AardvarkFreeMsg (id 0x201) back on the reply port carried by REG #1.
+#define AARDVARK_MSG_REG  0x200
+#define AARDVARK_MSG_FREE 0x201
+typedef struct { mach_msg_header_t header; mach_msg_body_t body; mach_msg_port_descriptor_t surface; char texid[64]; int32_t w; int32_t h; } AardvarkRegMsg;
+typedef struct { mach_msg_header_t header; char texid[64]; mach_msg_trailer_t trailer; } AardvarkFreeMsg;
+typedef struct { mach_port_t service; mach_port_t free_recv; int reg_count; } AardvarkChan;
+void* aardvark_chan_connect(const char* channel) {
+    char name[256]; snprintf(name, sizeof(name), "de.aardvark.iosurface.%s", channel);
+    mach_port_t svc = MACH_PORT_NULL;
+    if (bootstrap_look_up(bootstrap_port, name, &svc) != KERN_SUCCESS) return 0;
+    AardvarkChan* ch = (AardvarkChan*)calloc(1, sizeof(AardvarkChan));
+    ch->service = svc; mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &ch->free_recv); ch->reg_count = 0;
+    fprintf(stderr, "[bridge] chan_connect '%s' OK\n", name); return ch;
+}
+int aardvark_chan_reg(void* token, const char* texid, IOSurfaceRef surf, int w, int h) {
+    AardvarkChan* ch = (AardvarkChan*)token; if (!ch) return -1;
+    mach_port_t sport = IOSurfaceCreateMachPort(surf);
+    AardvarkRegMsg msg; memset(&msg, 0, sizeof(msg));
+    if (ch->reg_count == 0) { msg.header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, MACH_MSG_TYPE_MAKE_SEND) | MACH_MSGH_BITS_COMPLEX; msg.header.msgh_local_port = ch->free_recv; }
+    else { msg.header.msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_COPY_SEND, 0) | MACH_MSGH_BITS_COMPLEX; }
+    msg.header.msgh_size = sizeof(AardvarkRegMsg); msg.header.msgh_remote_port = ch->service; msg.header.msgh_id = AARDVARK_MSG_REG;
+    msg.body.msgh_descriptor_count = 1;
+    msg.surface.name = sport; msg.surface.disposition = MACH_MSG_TYPE_MOVE_SEND; msg.surface.type = MACH_MSG_PORT_DESCRIPTOR;
+    strncpy(msg.texid, texid, sizeof(msg.texid)-1); msg.w = w; msg.h = h;
+    kern_return_t kr = mach_msg(&msg.header, MACH_SEND_MSG, sizeof(AardvarkRegMsg), 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+    if (kr != KERN_SUCCESS) { fprintf(stderr, "[bridge] chan_reg '%s' kr=0x%x\n", texid, kr); return (int)kr; }
+    ch->reg_count++; return 0;
+}
+int aardvark_chan_poll(void* token, char* out, int outlen) {
+    AardvarkChan* ch = (AardvarkChan*)token; if (!ch || ch->free_recv == MACH_PORT_NULL) { if (outlen) out[0]=0; return 0; }
+    int n = 0;
+    for (;;) {
+        AardvarkFreeMsg msg; memset(&msg, 0, sizeof(msg));
+        kern_return_t kr = mach_msg(&msg.header, MACH_RCV_MSG | MACH_RCV_TIMEOUT, 0, sizeof(msg), ch->free_recv, 0, MACH_PORT_NULL);
+        if (kr != KERN_SUCCESS) break;
+        if (msg.header.msgh_id == AARDVARK_MSG_FREE) { int m = snprintf(out+n, outlen-n, "FREE %s\n", msg.texid); if (m > 0 && n+m < outlen) n += m; else break; }
+    }
+    if (n < outlen) out[n] = 0; return n;
+}
+void aardvark_chan_close(void* token) {
+    AardvarkChan* ch = (AardvarkChan*)token; if (!ch) return;
+    if (ch->free_recv != MACH_PORT_NULL) mach_port_mod_refs(mach_task_self(), ch->free_recv, MACH_PORT_RIGHT_RECEIVE, -1);
+    free(ch);
+}

@@ -126,6 +126,14 @@ module MetalExport =
     // matching a consumer that check_ins + recv-loops (the patched Electron painter).
     [<DllImport("libaardvark_machbridge.dylib")>]
     extern int aardvark_send(string name, nativeint surface)
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern nativeint aardvark_chan_connect(string channel)
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern int aardvark_chan_reg(nativeint token, string texid, nativeint surface, int w, int h)
+    [<DllImport("libaardvark_machbridge.dylib", CharSet = CharSet.Ansi)>]
+    extern int aardvark_chan_poll(nativeint token, System.Text.StringBuilder out, int outlen)
+    [<DllImport("libaardvark_machbridge.dylib")>]
+    extern void aardvark_chan_close(nativeint token)
 
     // Create an IOSurface from a CFDictionary of properties (we stamp kIOSurfacePixelFormat
     // = 'BGRA', which the MoltenVK-exported surface lacks → the property Chromium's

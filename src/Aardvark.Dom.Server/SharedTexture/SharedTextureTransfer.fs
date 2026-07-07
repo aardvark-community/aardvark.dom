@@ -159,13 +159,15 @@ module private Platform =
                 // service name off the REG line and recv-loops. So send REG first (it registers),
                 // then look it up and PUSH the IOSurface to it. (aardvark_publish was the mismatched
                 // producer-as-server direction — the browser never requests, so it stayed black.)
-                let name = sprintf "%s.%s" MetalExport.MachServiceName id
-                let ok = FdHandoff.streamFrame (int conn) (sprintf "REG %s %d %d %s\n" id w h name)
-                MetalExport.aardvark_send(name, m.IOSurface) |> ignore
-                ok
-              SideChannelConnect = fun ch -> int64 (FdHandoff.streamConnect (sprintf "/tmp/aardvark-sharedtexture-%s.sock" ch))
-              SideChannelPoll    = fun conn -> FdHandoff.streamPoll (int conn)
-              SideChannelClose   = fun conn -> FdHandoff.streamClose (int conn)
+                MetalExport.aardvark_chan_reg(nativeint conn, id, m.IOSurface, w, h) = 0
+              SideChannelConnect = fun ch ->
+                let tok = MetalExport.aardvark_chan_connect ch
+                if tok = 0n then -1L else int64 tok
+              SideChannelPoll = fun conn ->
+                let sb = System.Text.StringBuilder(4096)
+                MetalExport.aardvark_chan_poll(nativeint conn, sb, 4096) |> ignore
+                sb.ToString()
+              SideChannelClose  = fun conn -> MetalExport.aardvark_chan_close (nativeint conn)
               SyncAfterCopy = false
               Readback = fun _ -> [||] }
 
