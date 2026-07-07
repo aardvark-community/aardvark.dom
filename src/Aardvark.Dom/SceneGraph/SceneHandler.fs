@@ -336,6 +336,68 @@ module PickShader =
     let pickFinalBEffect = Effect.ofFunction pickFinalB
     let pickFinalPortalEffect = Effect.ofFunction pickFinalPortal
 
+    // ---- LEGACY (interpolation-tolerant) encodings ----------------------
+    // WebGL-class runtimes have NO compute shaders and NO MS-texture sampling:
+    // the only multisample resolve there is an AVERAGING blitFramebuffer. So
+    // everything is stored as plain in-range floats — ids < 2^24 (exact only
+    // when all samples agree), 24-bit oct normals — and the decoder validates
+    // candidates by 3x3 same-id neighbourhoods + near-integer rejection. This
+    // is byte-identical to the encoding that shipped before the bit-exact
+    // path; its effect tags (pickv3_/portalv1_) are unchanged so existing
+    // shader caches stay valid.
+    let pickFinalALegacy (v : FinalA_In) =
+        fragment {
+            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, float32 v.pi) }
+            return r
+        }
+    let pickFinalANoPiLegacy (v : FinalANoPi_In) =
+        fragment {
+            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, float32 n24, d, 0.0f) }
+            return r
+        }
+    let pickFinalHeapLegacy (v : FinalANoPi_In) =
+        fragment {
+            let n24 = Normal24.encode (Vec.normalize v.vn)
+            let d = (2.0f * v.d - 1.0f)
+            let pid : int = uniform?HeapPickId
+            let r : Fragment = { c = v.c; id = V4f(float32 pid, float32 n24, d, 0.0f) }
+            return r
+        }
+    let pickFinalANoNormalLegacy (v : FinalANoNormal_In) =
+        fragment {
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, float32 v.pi) }
+            return r
+        }
+    let pickFinalANoNormalNoPiLegacy (v : FinalANoNormalNoPi_In) =
+        fragment {
+            let d = (2.0f * v.d - 1.0f)
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, 0.0f, d, 0.0f) }
+            return r
+        }
+    let pickFinalBLegacy (v : FinalB_In) =
+        fragment {
+            let r : Fragment = { c = v.c; id = V4f(-(float32 uniform.PickId), v.pvp.X, v.pvp.Y, v.pvp.Z) }
+            return r
+        }
+    let pickFinalPortalLegacy (v : FinalPortal_In) =
+        fragment {
+            let d = 2.0f * v.fc.Z - 1.0f
+            let r : Fragment = { c = v.c; id = V4f(float32 uniform.PickId, v.uv.X, v.uv.Y, d) }
+            return r
+        }
+    let pickFinalALegacyEffect = Effect.ofFunction pickFinalALegacy
+    let pickFinalANoPiLegacyEffect = Effect.ofFunction pickFinalANoPiLegacy
+    let pickFinalHeapLegacyEffect = Effect.ofFunction pickFinalHeapLegacy
+    let pickFinalANoNormalLegacyEffect = Effect.ofFunction pickFinalANoNormalLegacy
+    let pickFinalANoNormalNoPiLegacyEffect = Effect.ofFunction pickFinalANoNormalNoPiLegacy
+    let pickFinalBLegacyEffect = Effect.ofFunction pickFinalBLegacy
+    let pickFinalPortalLegacyEffect = Effect.ofFunction pickFinalPortalLegacy
+
     /// Tag identifying which of our pick-final effects ended up at the tail
     /// of the composed chain. Exposed primarily so unit tests can assert the
     /// selection logic without round-tripping through `Effect.compose`.
@@ -413,13 +475,14 @@ module PickShader =
                 | false, false -> FinalANoNormalNoPi
             { Final = final; InjectVsn = needInjectVsn }
 
-    /// Look up the actual effect for a `PickFinal` tag.
-    let finalEffect = function
-        | FinalA              -> pickFinalAEffect
-        | FinalANoPi          -> pickFinalANoPiEffect
-        | FinalANoNormal      -> pickFinalANoNormalEffect
-        | FinalANoNormalNoPi  -> pickFinalANoNormalNoPiEffect
-        | FinalB              -> pickFinalBEffect
+    /// Look up the actual effect for a `PickFinal` tag (`exact` selects the
+    /// bit-exact vs the legacy WebGL-compatible encoding).
+    let finalEffect (exact : bool) = function
+        | FinalA              -> if exact then pickFinalAEffect else pickFinalALegacyEffect
+        | FinalANoPi          -> if exact then pickFinalANoPiEffect else pickFinalANoPiLegacyEffect
+        | FinalANoNormal      -> if exact then pickFinalANoNormalEffect else pickFinalANoNormalLegacyEffect
+        | FinalANoNormalNoPi  -> if exact then pickFinalANoNormalNoPiEffect else pickFinalANoNormalNoPiLegacyEffect
+        | FinalB              -> if exact then pickFinalBEffect else pickFinalBLegacyEffect
 
     // -----------------------------------------------------------------------
     // Generalized per-semantic rewrite.
@@ -452,7 +515,7 @@ module PickShader =
     /// Route-vs-synthesize plan for a single requested semantic. `None` means
     /// the semantic needs no injection (routed verbatim, or unknown/absent).
     /// `Some plan` means we synthesize it.
-    let planSemantic (sem : string) (eff : FShade.Effect) (geomHas : string -> bool) : SemanticPlan option =
+    let planSemantic (exact : bool) (sem : string) (eff : FShade.Effect) (geomHas : string -> bool) : SemanticPlan option =
         match sem with
         | "PickId" ->
             // Pick is always synthesized (the user never produces the packed
@@ -462,7 +525,7 @@ module PickShader =
             let vsn = if choice.InjectVsn then [viewSpaceNormalEffect] else []
             Some {
                 Pre     = vsn @ [pickDepthBeforeEffect]
-                Post    = [finalEffect choice.Final]
+                Post    = [finalEffect exact choice.Final]
                 IsModeA = Some (choice.Final <> FinalB)
             }
         | _ ->
@@ -474,8 +537,8 @@ module PickShader =
     /// (the `Effect.compose` GLSL step is deferred by callers). Returns the
     /// chain as an effect LIST plus the collected pick metadata. Chain =
     /// (all Pre, first-seen order, de-duplicated by reference) @ [eff] @ (all Post).
-    let planChain (requested : string list) (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect list * bool option =
-        let plans = requested |> List.choose (fun sem -> planSemantic sem eff geomHas)
+    let planChain (exact : bool) (requested : string list) (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect list * bool option =
+        let plans = requested |> List.choose (fun sem -> planSemantic exact sem eff geomHas)
         let pre =
             // Shared synthesizers (e.g. pickDepthBefore) appear once even if
             // several requested semantics ask for them.
@@ -486,8 +549,8 @@ module PickShader =
         (pre @ [eff] @ post), isModeA
 
     /// Build the composed pick effect for a user effect + geometry callback.
-    let composePickChain (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect =
-        planChain ["PickId"] eff geomHas |> fst |> FShade.Effect.compose
+    let composePickChain (exact : bool) (eff : FShade.Effect) (geomHas : string -> bool) : FShade.Effect =
+        planChain exact ["PickId"] eff geomHas |> fst |> FShade.Effect.compose
 
     // Legacy record kept for `binary` / `outline` — they only read v.fc, but
     // share this type with their own callers. Stripped of the pick-specific
@@ -988,7 +1051,8 @@ module internal BlitExtensions =
         /// Legacy wrapper kept compatible with the previous closure-based API
         /// for any external callers that still want it. The inlined fast path
         /// is in `Read` below.
-        member x.ReadPickRegion(src : IFramebuffer, projTrafo : Trafo3d, center : V2i, radius : int) : V2i -> option<int * int * V3d * V3d> =
+        member x.ReadPickRegion(src : IFramebuffer, projTrafo : Trafo3d, center : V2i, radius : int,
+                                [<System.Runtime.InteropServices.Optional; System.Runtime.InteropServices.DefaultParameterValue(true)>] exactEncoding : bool) : V2i -> option<int * int * V3d * V3d> =
             let s = src.Size.XY
             let originX = max 0 (center.X - radius)
             let originY = max 0 (center.Y - radius)
@@ -1010,7 +1074,10 @@ module internal BlitExtensions =
                 // region bounds.
                 let inline readIdAt (lx : int) (ly : int) =
                     if lx < 0 || ly < 0 || lx >= regionSize.X || ly >= regionSize.Y then 0
-                    else System.BitConverter.SingleToInt32Bits data.[baseIdx + lx * dx + ly * dy]
+                    else
+                        let f0 = data.[baseIdx + lx * dx + ly * dy]
+                        if exactEncoding then System.BitConverter.SingleToInt32Bits f0
+                        elif f0 = 0.0f then 0 else int f0
 
                 // Compute the view-space position at a region-local pixel,
                 // using the same decoding rule as the main path. Used for
@@ -1048,7 +1115,7 @@ module internal BlitExtensions =
                                 for ddx in -1 .. 1 do
                                     if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = idF then
                                         nbrs.Add (viewPosAt (lx + ddx) (ly + ddy) idF)
-                            if false then None
+                            if (not exactEncoding) && nbrs.Count < 2 then None
                             else
                                 let i0 = baseIdx + lx * dx + ly * dy
                                 let f1 = data.[i0 + dz]
@@ -1062,9 +1129,14 @@ module internal BlitExtensions =
                                         let tc = (V2d p + V2d.Half) / V2d s
                                         let ndc = V3d(2.0 * tc.X - 1.0, 1.0 - 2.0 * tc.Y, depth)
                                         let vp = projTrafo.Backward.TransformPosProj ndc
-                                        let n32 = System.BitConverter.SingleToInt32Bits f1
-                                        let n = if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)
-                                        vp, n, System.BitConverter.SingleToInt32Bits f3
+                                        let n, pi =
+                                            if exactEncoding then
+                                                let n32 = System.BitConverter.SingleToInt32Bits f1
+                                                (if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)),
+                                                System.BitConverter.SingleToInt32Bits f3
+                                            else
+                                                (if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))), int f3
+                                        vp, n, pi
                                     else
                                         // Mode B: -id, pvp.x, pvp.y, pvp.z.
                                         V3d(float f1, float f2, float f3), V3d.Zero, 0
@@ -1221,6 +1293,15 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
     
     let runtime = signature.Runtime :?> IRuntime
 
+    // BIT-EXACT vs LEGACY pick encoding (see PickShader): exact needs compute
+    // shaders (majority resolve) and MS-texture sampling — absent on
+    // WebGL-class runtimes, which get the interpolation-tolerant legacy path.
+    // AARDVARK_DOM_PICK_LEGACY=1 forces legacy (testing on desktop).
+    let exactPick =
+        if System.Environment.GetEnvironmentVariable "AARDVARK_DOM_PICK_LEGACY" = "1" then false
+        else
+            try runtime.MaxLocalSize.AllGreater 0 with _ -> false
+
     // PickId state. Ids are assigned per-scope on first use (acquireId), and
     // recycled when the last RenderObject referencing a scope is removed
     // (releaseId). The free-list is a SortedSet so reuse picks the smallest
@@ -1311,6 +1392,7 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
     /// space, one `scopes` map, one dispatch).
     let pickContext =
         { new IPickContext with
+            member _.ExactPick = exactPick
             member _.Register t =
                 let id = acquireId t
                 // Heap parts are mode A — the heap pick shader writes +id into PickId slot 0.
@@ -1379,15 +1461,16 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                 // and reads slots 1-2 as uv — never as normal/depth.
                                 pickModes.[pickId] <- true
                                 portalScopes.[pickId] <- sub
-                                [eff; PickShader.pickFinalPortalEffect], "portalv2_"
+                                (if exactPick then [eff; PickShader.pickFinalPortalEffect], "portalv2_"
+                                 else [eff; PickShader.pickFinalPortalLegacyEffect], "portalv1_")
                             | None ->
                                 // Resolve the per-semantic rewrite eagerly (cheap — no GLSL) so we
                                 // know this scope's pick mode (A/B) for `pickModes`; the actual GLSL
                                 // composition stays lazy. Only "PickId" is requested today, so this
                                 // is identical to the old chooseChain/finalEffect chain.
-                                let chain, isModeA = PickShader.planChain ["PickId"] eff geomHas
+                                let chain, isModeA = PickShader.planChain exactPick ["PickId"] eff geomHas
                                 pickModes.[pickId] <- (match isModeA with Some m -> m | None -> false)
-                                chain, "pickv4_"
+                                chain, (if exactPick then "pickv4_" else "pickv3_")
                         let newShaders =
                             lazy (
                                 (FShade.Effect.compose chain).Shaders
@@ -1535,7 +1618,15 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 let pickResolvedTex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, 1)
 
                 let pickOutput, resolvePick, pickDisposables =
-                    if newSignature.Samples > 1 then
+                    if newSignature.Samples > 1 && not exactPick then
+                        // LEGACY (WebGL-class): MS renderbuffer + averaging
+                        // hardware resolve — pairs with the interpolation-
+                        // tolerant encoding + 3x3 decoder validation.
+                        let rb = runtime.CreateRenderbuffer(size, TextureFormat.Rgba32f, newSignature.Samples)
+                        rb :> IFramebufferOutput,
+                        (fun () -> runtime.ResolveMultisamples(rb, pickResolvedTex)),
+                        [ rb :> System.IDisposable ]
+                    elif newSignature.Samples > 1 then
                         // MS: render into a texture and majority-resolve with a compute
                         // pass (see PickResolveShader) — never vkCmdResolveImage/blit.
                         let msTex = runtime.CreateTexture2D(size, TextureFormat.Rgba32f, 1, newSignature.Samples)
@@ -1797,12 +1888,21 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                 let rSizeY    = if hasRegion then region.SizeY else 0
 
                 // Read the (signed) PickId at a region-local pixel, or 0.
-                // BIT-EXACT ids: slot 0 is the id's int bit pattern
-                // (intBitsToFloat in the shader, majority-vote resolve — every
-                // pixel is an exact sample). 0 bits = cleared background.
+                // EXACT: slot 0 is the id's int bit pattern (intBitsToFloat in
+                // the shader, majority-vote resolve — every pixel is an exact
+                // rendered sample); 0 bits = cleared background.
+                // LEGACY (WebGL): ids are plain floats; an averaged silhouette
+                // mix isn't integral, so near-integer rejection filters it.
                 let inline readIdAt (lx : int) (ly : int) =
                     if not hasRegion || lx < 0 || ly < 0 || lx >= rSizeX || ly >= rSizeY then 0
-                    else System.BitConverter.SingleToInt32Bits rData.[rBase + lx * rDx + ly * rDy]
+                    else
+                        let f0 = rData.[rBase + lx * rDx + ly * rDy]
+                        if exactPick then System.BitConverter.SingleToInt32Bits f0
+                        elif f0 = 0.0f then 0
+                        else
+                            let r = System.MathF.Round f0
+                            if abs (f0 - r) > 0.01f then 0
+                            else int r
 
                 // Resolve view-space position at a same-id neighbour. Only
                 // called once per accepted candidate (lazy normal estimation).
@@ -1918,11 +2018,23 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                             pickModes.TryGetValue(absId, &scopeIsModeA)
                             && scopeIsModeA = (pixIdRaw > 0)
                         if modeOk && scopes.TryGetValue(absId, &scope) && d2 <= snapR2 scope then
-                            // ids are bit-exact (majority-vote resolve): a
-                            // non-zero id that passes the mode/scope gates IS
-                            // a real rendered pixel — no neighbourhood
-                            // validation needed anymore.
-                            if true then
+                            // EXACT: a non-zero id passing the mode/scope gates
+                            // IS a real rendered pixel — no validation needed.
+                            // LEGACY: validate by >= 3 same-id neighbours in the
+                            // 3x3 block (averaged silhouette ids are garbage).
+                            let valid =
+                                exactPick ||
+                                (let mutable matches = 0
+                                 let mutable ddy = -1
+                                 while matches < 3 && ddy <= 1 do
+                                     let mutable ddx = -1
+                                     while matches < 3 && ddx <= 1 do
+                                         if (ddx <> 0 || ddy <> 0) && readIdAt (lx + ddx) (ly + ddy) = pixIdRaw then
+                                             matches <- matches + 1
+                                         ddx <- ddx + 1
+                                     ddy <- ddy + 1
+                                 matches >= 3)
+                            if valid then
                                 let i0 = rBase + lx * rDx + ly * rDy
                                 let f1 = rData.[i0 + rDz]
                                 let f2 = rData.[i0 + 2 * rDz]
@@ -1933,9 +2045,13 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
                                     let tcY = (float pxY + 0.5) / sY
                                     let ndc = V3d(2.0 * tcX - 1.0, 1.0 - 2.0 * tcY, pixDepth)
                                     pixVp <- pBwd.TransformPosProj ndc      // NDC → VIEW
-                                    let n32 = System.BitConverter.SingleToInt32Bits f1
-                                    pixN  <- if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)
-                                    pixPi <- System.BitConverter.SingleToInt32Bits f3
+                                    if exactPick then
+                                        let n32 = System.BitConverter.SingleToInt32Bits f1
+                                        pixN  <- if n32 = 0 then V3d.Zero else V3d (Normal32.decode n32)
+                                        pixPi <- System.BitConverter.SingleToInt32Bits f3
+                                    else
+                                        pixN  <- if int f1 = 0 then V3d.Zero else V3d (Normal24.decode (int f1))
+                                        pixPi <- int f3
                                     // PORTAL: slot 3 is the quad's own NDC depth (not pi), and slot 2
                                     // was a uv (not depth) — use the real geometric depth so the
                                     // pixel<->BVH tie-break is correct in a mixed outer scene.

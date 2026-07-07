@@ -77,7 +77,12 @@ type HeapNode(child : ISceneNode) =
                                     ValueOption.isSome (o.InstanceAttributes.TryGetAttribute (Symbol.Create sem))
                                 let choice = PickShader.chooseChain eff geomHas
                                 let pre = if choice.InjectVsn then [ PickShader.viewSpaceNormalEffect ] else []
-                                let chain = pre @ [ PickShader.pickDepthBeforeEffect; eff; PickShader.pickFinalHeapEffect ]
+                                // heap pick-final variant follows the handler's encoding
+                                // (bit-exact vs WebGL-legacy — see IPickContext.ExactPick)
+                                let heapFinal =
+                                    if ctx.ExactPick then PickShader.pickFinalHeapEffect
+                                    else PickShader.pickFinalHeapLegacyEffect
+                                let chain = pre @ [ PickShader.pickDepthBeforeEffect; eff; heapFinal ]
                                 let r = RenderObject.Clone o
                                 r.Surface <- Surface.Effect (FShade.Effect.compose chain)
                                 r.Uniforms <- UniformProvider.union o.Uniforms (UniformProvider.ofList [ "HeapPickId", AVal.constant id :> IAdaptiveValue ])

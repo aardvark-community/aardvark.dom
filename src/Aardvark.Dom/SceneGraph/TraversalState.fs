@@ -57,6 +57,13 @@ type TraversalState =
 and IPickContext =
     abstract member Register : TraversalState -> int
     abstract member Deregister : int -> unit
+    /// TRUE when the owning handler uses the BIT-EXACT pick encoding
+    /// (intBitsToFloat ids + Normal32, compute majority resolve — needs compute
+    /// shaders and MS-texture sampling). FALSE on WebGL-class runtimes, which
+    /// use the interpolation-tolerant legacy encoding (float ids < 2^24,
+    /// Normal24, averaging blit resolve). Heap nodes pick their heap
+    /// pick-fragment variant accordingly.
+    abstract member ExactPick : bool
 
 /// A rendered sub-scene's picking surface, reduced to exactly what the pick
 /// patcher/dispatcher (in SceneHandler.fs, which compiles BEFORE RenderTo.fs)
