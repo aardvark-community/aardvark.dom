@@ -1,3 +1,8 @@
+### 1.2.0-prerelease0017
+* fix: shared-texture no longer boots black / blanks on resize — frames re-publish until the browser confirms the generation (first FREE), and a new gen REGs inline before its first frame message.
+* fix: multisampled signatures resolve into a single-sampled texture before the ring blit (vkCmdBlitImage can't source MS; crashed MoltenVK with textureunsupported<float>).
+* fix: ring slots whose FREE never arrives (dropped frame) are reclaimed after 2s instead of leaking until the ring starves.
+
 ### 1.2.0-prerelease0016
 * fix: macOS zero-copy IOSurface sharing now composites (was a black canvas) — the darwin producer speaks the browser's mach REG-channel instead of a unix socket the mach-only painter never binds.
 

@@ -228,6 +228,11 @@ type private RingSlot =
         Fence     : VkFence
         /// busy = a copy into this slot has been handed to the client and not yet FREEd.
         mutable Busy : bool
+        /// when Busy was set — a slot whose FREE never arrives (dropped frame, client
+        /// hiccup) is reclaimed after a stale timeout instead of leaking forever
+        /// (leaked slots starve the ring: one lost per bad frame, and with all of
+        /// them gone every frame waits + skips — the "N clicks until unusable" cliff).
+        mutable BusyAt : DateTime
         /// true once this slot's memfd has been registered over the side-channel.
         mutable Registered : bool
         /// true when a copy submit is in flight on this slot's Fence (so waitFence is needed).
@@ -236,7 +241,7 @@ type private RingSlot =
         mutable Pending : bool
     }
 
-type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : aval<V2i>, channelName : string) =
+type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebufferSignature, task : IRenderTask, size : aval<V2i>, channelName : string) as this =
     inherit AdaptiveObject()
 
     static let RING_N = 4            // ring depth (compositor holds <=2 in-flight + producer 1 + 1 spare)
@@ -282,18 +287,23 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         VkRaw.vkCreateFence(devH, &&fi, NativePtr.zero, &&f) |> ignore
         f
 
-    // ---- offscreen FBO (Bgra8 color + depth) — matches the ring's B8G8R8A8_UNORM ----
-    let mutable fbo : option<IFramebuffer * IRenderbuffer * IRenderbuffer> = None
+    // ---- offscreen FBO (Bgra8 color + depth) — matches the ring's B8G8R8A8_UNORM.
+    //      MULTISAMPLED signatures additionally carry a SINGLE-SAMPLED resolve texture:
+    //      vkCmdBlitImage cannot read an MS source (MoltenVK's emulation shader doesn't
+    //      even compile — "textureunsupported<float>"; on other drivers it's invalid API
+    //      use), so the ring blit must source the RESOLVED image, never the MS one. ----
+    let mutable fbo : option<IFramebuffer * IRenderbuffer * IRenderbuffer * option<IBackendTexture>> = None
 
     let getFramebuffer (s : V2i) =
         match fbo with
-        | Some (f, _, _) when f.Size = s -> f
+        | Some (f, _, _, r) when f.Size = s -> (f, r)
         | _ ->
             match fbo with
-            | Some (f, c, d) ->
+            | Some (f, c, d, r) ->
                 runtime.DeleteFramebuffer f
                 runtime.DeleteRenderbuffer c
                 runtime.DeleteRenderbuffer d
+                r |> Option.iter runtime.DeleteTexture
             | None -> ()
             // Match the GIVEN signature's color format (the framework's DOM render task is
             // compiled for it — typically Rgba8). The ring image is BGRA, so the copy into
@@ -309,8 +319,11 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                     DefaultSemantic.Colors, c :> IFramebufferOutput
                     DefaultSemantic.DepthStencil, d :> IFramebufferOutput
                 ])
-            fbo <- Some (f, c, d)
-            f
+            let r =
+                if signature.Samples > 1 then Some (runtime.CreateTexture2D(s, colorFormat, 1, 1))
+                else None
+            fbo <- Some (f, c, d, r)
+            (f, r)
 
     // ---- the ring of OPAQUE_FD slots ----
     let mutable ringSize = AVal.force size
@@ -330,6 +343,11 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     // re-showing the last frame). It round-robins instead; the keyed-mutex 12ms finite acquire is
     // the real guard (it skips a slot the compositor genuinely holds), so overwrite is safe.
     let mutable genFreeSeen = false
+    // when the current gen FIRST PUBLISHED a frame — bounds the unconfirmed-gen
+    // republish below. NOT the alloc time: the first task.Run of a fresh scene can
+    // take arbitrarily long (cold ingest), and the retry window must not expire
+    // before the first frame message even exists.
+    let mutable genPublishedAt = DateTime.MinValue
 
     // The browser binds/listens for `channelName`; the server connects as the client.
     // The browser may not be up at the first frame, so RETRY with a short backoff
@@ -360,6 +378,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         gen <- gen + 1
         frame <- 0
         genFreeSeen <- false   // enter the realloc transient: Busy is not yet meaningful for this gen
+        genPublishedAt <- DateTime.MinValue
         ring <-
             Array.init RING_N (fun i ->
                 {
@@ -375,6 +394,7 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
                     Sem        = DmaBufSync.createSemaphore device
                     Fence      = newFence ()
                     Busy       = false
+                    BusyAt     = DateTime.MinValue
                     Registered = false
                     Pending    = false
                 })
@@ -437,6 +457,21 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             let t = System.Threading.Thread(fun () ->
                 while not disposed do
                     (try registerRing (); pollFree () with _ -> ())
+                    // UNCONFIRMED-GEN REPUBLISH: a frame message naming a texture the
+                    // browser hasn't imported yet composites NOTHING, and with a static
+                    // scene no further frame ever comes — black at boot (the browser only
+                    // starts listening for REG once the FIRST message delivers the channel
+                    // name) and blank after resize (the new gen's REG races its first
+                    // frame message). Until the browser confirms the current gen (first
+                    // FREE), keep marking the target so the render loop re-publishes;
+                    // bounded so a client that never FREEs (foreign/older native layer)
+                    // degrades to the previous behavior instead of spinning forever.
+                    (try
+                        if not disposed && not genFreeSeen && ring.Length > 0 && lastId <> ""
+                           && genPublishedAt <> DateTime.MinValue
+                           && DateTime.UtcNow - genPublishedAt < TimeSpan.FromSeconds 10.0 then
+                            transact (fun () -> this.MarkOutdated())
+                     with _ -> ())
                     System.Threading.Thread.Sleep 30)
             t.IsBackground <- true
             t.Start()
@@ -447,6 +482,14 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
     // arrived yet (R1 / browser absent), this degrades to round-robin — matching the
     // validated opaquefd-stream behavior.
     let scanFree () =
+        // STALE-BUSY RECLAIM: a slot whose FREE never arrived (its frame was dropped /
+        // the client never composited it) must not leak — the browser can't FREE a
+        // frame it never showed. 2s is far beyond any legit composite latency, and
+        // overwriting is safe: the keyed-mutex finite acquire (Windows) / EXTERNAL
+        // release (Linux/macOS) is the real in-use guard.
+        let now = DateTime.UtcNow
+        for s in ring do
+            if s.Busy && now - s.BusyAt > TimeSpan.FromSeconds 2.0 then s.Busy <- false
         let i0 = frame % RING_N
         let mutable chosen = -1
         let mutable k = 0
@@ -508,10 +551,11 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
         ring <- [||]
         ringSize <- V2i.Zero
         match fbo with
-        | Some (f, c, d) ->
+        | Some (f, c, d, r) ->
             runtime.DeleteFramebuffer f
             runtime.DeleteRenderbuffer c
             runtime.DeleteRenderbuffer d
+            r |> Option.iter runtime.DeleteTexture
             fbo <- None
         | None -> ()
         VkRaw.vkDestroyCommandPool(devH, pool, NativePtr.zero)
@@ -528,12 +572,19 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             if ring.Length = 0 || ringSize <> s then
                 ringSize <- s
                 allocRing s
+                // REG the fresh generation NOW (bounded lock wait) so its REG lines
+                // reach the browser BEFORE the frame message that names its slots —
+                // otherwise the resize frame composites nothing (unknown textureId).
+                // The republish loop above covers the residual cross-channel race.
+                if System.Threading.Monitor.TryEnter(chanLock, 100) then
+                    try (try registerRing () with _ -> ())
+                    finally System.Threading.Monitor.Exit chanLock
             startConnector ()     // bg thread owns connect + REG + FREE-poll (deadlock-free)
             tryPollFree ()        // also drain FREE inline, NON-BLOCKING: never wait on chanLock
                                   // (the bg thread may hold it mid blocking REG WriteFile during a
                                   // gen bump — blocking here is what wedged RenderFrame for seconds)
 
-            let fbo = getFramebuffer s
+            let (fbo, resolved) = getFramebuffer s
             let i = pickSlot ()
             if i < 0 then
                 // all ring slots are in-flight (handed to the browser, not yet FREE'd). Don't
@@ -553,9 +604,17 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
             // render the GIVEN scene into the offscreen FBO.
             task.Run(token, RenderToken.Empty, fbo)
 
-            // FBO color attachment -> the underlying Vulkan image (handle + current layout).
+            // the ring blit's SOURCE image: single-sampled always. MS signatures resolve
+            // (vkCmdResolveImage — Metal-native, unlike an MS blit) into the side texture.
             let fbo = unbox<Framebuffer> fbo
-            let img = fbo.Attachments.[DefaultSemantic.Colors].Image
+            let img =
+                match resolved with
+                | Some target ->
+                    let msView = fbo.Attachments.[DefaultSemantic.Colors]
+                    runtime.ResolveMultisamples(msView.Image :> IFramebufferOutput, target)
+                    unbox<Image> target
+                | None ->
+                    fbo.Attachments.[DefaultSemantic.Colors].Image
 
             // GPU blit FBO color -> ring slot via the platform strategy. Returns false if the copy
             // was SKIPPED (Windows keyed-mutex acquire timed out — compositor still holds the key).
@@ -580,8 +639,10 @@ type private SharedTextureRenderTarget(runtime : IRuntime, signature : IFramebuf
 
             // mark the slot in-flight; the browser FREEs it after compositing.
             slot.Busy <- true
+            slot.BusyAt <- DateTime.UtcNow
             frame <- frame + 1
             lastId <- slot.TextureId
+            if genPublishedAt = DateTime.MinValue then genPublishedAt <- DateTime.UtcNow
 
             (slot.TextureId, s)
         )
