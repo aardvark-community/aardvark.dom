@@ -37,7 +37,7 @@ module CompositeShader =
         }
 
     type UniformScope with
-        member x.WarpTime : float = uniform?WarpTime
+        member x.WarpTime : float32 = uniform?WarpTime
 
     type Vertex = { [<Position>] pos : V4f; [<TexCoord>] tc : V2f }
     type FragIn = { [<TexCoord>] tc : V2f }
@@ -107,7 +107,7 @@ let cubesApp (runtime : IRuntime) =
 
             renderControl {
                 Style [Width "100%"; Height "100%"; Background "#202124"; Outline "none"]
-                Samples 4
+                Samples 1
                 TabIndex 0
 
                 let! size = RenderControl.ViewportSize
