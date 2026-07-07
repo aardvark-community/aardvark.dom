@@ -1,3 +1,6 @@
+### 1.2.0-prerelease0015
+* fix: resize/teardown no longer races the event-thread pick readback — deleting the resolved pick framebuffer now happens under `pickLock` with the published pick texture invalidated first (was an AccessViolation / VK device fault in vkCmdCopyImageToBuffer when picking during a resize).
+
 ### 1.2.0-prerelease0014
 * MS pick resolve is a compute MAJORITY VOTE per pixel (no vkCmdResolveImage/blit): fixes the MoltenVK blit-resolve crash and makes every resolved pixel an exact rendered sample.
 * Bit-exact pick encoding on capable runtimes: intBitsToFloat ids/part-indices (no 2^24 id ceiling) + full 32-bit oct normals; the spiral's 3x3 same-id validation is gone there.

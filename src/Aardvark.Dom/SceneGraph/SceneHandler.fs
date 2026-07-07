@@ -1586,10 +1586,17 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
             | _ ->
                 match fbos with
                 | Some o ->
-                    runtime.DeleteFramebuffer o.PickableFramebuffer
-                    runtime.DeleteFramebuffer o.NonPickableFramebuffer
-                    runtime.DeleteFramebuffer o.PickFramebufferResolved
-                    for t in o.Disposables do t.Dispose()
+                    // RESIZE disposal must exclude the event-thread pick readback:
+                    // it downloads from PickFramebufferResolved under `pickLock`, and
+                    // deleting that image mid-copy is a device fault (WriteInvalid) /
+                    // AccessViolation in vkCmdCopyImageToBuffer. Invalidate the
+                    // published pick texture FIRST so late picks miss gracefully.
+                    lock pickLock (fun () ->
+                        pickTexture <- None
+                        runtime.DeleteFramebuffer o.PickableFramebuffer
+                        runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                        runtime.DeleteFramebuffer o.PickFramebufferResolved
+                        for t in o.Disposables do t.Dispose())
                 | None -> ()
 
                 let semantics =
@@ -1723,10 +1730,14 @@ type internal PickProducer(signature : IFramebufferSignature, trigger : RenderCo
             newSignature.Dispose()
             match fbos with
             | Some o ->
-                runtime.DeleteFramebuffer o.PickableFramebuffer
-                runtime.DeleteFramebuffer o.NonPickableFramebuffer
-                runtime.DeleteFramebuffer o.PickFramebufferResolved
-                for t in o.Disposables do t.Dispose()
+                // same exclusion as the resize path: a late pick readback must not
+                // race the teardown of the resolved pick image (see getFramebuffers)
+                lock pickLock (fun () ->
+                    pickTexture <- None
+                    runtime.DeleteFramebuffer o.PickableFramebuffer
+                    runtime.DeleteFramebuffer o.NonPickableFramebuffer
+                    runtime.DeleteFramebuffer o.PickFramebufferResolved
+                    for t in o.Disposables do t.Dispose())
                 fbos <- None
             | None ->
                 ()
